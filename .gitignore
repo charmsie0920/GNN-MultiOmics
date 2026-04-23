@@ -1,0 +1,25 @@
+# --- Data Protection ---
+# Ignore raw data files (usually too large for GitHub)
+data/raw/*
+# Keep the folder structure but ignore the content
+!data/raw/.gitkeep
+
+# --- Python Junk ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+
+# --- Jupyter Notebooks ---
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
+
+# --- Environment Secrets (If you use Supabase/API keys later) ---
+.env
