@@ -4,7 +4,7 @@ from pathlib import Path
 import csv
 from collections import Counter
 
-#Use your own dataset files in the LocalDataset directory
+#!CHANGE THIS TO INCORPORATE THE DATASET FILE NAME YOU HAVE SET LOCALLY
 LOCAL_DATASET_DIR = Path(__file__).resolve().parent / "LocalDataset"
 
 GDSC_PATH = LOCAL_DATASET_DIR / "GDSC_DATASET.csv"
