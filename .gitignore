@@ -4,6 +4,9 @@ data/raw/*
 # Keep the folder structure but ignore the content
 !data/raw/.gitkeep
 
+# --- Trained model artifacts ---
+models/
+
 # --- Python Junk ---
 __pycache__/
 *.py[cod]
