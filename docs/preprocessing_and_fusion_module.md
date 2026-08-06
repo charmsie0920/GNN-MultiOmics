@@ -151,14 +151,71 @@ It could be simplified now that `pandas` is installed (its hand-rolled
 XLSX/zip parsing predates having any dependencies available), but that's a
 refactor, not a deletion.
 
+## Fix: `ingest_and_align.py` was buffering unbounded row lists in memory
+
+While preparing to run the script against the real CCLE/GDSC data (ahead of a
+Colab run), a blocking bug surfaced: `load_omics_table` collected every parsed
+row into a Python list before writing any of it to disk. The RNA-seq archive
+alone unpacks to **78.8M rows** — buffering that as a list of dicts measured
+out to **~69GB of RAM** (verified with `tracemalloc` on a 1M-row sample and
+extrapolated), which would `MemoryError` on any local machine or Colab runtime
+before producing a single output file.
+
+Fixed by turning `load_omics_table` into `stream_omics_table`, a generator
+that yields rows one at a time straight into `write_csv` (which already wrote
+incrementally), with `counts_by_model` updated as a side effect during
+iteration instead of a second pass over a materialized list. `main()` was
+reordered so the rnaseq/cnv/mutation streamed writes happen first (populating
+the counts), then `availability_rows`/`response_master_rows` are computed from
+those counts afterward. Verified with `tracemalloc` that memory now stays flat
+(under 1MB) regardless of row count, and cross-checked the full real run in
+the background (see below).
+
+## New: `src/data/build_wide_matrices.py` — the long → wide pivot + proteomics loader
+
+Closes the gap noted below by bridging `ingest_and_align.py`'s long-format
+output to the wide format `OmicsPreprocessingPipeline` expects, without
+modifying `ingest_and_align.py`'s ID-matching logic at all:
+
+- **`pivot_long_to_wide()`** — pivots `rnaseq_aligned.csv` (→ GE, on
+  `rsem_tpm`) and `cnv_aligned.csv` (→ CNV, on `total_copy_number`) from one
+  row per (cell line, gene) into one row per cell line. Duplicate
+  (cell line, gene) rows are averaged (`aggfunc="mean"`) rather than erroring.
+- **`pivot_mutation_presence()`** — mutations can't be pivoted the same way
+  since a cell line can carry several distinct variants in the same gene
+  (multiple rows per (cell line, gene)); collapsed into a binary
+  presence/absence matrix instead (`aggfunc="max"` on a constant 1).
+- **`combine_mutation_and_cnv()`** — column-wise union (`MUT_<gene>` /
+  `CNV_<gene>` prefixes, outer join, missing filled with 0) into the single
+  Mut_CNV matrix the proposal report's §4.1.2 preprocessing step expects.
+- **`load_proteomics_wide()`** — proteomics needed no pivot at all.
+  `Protein_matrix_averaged_20250211.tsv` (inside
+  `data/raw/auxiliary/Proteomics_20250211.zip`) already ships wide (rows =
+  Sanger `model_id`, columns = `uniprot_id`), just with an unusual 3-row
+  header block (uniprot IDs / gene symbols / row-key labels) that needed a
+  bespoke parse.
+
+All three writers share `standard_model_id` (Sanger `SIDM*` IDs) as the join
+key, matching the ID space `ingest_and_align.py` already standardizes on.
+
+**Verified against real data:**
+- CNV: full real pass (not a sample) → `(1507, 785)` wide matrix, plausible
+  copy-number values (2–4 range, i.e. near-diploid to amplified).
+- Proteomics: full real pass → `(948, 8453)` wide matrix, 38.6% missing
+  (as expected for proteomics — this is exactly what the median-imputation
+  step in `OmicsPreprocessingPipeline` exists to handle).
+- Mutations: real 2M-row subset → binary `{0.0, 1.0}` presence matrix,
+  confirmed no other values leak through.
+- GE (RNA-seq, 78.8M rows): validated the streaming fix on a 500K-row real
+  slice; the full real run was kicked off in the background against actual
+  CCLE data as end-to-end confirmation before recommending this for Colab.
+
 ## Explicitly not done in this pass
 
-- **Real data wiring.** `omics_preprocessing.py` has not been connected to
-  `data/processed/aligned/*`. Two things are needed first:
-  1. A long → wide pivot of `ingest_and_align.py`'s output (currently one row
-     per gene per model; `OmicsPreprocessingPipeline` needs one row per model).
-  2. Proteomics ingestion — `ingest_and_align.py` doesn't parse
-     `data/raw/auxiliary/Proteomics_20250211.zip` yet.
+- **Wiring `build_wide_matrices.py`'s output into `OmicsPreprocessingPipeline`
+  end-to-end.** The wide matrices are now produced correctly, but
+  `fit_transform()` hasn't yet been run against them (only against synthetic
+  data so far) — that's the natural next check.
 - **Downstream PyG integration.** The fused `(B, out_dim)` embedding is meant
   to bind into heterogeneous graph node features (per the task's stated
   purpose), but no PyTorch Geometric graph-construction code was touched —

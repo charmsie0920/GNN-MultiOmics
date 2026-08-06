@@ -327,11 +327,19 @@ def load_gdsc_responses(xlsx_path: Path, by_sanger: Dict[str, CrosswalkRecord]) 
     return aligned_rows, dict(missing)
 
 
-def load_omics_table(zip_path: Path, source_name: str, record_type: str) -> Tuple[List[Dict[str, str]], Dict[str, int]]:
-    """Normalize a zipped omics CSV to shared model identifiers."""
+def stream_omics_table(
+    zip_path: Path, source_name: str, record_type: str, counts_by_model: Dict[str, int]
+) -> Iterator[Dict[str, str]]:
+    """Stream a zipped omics CSV row by row, normalizing model identifiers.
 
-    aligned_rows: List[Dict[str, str]] = []
-    counts_by_model: Dict[str, int] = defaultdict(int)
+    Yields rows instead of collecting them so callers (i.e. `write_csv`) can stream
+    straight to disk. The RNA-seq archive alone unpacks to ~79M rows; materializing
+    that as a list of dicts before writing needs on the order of 70GB of RAM, which
+    reliably OOMs both local machines and Colab. `counts_by_model` is mutated as a
+    side effect during iteration so the caller can still get per-model row counts
+    without a second, memory-heavy pass.
+    """
+
     for row in read_csv_from_zip(zip_path):
         standard_model_id = strip_value(row.get("model_id"))
         counts_by_model[normalize_key(standard_model_id)] += 1
@@ -394,9 +402,7 @@ def load_omics_table(zip_path: Path, source_name: str, record_type: str) -> Tupl
                     "found_in_matched_tumour": strip_value(row.get("found_in_matched_tumour")),
                 }
             )
-        aligned_rows.append(base_row)
-
-    return aligned_rows, dict(counts_by_model)
+        yield base_row
 
 
 def load_string_summary(path: Path) -> Dict[str, str]:
@@ -479,14 +485,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     crosswalk_records, by_sanger, _by_depmap = load_model_crosswalk(MODEL_LIST_PATH, CELL_LINES_PATH)
-
     response_rows, missing_responses = load_gdsc_responses(GDSC_XLSX_PATH, by_sanger)
-    rnaseq_rows, rnaseq_counts = load_omics_table(RNASEQ_ZIP_PATH, "rnaseq_all_20260323", "rnaseq")
-    cnv_rows, cnv_counts = load_omics_table(CNV_ZIP_PATH, "cnv_summary_20260316", "cnv")
-    mutation_rows, mutation_counts = load_omics_table(MUTATIONS_ZIP_PATH, "mutations_all_20260724", "mutation")
-
-    availability_rows = summarize_availability(crosswalk_records, rnaseq_counts, cnv_counts, mutation_counts)
-    response_master_rows = build_response_master(response_rows, availability_rows)
 
     model_crosswalk_path = output_dir / "model_crosswalk.csv"
     response_master_path = output_dir / "gdsc2_response_master.csv"
@@ -515,6 +514,84 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ),
         ["sanger_model_id", "depmap_id", "cell_line_name", "broad_id", "ccle_id", "cosmic_id", "rrid", "tissue", "cancer_type"],
     )
+
+    # Stream each omics archive straight to disk row by row (rnaseq alone is ~79M
+    # rows; collecting it into a list first needs ~70GB of RAM and reliably OOMs).
+    # counts_by_model is filled in as a side effect of the streamed write.
+    rnaseq_counts: Dict[str, int] = defaultdict(int)
+    rnaseq_row_count = write_csv(
+        rnaseq_path,
+        stream_omics_table(RNASEQ_ZIP_PATH, "rnaseq_all_20260323", "rnaseq", rnaseq_counts),
+        [
+            "record_type",
+            "source_name",
+            "standard_model_id",
+            "depmap_id",
+            "model_name",
+            "dataset_id",
+            "gene_id",
+            "gene_symbol",
+            "ensembl_gene_id",
+            "htseq_read_count",
+            "rsem_expected_count",
+            "rsem_fpkm",
+            "rsem_tpm",
+            "htseq_fpkm",
+            "data_source",
+            "duplicate",
+        ],
+    )
+    cnv_counts: Dict[str, int] = defaultdict(int)
+    cnv_row_count = write_csv(
+        cnv_path,
+        stream_omics_table(CNV_ZIP_PATH, "cnv_summary_20260316", "cnv", cnv_counts),
+        [
+            "record_type",
+            "source_name",
+            "standard_model_id",
+            "depmap_id",
+            "model_name",
+            "symbol",
+            "gene_id",
+            "total_copy_number",
+            "cn_category",
+            "data_type",
+            "source",
+        ],
+    )
+    mutation_counts: Dict[str, int] = defaultdict(int)
+    mutation_row_count = write_csv(
+        mutation_path,
+        stream_omics_table(MUTATIONS_ZIP_PATH, "mutations_all_20260724", "mutation", mutation_counts),
+        [
+            "record_type",
+            "source_name",
+            "standard_model_id",
+            "depmap_id",
+            "model_name",
+            "gene_symbol",
+            "ensembl_gene_id",
+            "transcript_id",
+            "protein_mutation",
+            "rna_mutation",
+            "cdna_mutation",
+            "chromosome",
+            "position",
+            "reference",
+            "alternative",
+            "cancer_driver",
+            "cancer_predisposition_variant",
+            "effect",
+            "vaf",
+            "coding",
+            "source",
+            "gene_id",
+            "found_in_matched_tumour",
+        ],
+    )
+
+    availability_rows = summarize_availability(crosswalk_records, dict(rnaseq_counts), dict(cnv_counts), dict(mutation_counts))
+    response_master_rows = build_response_master(response_rows, availability_rows)
 
     response_fields = [
         "record_type",
@@ -550,74 +627,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     write_csv(response_master_path, response_master_rows, response_fields)
 
     write_csv(
-        rnaseq_path,
-        rnaseq_rows,
-        [
-            "record_type",
-            "source_name",
-            "standard_model_id",
-            "depmap_id",
-            "model_name",
-            "dataset_id",
-            "gene_id",
-            "gene_symbol",
-            "ensembl_gene_id",
-            "htseq_read_count",
-            "rsem_expected_count",
-            "rsem_fpkm",
-            "rsem_tpm",
-            "htseq_fpkm",
-            "data_source",
-            "duplicate",
-        ],
-    )
-    write_csv(
-        cnv_path,
-        cnv_rows,
-        [
-            "record_type",
-            "source_name",
-            "standard_model_id",
-            "depmap_id",
-            "model_name",
-            "symbol",
-            "gene_id",
-            "total_copy_number",
-            "cn_category",
-            "data_type",
-            "source",
-        ],
-    )
-    write_csv(
-        mutation_path,
-        mutation_rows,
-        [
-            "record_type",
-            "source_name",
-            "standard_model_id",
-            "depmap_id",
-            "model_name",
-            "gene_symbol",
-            "ensembl_gene_id",
-            "transcript_id",
-            "protein_mutation",
-            "rna_mutation",
-            "cdna_mutation",
-            "chromosome",
-            "position",
-            "reference",
-            "alternative",
-            "cancer_driver",
-            "cancer_predisposition_variant",
-            "effect",
-            "vaf",
-            "coding",
-            "source",
-            "gene_id",
-            "found_in_matched_tumour",
-        ],
-    )
-    write_csv(
         availability_path,
         availability_rows,
         ["sanger_model_id", "depmap_id", "cell_line_name", "rnaseq_rows", "cnv_rows", "mutation_rows"],
@@ -639,9 +648,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "row_counts": {
             "model_crosswalk": len(crosswalk_records),
             "gdsc2_response_master": len(response_master_rows),
-            "rnaseq_aligned": len(rnaseq_rows),
-            "cnv_aligned": len(cnv_rows),
-            "mutations_aligned": len(mutation_rows),
+            "rnaseq_aligned": rnaseq_row_count,
+            "cnv_aligned": cnv_row_count,
+            "mutations_aligned": mutation_row_count,
             "omics_availability_by_model": len(availability_rows),
         },
         "missing_gdsc_model_ids": missing_responses,

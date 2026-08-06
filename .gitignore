@@ -4,6 +4,9 @@ data/raw/*
 # Keep the folder structure but ignore the content
 !data/raw/.gitkeep
 
+# Ignore generated intermediate/processed data (aligned CSVs, wide matrices)
+data/processed/*
+
 # --- Trained model artifacts ---
 models/
 
