@@ -50,7 +50,11 @@ def pivot_long_to_wide(path: Path, columns_col: str, value_col: str) -> pd.DataF
         usecols=[INDEX_COL, columns_col, value_col],
         dtype={INDEX_COL: "category", columns_col: "category"},
     )
-    df = df[(df[INDEX_COL].astype(str) != "") & (df[columns_col].astype(str) != "")]
+    # Compare directly against the categorical (not `.astype(str)`, which would
+    # materialize a full object-dtype column and defeat the memory savings of
+    # `dtype="category"` at tens of millions of rows).
+    df = df.dropna(subset=[INDEX_COL, columns_col])
+    df = df[(df[INDEX_COL] != "") & (df[columns_col] != "")]
     df[value_col] = pd.to_numeric(df[value_col], errors="coerce")
     wide = df.pivot_table(index=INDEX_COL, columns=columns_col, values=value_col, aggfunc="mean")
     return wide.astype(np.float32)
@@ -59,7 +63,8 @@ def pivot_long_to_wide(path: Path, columns_col: str, value_col: str) -> pd.DataF
 def pivot_mutation_presence(path: Path, columns_col: str = "gene_symbol") -> pd.DataFrame:
     """Pivot mutation call rows into a binary (cell line x gene) presence matrix."""
     df = pd.read_csv(path, usecols=[INDEX_COL, columns_col], dtype={INDEX_COL: "category", columns_col: "category"})
-    df = df[(df[INDEX_COL].astype(str) != "") & (df[columns_col].astype(str) != "")]
+    df = df.dropna(subset=[INDEX_COL, columns_col])
+    df = df[(df[INDEX_COL] != "") & (df[columns_col] != "")]
     df["present"] = np.float32(1.0)
     wide = df.pivot_table(index=INDEX_COL, columns=columns_col, values="present", aggfunc="max", fill_value=0.0)
     return wide.astype(np.float32)
