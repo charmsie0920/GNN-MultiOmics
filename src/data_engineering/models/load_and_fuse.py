@@ -105,9 +105,9 @@ def main() -> None:
     print(f"Within {budget_gb:.0f} GB budget: {n_bytes / 1024**3 < budget_gb}")
 
     # Optional: cache as .npy so downstream runs skip CSV parsing entirely.
-    # np.save(DATA_DIR / "fused_early.npy", X)
-    # pd.Series(feature_names).to_csv(DATA_DIR / "fused_feature_names.csv", index=False, header=False)
-    # cell_lines.to_series().to_csv(DATA_DIR / "fused_cell_lines.csv", index=False, header=False)
+    np.save(DATA_DIR / "fused_early.npy", X)
+    pd.Series(feature_names).to_csv(DATA_DIR / "fused_feature_names.csv", index=False, header=False)
+    cell_lines.to_series().to_csv(DATA_DIR / "fused_cell_lines.csv", index=False, header=False)
 
 
 if __name__ == "__main__":
