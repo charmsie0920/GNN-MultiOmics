@@ -1,23 +1,10 @@
 """
 02_rf_baseline.py — Random Forest baseline for continuous IC50 prediction.
-
-Design:
-  X (from 01 early fusion) is per CELL LINE. y is per (CELL LINE, DRUG) pair.
-  Each pair row = [cell-line omics PCs | one-hot drug indicator].
-
-  Splits are grouped by cell line (GroupShuffleSplit), so no cell line appears
-  in more than one split. A plain row-level shuffle would put the same omics
-  profile in both train and test and inflate the reported scores.
-
-Memory:
-  Everything stays float32. The dominant cost is usually the fitted forest,
-  not the design matrix -- see MIN_SAMPLES_LEAF below.
 """
 
 from __future__ import annotations
 
 import platform
-import resource
 import time
 from pathlib import Path
 
@@ -28,54 +15,64 @@ from sklearn.model_selection import GroupShuffleSplit
 
 # --- config ---------------------------------------------------------------
 DATA_DIR = Path("data/processed")
+ALIGNED_DIR = Path("data/processed/aligned")
 
-FUSED_NPY = DATA_DIR / "fused_early.npy"          # written by 01 (uncomment its save block)
+FUSED_NPY = DATA_DIR / "fused_early.npy"          
 FUSED_IDS = DATA_DIR / "fused_cell_lines.csv"
-TARGET_CSV = DATA_DIR / "ic50.csv"
+TARGET_CSV = ALIGNED_DIR / "gdsc2_response_master.csv" 
 
-COL_CELL_LINE = "cell_line"
-COL_DRUG = "drug"
-COL_TARGET = "ic50"
+# FIX: Point to the Sanger ID column to match the omics data index
+COL_CELL_LINE = "sanger_model_id"
+COL_DRUG = "drug_id"
+COL_TARGET = "ln_ic50"
+
 
 TEST_FRAC = 0.15
 VAL_FRAC = 0.15
-RANDOM_STATE = 42
+RANDOM_STATE = None
 
 N_ESTIMATORS = 100
-# Main memory lever. Fully-grown trees on ~250k rows cost roughly 30 MB each,
-# so 100 of them approach ~3 GB. leaf>=5 typically cuts node count several-fold
-# with little accuracy loss on this kind of data. Raise it if RSS runs hot.
 MIN_SAMPLES_LEAF = 5
 MAX_FEATURES = "sqrt"
-N_JOBS = -1  # sklearn uses the threading backend for forests -> X is not copied per worker
+N_JOBS = -1  
 DTYPE = np.float32
 # --------------------------------------------------------------------------
 
 
 def peak_rss_gb() -> float:
-    """Peak resident set size. ru_maxrss is KB on Linux, bytes on macOS."""
+    """Peak resident set size. Returns 0.0 on Windows to prevent crashes."""
+    if platform.system() == "Windows":
+        return 0.0
+    
+    import resource
     raw = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return raw / 1024**3 if platform.system() == "Darwin" else raw / 1024**2
 
 
 def load_features() -> tuple[np.ndarray, pd.Index]:
-    """Load the fused matrix from cache, else rebuild it via the 01 script."""
-    if FUSED_NPY.exists() and FUSED_IDS.exists():
-        X = np.load(FUSED_NPY, mmap_mode=None).astype(DTYPE, copy=False)
-        ids = pd.Index(pd.read_csv(FUSED_IDS, header=None).iloc[:, 0].astype(str))
-        print(f"[features] loaded cache {FUSED_NPY.name} {X.shape}")
-    else:
-        from load_and_fuse import MODALITIES, fuse
-
-        print("[features] no cache found -> rebuilding via load_and_fuse.fuse()")
-        X, ids, _ = fuse(MODALITIES)
-        ids = pd.Index(ids.astype(str))
+    """Load the fused matrix from cache."""
+    if not (FUSED_NPY.exists() and FUSED_IDS.exists()):
+        raise FileNotFoundError(
+            f"Missing {FUSED_NPY.name} or {FUSED_IDS.name}. "
+            "Please run load_and_fuse.py first to generate these files."
+        )
+        
+    X = np.load(FUSED_NPY, mmap_mode=None).astype(DTYPE, copy=False)
+    ids = pd.Index(pd.read_csv(FUSED_IDS, header=None).iloc[:, 0].astype(str))
+    print(f"[features] loaded cache {FUSED_NPY.name} {X.shape}")
+    
     if len(ids) != X.shape[0]:
         raise ValueError(f"ID count {len(ids)} != feature rows {X.shape[0]}")
     return X, ids
 
 
 def load_targets(valid_ids: pd.Index) -> pd.DataFrame:
+    if not TARGET_CSV.exists():
+        raise FileNotFoundError(
+            f"Missing target file at {TARGET_CSV}. "
+            "Ensure the DE pipeline (ingest_and_align.py) has been run."
+        )
+
     y = pd.read_csv(TARGET_CSV, usecols=[COL_CELL_LINE, COL_DRUG, COL_TARGET])
     n_raw = len(y)
 
@@ -126,7 +123,7 @@ def build_pair_matrix(
 
 
 def grouped_split(groups: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """70/15/15 by cell line. Two-stage: hold out 30%, then halve it."""
+    """70/15/15 by cell line."""
     holdout = VAL_FRAC + TEST_FRAC
     gss1 = GroupShuffleSplit(n_splits=1, test_size=holdout, random_state=RANDOM_STATE)
     train_idx, rest_idx = next(gss1.split(np.zeros(len(groups)), groups=groups))
@@ -183,7 +180,6 @@ def main() -> None:
     test_rmse, test_pcc = evaluate(y[test_idx], model.predict(X[test_idx]))
     t_pred = time.perf_counter() - t2
 
-    # Baseline floor: predicting the training mean for everything.
     base_rmse = float(np.sqrt(np.mean((y[test_idx] - y[train_idx].mean()) ** 2)))
 
     print("\n" + "=" * 58)
@@ -192,7 +188,7 @@ def main() -> None:
     print(f"{'':<12}{'RMSE':>10}{'PCC':>10}")
     print(f"{'Validation':<12}{val_rmse:>10.4f}{val_pcc:>10.4f}")
     print(f"{'Test':<12}{test_rmse:>10.4f}{test_pcc:>10.4f}")
-    print(f"{'Mean-only':<12}{base_rmse:>10.4f}{'--':>10}   <- floor to beat")
+    print(f"{'Mean-only':<12}{base_rmse:>10.4f}{'--':>10} ")
     print("-" * 58)
     print(f"n_estimators={N_ESTIMATORS}  min_samples_leaf={MIN_SAMPLES_LEAF}  "
           f"max_features={MAX_FEATURES}")
