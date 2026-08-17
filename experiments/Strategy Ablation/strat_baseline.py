@@ -1,11 +1,12 @@
 """
-TransGen_Baseline.py — Random Forest baseline for continuous IC50 prediction,
-run separately per omics modality (Genomics, then Transcriptomics) instead of
-early-fusing them. Reports RMSE, PCC, AUC, and F1 for each modality, followed
-by a combined comparison table.
+strat_baseline.py — Late Fusion Ensemble Random Forest for continuous IC50
+prediction. Trains three specialized RF models in isolation (Genomics,
+Transcriptomics, Proteomics), then combines their predictions at inference
+time via a validation-RMSE-weighted average. Tests whether three specialized
+models beat the single early-fused Control model (rf_baseline.py, RMSE 2.19).
 
 Run from the repository root:
-    python "experiments/Transcriptomics & Genomics/TransGen_Baseline.py"
+    python "experiments/Strategy Ablation/strat_baseline.py"
 """
 
 from __future__ import annotations
@@ -26,10 +27,11 @@ ALIGNED_DIR = Path("data/processed/aligned")
 
 TARGET_CSV = ALIGNED_DIR / "gdsc2_response_master.csv"
 
-# Single-omics baselines (no early fusion): run RF once per modality.
-SINGLE_OMICS = {
+# Late fusion ensemble: train one RF per modality in isolation, then average.
+ALL_OMICS = {
     "Genomics": DATA_DIR / "genomics_pca.csv",
     "Transcriptomics": DATA_DIR / "transcriptomics_pca.csv",
+    "Proteomics": DATA_DIR / "proteomics_pca.csv",
 }
 
 COL_CELL_LINE = "sanger_model_id"
@@ -168,17 +170,42 @@ def evaluate(
     return rmse, pcc, auc, f1
 
 
-def run_omics(omics_name: str, path: Path, threshold: float) -> dict:
-    """Full prep + train + evaluate cycle for a single omics modality."""
+def compute_shared_threshold() -> float:
+    """Median ln_ic50 over all target rows, used as a fixed cutoff for every model."""
+    y_all = pd.read_csv(TARGET_CSV, usecols=[COL_TARGET])
+    y_all[COL_TARGET] = pd.to_numeric(y_all[COL_TARGET], errors="coerce")
+    threshold = float(y_all[COL_TARGET].median(skipna=True))
+    print(f"[threshold] median ln_ic50 across all targets = {threshold:.4f}")
+    return threshold
+
+
+def print_block(title: str, val_metrics: tuple, test_metrics: tuple,
+                 mean_only_rmse: float | None, extra_lines: list[str]) -> None:
+    val_rmse, val_pcc, val_auc, val_f1 = val_metrics
+    test_rmse, test_pcc, test_auc, test_f1 = test_metrics
+
+    print("\n" + "=" * 68)
+    print(title)
+    print("=" * 68)
+    print(f"{'':<12}{'RMSE':>10}{'PCC':>10}{'AUC':>10}{'F1':>10}")
+    print(f"{'Validation':<12}{val_rmse:>10.4f}{val_pcc:>10.4f}{val_auc:>10.4f}{val_f1:>10.4f}")
+    print(f"{'Test':<12}{test_rmse:>10.4f}{test_pcc:>10.4f}{test_auc:>10.4f}{test_f1:>10.4f}")
+    if mean_only_rmse is not None:
+        print(f"{'Mean-only':<12}{mean_only_rmse:>10.4f}{'--':>10}{'--':>10}{'--':>10}")
+    print("-" * 68)
+    for line in extra_lines:
+        print(line)
+    print("=" * 68)
+
+
+def train_omics_model(
+    omics_name: str, X_cell: np.ndarray, cell_ids: pd.Index, y_df: pd.DataFrame,
+    train_idx: np.ndarray, val_idx: np.ndarray, test_idx: np.ndarray, threshold: float,
+) -> dict:
+    """Fit one specialized RF on a single omics block, using the shared split."""
     t0 = time.perf_counter()
 
-    X_cell, cell_ids = load_single_omics_features(path)
-    y_df = load_targets(cell_ids)
-    X, y, groups, _ = build_pair_matrix(X_cell, cell_ids, y_df)
-    del X_cell
-
-    train_idx, val_idx, test_idx = grouped_split(groups)
-    t_prep = time.perf_counter() - t0
+    X, y, _, _ = build_pair_matrix(X_cell, cell_ids, y_df)
 
     model = RandomForestRegressor(
         n_estimators=N_ESTIMATORS,
@@ -195,61 +222,82 @@ def run_omics(omics_name: str, path: Path, threshold: float) -> dict:
     t2 = time.perf_counter()
     val_pred = model.predict(X[val_idx])
     test_pred = model.predict(X[test_idx])
-    val_rmse, val_pcc, val_auc, val_f1 = evaluate(y[val_idx], val_pred, threshold)
-    test_rmse, test_pcc, test_auc, test_f1 = evaluate(y[test_idx], test_pred, threshold)
+    val_metrics = evaluate(y[val_idx], val_pred, threshold)
+    test_metrics = evaluate(y[test_idx], test_pred, threshold)
     t_pred = time.perf_counter() - t2
 
     mean_only_rmse = float(np.sqrt(np.mean((y[test_idx] - y[train_idx].mean()) ** 2)))
 
-    header = f"RANDOM FOREST BASELINE — {omics_name.upper()} — IC50 REGRESSION"
-    print("\n" + "=" * 68)
-    print(header)
-    print("=" * 68)
-    print(f"{'':<12}{'RMSE':>10}{'PCC':>10}{'AUC':>10}{'F1':>10}")
-    print(f"{'Validation':<12}{val_rmse:>10.4f}{val_pcc:>10.4f}{val_auc:>10.4f}{val_f1:>10.4f}")
-    print(f"{'Test':<12}{test_rmse:>10.4f}{test_pcc:>10.4f}{test_auc:>10.4f}{test_f1:>10.4f}")
-    print(f"{'Mean-only':<12}{mean_only_rmse:>10.4f}{'--':>10}{'--':>10}{'--':>10}")
-    print("-" * 68)
-    print(f"n_estimators={N_ESTIMATORS}  min_samples_leaf={MIN_SAMPLES_LEAF}  "
-          f"max_features={MAX_FEATURES}")
-    print(f"Prep {t_prep:.1f}s | Fit {t_fit:.1f}s | Predict {t_pred:.1f}s | "
-          f"Total {time.perf_counter() - t0:.1f}s")
-    print(f"Peak RSS: {peak_rss_gb():.2f} GB")
-    print("=" * 68)
+    print_block(
+        f"RANDOM FOREST — {omics_name.upper()} (ISOLATED) — IC50 REGRESSION",
+        val_metrics, test_metrics, mean_only_rmse,
+        [
+            f"n_estimators={N_ESTIMATORS}  min_samples_leaf={MIN_SAMPLES_LEAF}  "
+            f"max_features={MAX_FEATURES}",
+            f"Fit {t_fit:.1f}s | Predict {t_pred:.1f}s | Total {time.perf_counter() - t0:.1f}s "
+            f"| Peak RSS: {peak_rss_gb():.2f} GB",
+        ],
+    )
 
     return {
         "omics": omics_name,
-        "val_rmse": val_rmse, "val_pcc": val_pcc, "val_auc": val_auc, "val_f1": val_f1,
-        "test_rmse": test_rmse, "test_pcc": test_pcc, "test_auc": test_auc, "test_f1": test_f1,
+        "val_rmse": val_metrics[0], "val_pcc": val_metrics[1],
+        "val_auc": val_metrics[2], "val_f1": val_metrics[3],
+        "test_rmse": test_metrics[0], "test_pcc": test_metrics[1],
+        "test_auc": test_metrics[2], "test_f1": test_metrics[3],
         "mean_only_rmse": mean_only_rmse,
+        "val_pred": val_pred, "test_pred": test_pred,
     }
 
 
-def compute_shared_threshold() -> float:
-    """Median ln_ic50 over all target rows, used as a fixed cutoff for every omics run."""
-    y_all = pd.read_csv(TARGET_CSV, usecols=[COL_TARGET])
-    y_all[COL_TARGET] = pd.to_numeric(y_all[COL_TARGET], errors="coerce")
-    threshold = float(y_all[COL_TARGET].median(skipna=True))
-    print(f"[threshold] median ln_ic50 across all targets = {threshold:.4f}")
-    return threshold
+def run_ensemble(model_results: list[dict], y: np.ndarray,
+                  val_idx: np.ndarray, test_idx: np.ndarray, threshold: float) -> dict:
+    """Combine per-model predictions via a validation-RMSE-weighted average."""
+    inv_rmse = np.array([1.0 / r["val_rmse"] for r in model_results])
+    weights = inv_rmse / inv_rmse.sum()
+
+    val_pred = sum(w * r["val_pred"] for w, r in zip(weights, model_results))
+    test_pred = sum(w * r["test_pred"] for w, r in zip(weights, model_results))
+
+    val_metrics = evaluate(y[val_idx], val_pred, threshold)
+    test_metrics = evaluate(y[test_idx], test_pred, threshold)
+
+    weight_line = "Weights: " + "  ".join(
+        f"{r['omics']}={w:.3f}" for r, w in zip(model_results, weights)
+    )
+
+    print_block(
+        "LATE FUSION ENSEMBLE (VALIDATION-RMSE-WEIGHTED AVG) — IC50 REGRESSION",
+        val_metrics, test_metrics, None, [weight_line],
+    )
+
+    return {
+        "omics": "Ensemble (weighted)",
+        "val_rmse": val_metrics[0], "val_pcc": val_metrics[1],
+        "val_auc": val_metrics[2], "val_f1": val_metrics[3],
+        "test_rmse": test_metrics[0], "test_pcc": test_metrics[1],
+        "test_auc": test_metrics[2], "test_f1": test_metrics[3],
+        "mean_only_rmse": float("nan"),
+    }
 
 
 def print_summary(results: list[dict]) -> None:
     print("\n" + "=" * 100)
-    print("SUMMARY — SINGLE-OMICS COMPARISON")
+    print("SUMMARY — LATE FUSION ENSEMBLE ABLATION")
     print("=" * 100)
     header = (
-        f"{'Omics':<14}{'Val RMSE':>10}{'Val PCC':>10}{'Val AUC':>10}{'Val F1':>9}"
+        f"{'Model':<20}{'Val RMSE':>10}{'Val PCC':>10}{'Val AUC':>10}{'Val F1':>9}"
         f"{'Test RMSE':>11}{'Test PCC':>10}{'Test AUC':>10}{'Test F1':>9}{'Mean RMSE':>11}"
     )
     print(header)
     print("-" * 100)
     for r in results:
+        mean_rmse_str = f"{r['mean_only_rmse']:>11.4f}" if not np.isnan(r["mean_only_rmse"]) else f"{'--':>11}"
         print(
-            f"{r['omics']:<14}{r['val_rmse']:>10.4f}{r['val_pcc']:>10.4f}"
+            f"{r['omics']:<20}{r['val_rmse']:>10.4f}{r['val_pcc']:>10.4f}"
             f"{r['val_auc']:>10.4f}{r['val_f1']:>9.4f}"
             f"{r['test_rmse']:>11.4f}{r['test_pcc']:>10.4f}"
-            f"{r['test_auc']:>10.4f}{r['test_f1']:>9.4f}{r['mean_only_rmse']:>11.4f}"
+            f"{r['test_auc']:>10.4f}{r['test_f1']:>9.4f}{mean_rmse_str}"
         )
     print("=" * 100)
 
@@ -257,11 +305,38 @@ def print_summary(results: list[dict]) -> None:
 def main() -> None:
     threshold = compute_shared_threshold()
 
-    results = []
-    for omics_name, path in SINGLE_OMICS.items():
-        results.append(run_omics(omics_name, path, threshold))
+    # Load all three omics blocks and find the cell lines common to all of them,
+    # so every model trains/evaluates on the exact same (cell_line, drug) pairs.
+    omics_blocks = {name: load_single_omics_features(path) for name, path in ALL_OMICS.items()}
+    shared_ids = None
+    for _, ids in omics_blocks.values():
+        shared_ids = ids if shared_ids is None else shared_ids.intersection(ids)
+    print(f"[shared] {len(shared_ids)} cell lines common to all {len(ALL_OMICS)} omics")
 
-    print_summary(results)
+    y_df = load_targets(shared_ids)
+
+    # Shared split: build one omics' pair matrix just to get the shared `groups`
+    # array (identical across omics since y_df/order is fixed), split once.
+    first_name = next(iter(omics_blocks))
+    X_first, ids_first = omics_blocks[first_name]
+    _, y_shared, groups, _ = build_pair_matrix(X_first, ids_first, y_df)
+    train_idx, val_idx, test_idx = grouped_split(groups)
+
+    model_results = []
+    for omics_name, (X_cell, cell_ids) in omics_blocks.items():
+        model_results.append(
+            train_omics_model(
+                omics_name, X_cell, cell_ids, y_df,
+                train_idx, val_idx, test_idx, threshold,
+            )
+        )
+
+    ensemble_result = run_ensemble(model_results, y_shared, val_idx, test_idx, threshold)
+
+    for r in model_results:
+        del r["val_pred"], r["test_pred"]
+
+    print_summary(model_results + [ensemble_result])
 
 
 if __name__ == "__main__":
