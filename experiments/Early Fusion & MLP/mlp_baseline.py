@@ -159,10 +159,13 @@ def grouped_split(groups: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarra
     return train_idx, val_idx, test_idx
 
 
-def evaluate(y_true: np.ndarray, y_pred: np.ndarray) -> tuple[float, float]:
+def evaluate(y_true: np.ndarray, y_pred: np.ndarray) -> tuple[float, float, float]:
     rmse = float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
     pcc = float(np.corrcoef(y_true, y_pred)[0, 1]) if np.std(y_pred) > 0 else float("nan")
-    return rmse, pcc
+    ss_res = np.sum((y_true - y_pred) ** 2)
+    ss_tot = np.sum((y_true - y_true.mean()) ** 2)
+    r2 = float(1 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
+    return rmse, pcc, r2
 
 
 class MLPRegressor(nn.Module):
@@ -235,7 +238,7 @@ def train(
         train_loss /= len(train_loader.dataset)
 
         val_pred = predict(model, X_val, device, BATCH_SIZE)
-        val_rmse, val_pcc = evaluate(y_val, val_pred)
+        val_rmse, val_pcc, val_r2 = evaluate(y_val, val_pred)
         scheduler.step(val_rmse)
 
         improved = val_rmse < best_val_rmse - 1e-4
@@ -250,7 +253,7 @@ def train(
         if epoch == 1 or epoch % 5 == 0 or improved:
             marker = " *" if improved else ""
             print(f"[epoch {epoch:>3}] train_loss={train_loss:.4f}  "
-                  f"val_rmse={val_rmse:.4f}  val_pcc={val_pcc:.4f}{marker}")
+                  f"val_rmse={val_rmse:.4f}  val_pcc={val_pcc:.4f}  val_r2={val_r2:.4f}{marker}")
 
         if epochs_since_improve >= PATIENCE:
             print(f"[early stop] no val improvement for {PATIENCE} epochs "
@@ -285,8 +288,8 @@ def main() -> None:
     t_fit = time.perf_counter() - t1
 
     t2 = time.perf_counter()
-    val_rmse, val_pcc = evaluate(y[val_idx], predict(model, X[val_idx], device, BATCH_SIZE))
-    test_rmse, test_pcc = evaluate(y[test_idx], predict(model, X[test_idx], device, BATCH_SIZE))
+    val_rmse, val_pcc, val_r2 = evaluate(y[val_idx], predict(model, X[val_idx], device, BATCH_SIZE))
+    test_rmse, test_pcc, test_r2 = evaluate(y[test_idx], predict(model, X[test_idx], device, BATCH_SIZE))
     t_pred = time.perf_counter() - t2
 
     base_rmse = float(np.sqrt(np.mean((y[test_idx] - y[train_idx].mean()) ** 2)))
@@ -294,10 +297,10 @@ def main() -> None:
     print("\n" + "=" * 58)
     print("MLP BASELINE — IC50 REGRESSION")
     print("=" * 58)
-    print(f"{'':<12}{'RMSE':>10}{'PCC':>10}")
-    print(f"{'Validation':<12}{val_rmse:>10.4f}{val_pcc:>10.4f}")
-    print(f"{'Test':<12}{test_rmse:>10.4f}{test_pcc:>10.4f}")
-    print(f"{'Mean-only':<12}{base_rmse:>10.4f}{'--':>10} ")
+    print(f"{'':<12}{'RMSE':>10}{'PCC':>10}{'R^2':>10}")
+    print(f"{'Validation':<12}{val_rmse:>10.4f}{val_pcc:>10.4f}{val_r2:>10.4f}")
+    print(f"{'Test':<12}{test_rmse:>10.4f}{test_pcc:>10.4f}{test_r2:>10.4f}")
+    print(f"{'Mean-only':<12}{base_rmse:>10.4f}{'--':>10}{'--':>10} ")
     print("-" * 58)
     print(f"hidden_dims={HIDDEN_DIMS}  dropout={DROPOUT}  lr={LR}  "
           f"weight_decay={WEIGHT_DECAY}  batch_size={BATCH_SIZE}")
