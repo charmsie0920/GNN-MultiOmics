@@ -45,14 +45,16 @@ request to scope this script to graph construction only.
 
 ## 1. `src/data/fetch_drug_smiles.py`
 
-- Reads `data/raw/gdsc/screened_compounds_rel_8.5.csv` (`DRUG_ID, DRUG_NAME, TARGET`), dedupes on `DRUG_ID`.
-- For each drug, queries PubChem PUG REST
+- Reads `data/raw/gdsc/screened_compounds_rel_8.5.csv` (`DRUG_ID, DRUG_NAME, TARGET`).
+- Builds the PubChem query set from unique `DRUG_NAME` values (542 of 621 rows), not `DRUG_ID` — 71 drug names are shared by two different `DRUG_ID`s in GDSC (e.g. `Erlotinib` → IDs `1` and `1168`; re-screened at different sites/releases), so deduping on `DRUG_ID` would issue redundant PubChem queries for compounds already resolved.
+- For each unique drug name, queries PubChem PUG REST
   (`.../compound/name/{drug_name}/property/CanonicalSMILES/JSON`), with:
   - Rate limiting (PubChem's documented ~5 req/s ceiling).
   - A synonym fallback: if `DRUG_NAME` fails, retry with each entry in `SYNONYMS`.
-  - Resumability: skip drugs already present in the output CSV so re-running after a partial failure doesn't re-hit the API.
-- Output: `data/raw/pubchem/gdsc_drug_smiles.csv` (`drug_id, drug_name, canonical_smiles, pubchem_cid`).
-- Final `print()`: rows attempted, rows resolved, rows unresolved (with drug names logged), and the output file's size on disk — directly answers the user's "let me know how big the raw data would be" ask.
+  - Resumability: skip *names* already present in the query cache so re-running after a partial failure doesn't re-hit the API.
+- After resolving each unique name, fan the result (SMILES, CID) out to every `DRUG_ID` sharing that name, so the output CSV still has one row per `DRUG_ID` (matching the drug graph node design in section 3, which needs one node per `DRUG_ID` to later join GDSC's IC50 labels) while PubChem is only queried once per distinct compound.
+- Output: `data/raw/pubchem/gdsc_drug_smiles.csv` (`drug_id, drug_name, canonical_smiles, pubchem_cid`) — 621 rows, ≤542 distinct SMILES values.
+- Final `print()`: unique names attempted, names resolved/unresolved (with names logged), total output rows, and the output file's size on disk — directly answers the user's "let me know how big the raw data would be" ask.
 
 ## 2. `src/data/fetch_string_aliases.py`
 
