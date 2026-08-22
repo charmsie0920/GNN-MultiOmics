@@ -7,9 +7,6 @@ data/raw/*
 # Ignore generated intermediate/processed data (aligned CSVs, wide matrices)
 data/processed/*
 
-# --- Trained model artifacts ---
-models/
-
 # --- Python Junk ---
 __pycache__/
 *.py[cod]
