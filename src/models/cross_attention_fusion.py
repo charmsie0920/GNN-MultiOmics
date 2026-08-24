@@ -16,7 +16,7 @@ distribution.
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import torch
 import torch.nn as nn
@@ -42,11 +42,31 @@ class PairwiseCrossAttention(nn.Module):
 
 
 class MultiOmicsCrossAttentionFusion(nn.Module):
-    """Fuses GE, Mut_CNV, and Proteomics embeddings into one cell-line vector."""
+    """Fuses an arbitrary subset (>=2) of omics modality embeddings into one cell-line vector.
 
-    def __init__(self, d_model: int = 128, num_heads: int = 4, out_dim: int = 256, dropout: float = 0.2):
+    Defaults to all 3 modalities (GE, Mut_CNV, Proteomics) for backward
+    compatibility with existing callers. Pass `modalities` explicitly to
+    fuse a 2-of-3 subset (needed by the omics-ablation experiment matrix,
+    docs/plan/experiment_matrix_plan.md) -- `self.pairs` and `output_proj`'s
+    input width are both derived from the given list, so a 2-modality call
+    builds 2 pairwise-attention blocks instead of 6.
+    """
+
+    def __init__(
+        self,
+        d_model: int = 128,
+        num_heads: int = 4,
+        out_dim: int = 256,
+        dropout: float = 0.2,
+        modalities: Optional[Sequence[str]] = None,
+    ):
         super().__init__()
-        self.modalities = list(MODALITIES)
+        self.modalities = list(modalities) if modalities is not None else list(MODALITIES)
+        if len(self.modalities) < 2:
+            raise ValueError(
+                f"MultiOmicsCrossAttentionFusion needs >=2 modalities to cross-attend "
+                f"across, got {self.modalities!r}"
+            )
         self.pairs: List[Tuple[str, str]] = [
             (i, j) for i in self.modalities for j in self.modalities if i != j
         ]
@@ -71,7 +91,7 @@ class MultiOmicsCrossAttentionFusion(nn.Module):
         )
 
     def forward(self, omics: Dict[str, torch.Tensor]) -> torch.Tensor:
-        """omics: {'GE': (B, d_model), 'Mut_CNV': (B, d_model), 'Proteomics': (B, d_model)} -> (B, out_dim)."""
+        """omics: {modality: (B, d_model)} for each modality in `self.modalities` -> (B, out_dim)."""
         pair_outputs = []
         for i, j in self.pairs:
             attn_out = self.cross_attn[f"{i}->{j}"](omics[i], omics[j])
@@ -79,6 +99,30 @@ class MultiOmicsCrossAttentionFusion(nn.Module):
             pair_outputs.append(ffn_out)
         fused = torch.cat(pair_outputs, dim=-1)
         return self.output_proj(fused)
+
+
+class FingerprintEncoder(nn.Module):
+    """Compresses a sparse 2048-bit Morgan fingerprint to a dense low-dim vector.
+
+    Concatenating raw 2048 sparse bits directly onto a 256-dim continuous
+    fused-omics embedding would let the drug block dominate the head's input
+    purely by width, so fingerprint-mode experiments project it down first.
+    Not needed for tree models (RF handles the raw 2048-dim input fine).
+    """
+
+    def __init__(self, fp_size: int = 2048, hidden_dim: int = 128, out_dim: int = 128, dropout: float = 0.2):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(fp_size, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, out_dim),
+        )
+        self.out_dim = out_dim
+
+    def forward(self, fingerprint: torch.Tensor) -> torch.Tensor:
+        """fingerprint: (B, fp_size) -> (B, out_dim)."""
+        return self.net(fingerprint)
 
 
 if __name__ == "__main__":
