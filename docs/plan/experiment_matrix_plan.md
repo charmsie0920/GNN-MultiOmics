@@ -2,12 +2,31 @@
 
 ## Status (update as phases complete)
 
-- [ ] Phase 0 — Shared infrastructure
-- [ ] Phase 1 — Flat-feature matrix (RF + MLP), 28 runs
-- [ ] Phase 2 — Cross-attention matrix, 8 runs
-- [ ] Phase 3 — Graph linkage + GNN matrix, 4 runs
-- [ ] Phase 4 — XGBoost ensemble refinement
-- [ ] Phase 5 — Consolidation (`docs/results.md`)
+- [x] **Phase 0 — Shared infrastructure** (done: `experiment_utils.py` built,
+      fusion generalized to modality subsets, `FingerprintEncoder` added,
+      `random_state=42` pinned in both baselines, `scipy`/`xgboost` added to
+      requirements. **Verified**: proteomics-only RF re-run through the new
+      shared path reproduces the documented test RMSE 2.0000 / PCC 0.7460 /
+      AUC 0.7520 / F1 0.6435 and floor 2.7097 exactly.)
+- [x] **Phase 1 — Flat-feature matrix (RF + MLP), 42 runs** (21 + 21; grew from
+      28 when the population-control arm was added). RF 482.8s, MLP 903.7s.
+      Docs: `rf_ablation_results.md`, `mlp_ablation_results.md`.
+- [x] **Phase 2 — Cross-attention matrix, 12 runs** (grew from 8). 1466.0s.
+      Doc: `cross_attention_ablation_results.md`.
+- [x] **Phase 3 — Graph linkage + GNN matrix, 4 runs.** 669.3s. Linkage added
+      4,341 driver-mutation edges linking 526/532 cell lines.
+      Doc: `gnn_ablation_results.md`.
+- [x] **Phase 4 — XGBoost ensemble refinement.** 225.7s. **Negative result** —
+      refinement made both best models slightly worse (−0.9%, −0.7%), opposite
+      to the paper's +19.7%. Doc: `ensemble_refinement_results.md`.
+- [x] **Phase 5 — Consolidation.** `docs/results.md` auto-generated from the
+      result CSVs by `experiments/build_results_table.py` (58 runs).
+
+**Mid-execution amendment (approved):** the fingerprint arm covers only 111,799
+pairs vs one-hot's 134,764 (123 GDSC drugs never resolved to a SMILES), so
+comparing them directly confounded representation with population. A third
+`onehot_restricted` arm was added — one-hot features on the fingerprint-covered
+rows — making the drug-representation comparison valid. Total runs 42 → 58.
 
 ## Context
 
