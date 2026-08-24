@@ -105,10 +105,14 @@ tree does (see [`rf_ablation_results.md`](./rf_ablation_results.md) §1).
 final architecture cannot rest on in-distribution accuracy — for neural models
 it barely moves. It rests on *generalization to unseen drugs*, which one-hot
 structurally cannot do and which this matrix does not test (the split is
-grouped by cell line, not by drug). A leave-drugs-out split is the experiment
-that would actually demonstrate the fingerprint's value; it is currently
-listed as a secondary ablation in
-[`phase2_wide_matrices_and_split_plan.md`](./phase2_wide_matrices_and_split_plan.md).
+grouped by cell line, not by drug).
+
+That experiment has since been run — see
+[`leave_drugs_out_results.md`](./leave_drugs_out_results.md). Holding out drugs
+instead of cell lines, MLP one-hot drops to **R² 0.075** (barely above the
+mean-only floor) while fingerprints hold at **R² 0.463**, a +0.578 RMSE gap.
+The fingerprint's value is real; it simply is not visible under a
+cell-line-grouped split.
 
 ## 3. The population control changes sign versus RF
 

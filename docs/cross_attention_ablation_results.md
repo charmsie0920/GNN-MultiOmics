@@ -104,12 +104,22 @@ structural priors help — and at the top end the 2048→128 encoder appears to 
 a lossy bottleneck compared to a one-hot lookup the model can embed exactly.
 
 **This does not mean fingerprints are the wrong choice for the final
-architecture.** One-hot cannot represent a drug outside the 295-drug training
-vocabulary at all; fingerprints can. What these numbers show is that the
-fingerprint's value is *not* in-distribution accuracy, so the case for it must
-be made on unseen-drug generalization — which requires a leave-drugs-out split
-this matrix does not run. See
-[`mlp_ablation_results.md`](./mlp_ablation_results.md) §2.
+architecture** — and that has now been tested rather than argued.
+[`leave_drugs_out_results.md`](./leave_drugs_out_results.md) re-runs this
+comparison holding out *drugs* instead of cell lines:
+
+| Protocol | one-hot | fingerprint | Winner |
+|---|---|---|---|
+| Leave-cell-lines-out (this doc) | 1.2442 | 1.3205 | one-hot by 0.076 |
+| Leave-drugs-out | 2.4959 (R² **0.024**) | **1.9200** (R² 0.422) | **fingerprint by 0.576** |
+
+On compounds never screened during training, one-hot collapses to
+R² = 0.024 — indistinguishable from predicting the mean, because a column never
+activated in training carries no learned weight. Fingerprints hold at R² 0.422.
+
+So the fingerprint costs ~0.08 RMSE in-distribution and buys ~0.58 RMSE on
+unseen drugs, roughly a 7× return. The in-distribution loss recorded above is
+real but is the wrong axis on which to judge the representation.
 
 ## 4. Reproduction check
 

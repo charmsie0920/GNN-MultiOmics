@@ -21,6 +21,20 @@
       to the paper's +19.7%. Doc: `ensemble_refinement_results.md`.
 - [x] **Phase 5 — Consolidation.** `docs/results.md` auto-generated from the
       result CSVs by `experiments/build_results_table.py` (58 runs).
+- [x] **Phase 6 (added post-hoc) — Split-protocol comparison.** 428.2s. Runs the
+      best model under both the grouped and the paper's random split. Protocol
+      alone is worth 0.347 RMSE (1.2442 → 0.8971), 60% of the apparent gap to
+      the paper's 0.6622. Also confirms the Phase 4 leakage hypothesis: XGBoost
+      refinement flips from −0.92% (grouped) to +0.96% (random).
+      Doc: `split_protocol_comparison.md`.
+- [x] **Phase 7 (added post-hoc) — Leave-drugs-out.** 6 runs. Holds out drugs
+      instead of cell lines, the only protocol where the drug representation's
+      purpose is testable. One-hot collapses to near the mean-only floor
+      (cross-attention R² 0.024) while fingerprints hold at R² 0.422 — a
+      +0.49 to +0.58 RMSE gap reproduced across RF, MLP, and cross-attention.
+      **This is the experimental justification for the proposal's §4.1.2
+      Morgan-fingerprint choice**, and resolves why fingerprints looked worse
+      in the main matrix. Doc: `leave_drugs_out_results.md`.
 
 **Mid-execution amendment (approved):** the fingerprint arm covers only 111,799
 pairs vs one-hot's 134,764 (123 GDSC drugs never resolved to a SMILES), so
