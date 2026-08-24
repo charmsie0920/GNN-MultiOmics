@@ -331,6 +331,87 @@ def build_pair_tensors(
 
 
 # --- split ----------------------------------------------------------------------
+def random_pair_split(
+    n_rows: int, train_frac: float = 0.8, val_frac: float = 0.1
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Random split over (cell line, drug) PAIRS -- the MoGraphDRP protocol (their §2.5).
+
+    Deliberately NOT leakage-free: a cell line's ~279 measurements are scattered
+    across all three folds, so at test time the model has already seen ~223
+    other drug responses for that exact cell line. That makes the task
+    *imputation* (fill in a partially-observed row) rather than *generalization*
+    (predict for an unseen cell line).
+
+    This exists solely to produce a like-for-like number against the paper's
+    published RMSE, and to test whether their XGBoost refinement gain depends on
+    this leakage. `grouped_split` remains the protocol for every real result --
+    see docs/split_protocol_comparison.md.
+    """
+    rng = np.random.default_rng(RANDOM_STATE)
+    perm = rng.permutation(n_rows)
+    n_train = int(round(train_frac * n_rows))
+    n_val = int(round(val_frac * n_rows))
+    train_idx = perm[:n_train]
+    val_idx = perm[n_train : n_train + n_val]
+    test_idx = perm[n_train + n_val :]
+
+    for name, idx in [("train", train_idx), ("val", val_idx), ("test", test_idx)]:
+        print(f"[split*]  {name:<5} {len(idx):>7} pairs  ({len(idx) / n_rows:.1%})  [RANDOM, leaky]")
+    return train_idx, val_idx, test_idx
+
+
+def leave_drugs_out_split(drug_groups: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """70/15/15 grouped by DRUG -- every test drug is unseen during training.
+
+    The protocol that tests generalization to new *compounds* rather than new
+    cell lines. It is the only setting in which the Morgan-fingerprint drug
+    representation can demonstrate its purpose: a one-hot vector has no column
+    for a drug outside the training vocabulary, so the model structurally
+    cannot represent it, whereas a fingerprint is computed from structure and
+    transfers to any molecule with a SMILES string.
+
+    Mechanically identical to `grouped_split`, just keyed on `drug_id` instead
+    of `sanger_model_id`. Note that a cell line WILL appear on both sides here
+    (that is the point -- we are holding out drugs, not cell lines).
+    """
+    holdout = VAL_FRAC + TEST_FRAC
+    gss1 = GroupShuffleSplit(n_splits=1, test_size=holdout, random_state=RANDOM_STATE)
+    train_idx, rest_idx = next(gss1.split(np.zeros(len(drug_groups)), groups=drug_groups))
+
+    gss2 = GroupShuffleSplit(n_splits=1, test_size=TEST_FRAC / holdout, random_state=RANDOM_STATE)
+    rel_val, rel_test = next(gss2.split(np.zeros(len(rest_idx)), groups=drug_groups[rest_idx]))
+    val_idx, test_idx = rest_idx[rel_val], rest_idx[rel_test]
+
+    for name, idx in [("train", train_idx), ("val", val_idx), ("test", test_idx)]:
+        print(
+            f"[split-D] {name:<5} {len(idx):>7} pairs  "
+            f"{len(np.unique(drug_groups[idx])):>4} drugs  ({len(idx) / len(drug_groups):.1%})"
+        )
+
+    overlap = set(drug_groups[train_idx]) & (set(drug_groups[val_idx]) | set(drug_groups[test_idx]))
+    assert not overlap, f"drug leaked across splits: {sorted(overlap)[:5]}"
+    return train_idx, val_idx, test_idx
+
+
+def leakage_report(groups: np.ndarray, train_idx: np.ndarray, test_idx: np.ndarray) -> Dict[str, float]:
+    """Quantify how much cell-line information a split leaks from train into test."""
+    train_cells = set(groups[train_idx])
+    test_cells = set(groups[test_idx])
+    shared = train_cells & test_cells
+    leaked_rows = int(np.isin(groups[test_idx], list(shared)).sum()) if shared else 0
+
+    train_counts = pd.Series(groups[train_idx]).value_counts()
+    seen_per_test_row = (
+        float(np.mean([train_counts.get(c, 0) for c in groups[test_idx]])) if len(test_idx) else 0.0
+    )
+    return {
+        "test_cell_lines": len(test_cells),
+        "also_in_train": len(shared),
+        "test_rows_with_seen_cell_line_pct": 100.0 * leaked_rows / max(len(test_idx), 1),
+        "mean_train_rows_per_test_cell_line": seen_per_test_row,
+    }
+
+
 def grouped_split(groups: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """70/15/15 by cell line, `random_state=RANDOM_STATE` pinned for every caller."""
     holdout = VAL_FRAC + TEST_FRAC

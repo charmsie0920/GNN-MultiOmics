@@ -152,11 +152,19 @@ baseline for that comparison.
   line that modality covers."
 - The split is grouped by **cell line**, not by drug, so these numbers measure
   generalization to unseen cell lines. They say nothing about generalization to
-  unseen drugs — the case where Morgan fingerprints should matter most, and
-  which no run here tests.
+  unseen *drugs* — the case where Morgan fingerprints matter most. That is
+  measured separately in
+  [leave_drugs_out_results](./leave_drugs_out_results.md): on compounds never
+  screened during training, one-hot collapses to R² 0.024 while fingerprints
+  hold at R² 0.422. **Do not read the fingerprint rows below as evidence
+  against the fingerprint representation** — they measure the axis on which it
+  is not expected to win.
 - Numbers are **not comparable to MoGraphDRP's published RMSE 0.6622**, which
   uses a random 80/10/10 split where the same cell line can appear in both
-  training and test.
+  training and test. Measured under *their* protocol our best model reaches
+  RMSE 0.8971 — so of the 0.582 apparent gap, 0.347 (60%) is protocol and
+  0.235 (40%) is genuine architectural difference. See
+  [split_protocol_comparison](./split_protocol_comparison.md).
 """
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)

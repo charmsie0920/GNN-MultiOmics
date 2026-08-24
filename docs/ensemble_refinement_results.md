@@ -92,13 +92,28 @@ whether those residuals transfer.
    a cell-line-grouped split, which is a strictly harder task (predicting for
    cell lines never seen in training — the actual clinical use case described
    in the proposal's §1 and §4). The two figures are **not directly
-   comparable**, and any report claiming to "beat" or "approach" 0.6622 should
-   state this explicitly.
-3. **A confirmatory experiment exists** if the team wants certainty: re-run
-   this refinement under a *random* (non-grouped) split. If the gain reappears,
-   it confirms the mechanism is cell-line leakage rather than genuine residual
-   modeling. Not run here — it would require deliberately building a leaky
-   split, which nothing else in the pipeline needs.
+   comparable**. Quantified in
+   [`split_protocol_comparison.md`](./split_protocol_comparison.md): protocol
+   alone accounts for 0.347 RMSE (60% of the apparent gap); the genuine
+   architectural difference is 0.235.
+3. **The confirmatory experiment was run, and the hypothesis held.** Re-running
+   this refinement under a random (non-grouped) split flips its sign:
+
+   | Protocol | Base RMSE | + XGBoost | Δ |
+   |---|---|---|---|
+   | Grouped by cell line | 1.2442 | 1.2557 | **−0.92%** |
+   | Random pairs | 0.8971 | 0.8885 | **+0.96%** |
+
+   Identical refiner and hyperparameters; only the split differs. Under the
+   random split 100% of test rows belong to a cell line seen ~208 times in
+   training, and the refiner starts helping. Under the grouped split there is
+   no such structure and it only adds variance. Full analysis in
+   [`split_protocol_comparison.md`](./split_protocol_comparison.md).
+
+   Note the magnitude still falls short of the paper's +19.7%, so leakage is a
+   *necessary* condition for the gain rather than a complete account of it —
+   their bilinear-attention interaction vector likely carries more correctable
+   structure than our head's penultimate activation.
 
 ## Caveats
 
