@@ -28,12 +28,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import partial
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -50,6 +52,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from client.workers import UploadWorker
 from styles.theme import LABEL_CAPS_STYLE, PAGE_MARGIN, PAGE_TITLE_STYLE, SECTION_SPACING
 from widgets.cards import OptionTile, SurfaceCard, UploadCard
 from widgets.icons import icon_text
@@ -72,20 +75,26 @@ class DatasetInitializationPage(QWidget):
     def __init__(
         self,
         parent: QWidget | None = None,
-        on_initialize_upload: Callable[[], None] | None = None,
+        on_initialize_upload: Callable[[dict], None] | None = None,
     ) -> None:
         """Build the page.
 
         Args:
             parent: Optional Qt parent widget.
-            on_initialize_upload: Invoked when "Initialize Upload" is
-                clicked; should navigate to the model execution log page.
-                If `None`, the button shows a placeholder message instead.
+            on_initialize_upload: Invoked with the backend's upload+run-start
+                response (`run_id`, `device`, `expected_duration_seconds`,
+                ...) once the CSV is uploaded and a model run has started;
+                should navigate to the model execution log page. If `None`,
+                the button shows a placeholder message instead.
         """
         super().__init__(parent)
         self.setObjectName("DatasetInitializationPage")
         self._omics_tiles: list[OptionTile] = []
         self._on_initialize_upload = on_initialize_upload
+        self._selected_file_path: str | None = None
+        self._upload_heading: QLabel | None = None
+        self._initialize_button: QPushButton | None = None
+        self._upload_worker: UploadWorker | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -248,11 +257,14 @@ class DatasetInitializationPage(QWidget):
         heading = QLabel("Drag and drop files here")
         heading.setStyleSheet("font-size: 24px; font-weight: 600; color: #1a1c1c; background: transparent; border: none;")
         heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._upload_heading = heading
 
         browse = QPushButton("Browse Files")
         browse.setObjectName("SecondaryActionButton")
-        browse.clicked.connect(partial(self._show_message, "Browse Files", "File browsing is a frontend placeholder."))
+        browse.clicked.connect(self._on_browse_files)
         browse.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        card.fileDropped.connect(self._handle_file_selected)
 
         layout.addWidget(icon, 0, Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(heading, 0, Qt.AlignmentFlag.AlignCenter)
@@ -375,12 +387,8 @@ class DatasetInitializationPage(QWidget):
         button = QPushButton("Initialize Upload")
         button.setObjectName("PrimaryActionButton")
         button.setCursor(Qt.CursorShape.PointingHandCursor)
-        if self._on_initialize_upload is None:
-            button.clicked.connect(
-                partial(self._show_message, "Initialize Upload", "Initialization is a frontend placeholder.")
-            )
-        else:
-            button.clicked.connect(self._on_initialize_upload)
+        button.clicked.connect(self._on_initialize_clicked)
+        self._initialize_button = button
         layout.addWidget(button)
         return container
 
@@ -403,3 +411,46 @@ class DatasetInitializationPage(QWidget):
     def _show_message(self, title: str, text: str) -> None:
         """Show a placeholder informational dialog for not-yet-wired controls."""
         QMessageBox.information(self, title, text)
+
+    def _on_browse_files(self) -> None:
+        """Open a file picker restricted to CSV files and stage the choice."""
+        path, _ = QFileDialog.getOpenFileName(self, "Select Dataset CSV", "", "CSV Files (*.csv)")
+        if path:
+            self._handle_file_selected(path)
+
+    def _handle_file_selected(self, path: str) -> None:
+        """Stage `path` as the file to upload and reflect it in the dropzone."""
+        self._selected_file_path = path
+        if self._upload_heading is not None:
+            self._upload_heading.setText(Path(path).name)
+
+    def _on_initialize_clicked(self) -> None:
+        """Upload the staged file to the backend, then navigate on success."""
+        if self._selected_file_path is None:
+            self._show_message("Initialize Upload", "Select a dataset CSV first.")
+            return
+
+        if self._initialize_button is not None:
+            self._initialize_button.setEnabled(False)
+            self._initialize_button.setText("Uploading...")
+
+        self._upload_worker = UploadWorker(self._selected_file_path, parent=self)
+        self._upload_worker.succeeded.connect(self._on_upload_succeeded)
+        self._upload_worker.failed.connect(self._on_upload_failed)
+        self._upload_worker.start()
+
+    def _on_upload_succeeded(self, result: dict) -> None:
+        self._reset_initialize_button()
+        if self._on_initialize_upload is not None:
+            self._on_initialize_upload(result)
+        else:
+            self._show_message("Initialize Upload", "Upload succeeded (no navigation callback configured).")
+
+    def _on_upload_failed(self, message: str) -> None:
+        self._reset_initialize_button()
+        QMessageBox.critical(self, "Upload Failed", message)
+
+    def _reset_initialize_button(self) -> None:
+        if self._initialize_button is not None:
+            self._initialize_button.setEnabled(True)
+            self._initialize_button.setText("Initialize Upload")

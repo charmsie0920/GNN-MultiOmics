@@ -1,10 +1,11 @@
 """Application entry point for the MSC16 desktop frontend.
 
-This is a PySide6 (Qt for Python) desktop application prototyping the UI for
-a multi-omics drug-response prediction tool. It currently wires together
-four pages, all frontend-only (no backend/model integration yet), inside a
-single `QStackedWidget` so the app feels like one continuous product rather
-than separate screens:
+This is a PySide6 (Qt for Python) desktop application for a multi-omics
+drug-response prediction tool. It wires together four pages inside a single
+`QStackedWidget` so the app feels like one continuous product rather than
+separate screens. Uploading a dataset on the first page starts a model run
+against the FastAPI backend (`backend/main.py`); the second page streams its
+live progress and log output:
 
     1. `DatasetInitializationPage` — upload a dataset, configure a run.
     2. `ModelExecutionLogPage` — live pipeline status + log tail.
@@ -62,7 +63,15 @@ def main() -> int:
     def show_upload_page() -> None:
         stack.setCurrentWidget(upload_page)
 
-    def show_log_page() -> None:
+    def show_log_page(run_info: dict) -> None:
+        # Only for the upload page's explicit call (with the run-start
+        # response) — never connect this directly to a Qt signal, since
+        # PySide would pass the `clicked(checked: bool)` argument through
+        # as `run_info`.
+        log_page.start_watching(run_info)
+        stack.setCurrentWidget(log_page)
+
+    def show_log_page_only() -> None:
         stack.setCurrentWidget(log_page)
 
     def show_visualization_page() -> None:
@@ -75,16 +84,17 @@ def main() -> int:
     log_page = ModelExecutionLogPage(
         on_upload_clicked=show_upload_page,
         on_model_visualization_clicked=show_visualization_page,
+        on_run_complete=show_final_results_page,
     )
     visualization_page = ModelVisualizationPage(
         on_upload_clicked=show_upload_page,
-        on_model_running_clicked=show_log_page,
-        on_model_analytics_clicked=show_log_page,
+        on_model_running_clicked=show_log_page_only,
+        on_model_analytics_clicked=show_log_page_only,
         on_finish_clicked=show_final_results_page,
     )
     final_results_page = FinalResultsPage(
         on_upload_clicked=show_upload_page,
-        on_model_running_clicked=show_log_page,
+        on_model_running_clicked=show_log_page_only,
     )
 
     stack.addWidget(upload_page)

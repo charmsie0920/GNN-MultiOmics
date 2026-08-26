@@ -26,8 +26,32 @@ class SurfaceCard(QFrame):
 
 
 class UploadCard(SurfaceCard):
+    fileDropped = Signal(str)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent, object_name="UploadCard")
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802
+        if self._first_csv_path(event.mimeData()) is not None:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:  # noqa: N802
+        path = self._first_csv_path(event.mimeData())
+        if path is not None:
+            self.fileDropped.emit(path)
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    @staticmethod
+    def _first_csv_path(mime_data) -> str | None:
+        for url in mime_data.urls():
+            if url.isLocalFile() and url.toLocalFile().lower().endswith(".csv"):
+                return url.toLocalFile()
+        return None
 
     def paintEvent(self, event) -> None:  # noqa: N802
         super().paintEvent(event)

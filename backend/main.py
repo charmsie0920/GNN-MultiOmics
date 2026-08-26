@@ -1,9 +1,24 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from backend.routers.dataset import router as dataset_router
+from backend.routers.model_run import router as model_run_router
+
 app = FastAPI(title="MSC16 Placeholder API", version="0.1.0")
+
+# Local desktop UI talking to a local backend — not public-facing.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(dataset_router)
+app.include_router(model_run_router)
 
 
 class HealthResponse(BaseModel):
@@ -90,3 +105,9 @@ def patient_profile() -> dict[str, object]:
         "mutations": ["EGFR L858R", "TP53 R175H", "PIK3CA E545K"],
         "egfr_overexpression_percentile": 98,
     }
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="127.0.0.1", port=8000)

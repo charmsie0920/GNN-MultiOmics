@@ -20,9 +20,10 @@ Interactions with other pages:
     - `on_upload_clicked` navigates back to `DatasetInitializationPage`.
     - `on_model_running_clicked` and the sidebar's "Model Logs" link both
       navigate to `ModelExecutionLogPage`.
-    - `on_finish_clicked` navigates to `FinalResultsPage`, triggered either
-      by the "Finish" button or automatically when `ConstellationCanvas`
-      finishes spawning nodes (`completed` signal).
+    - `on_finish_clicked` navigates to `FinalResultsPage`, triggered by the
+      "Finish" button. `ConstellationCanvas`'s `completed` signal is
+      intentionally not wired to it — see the note in
+      `_build_visualization_card`.
     All callbacks are supplied and wired by `main.py`.
 """
 
@@ -462,9 +463,17 @@ class ModelVisualizationPage(QWidget):
         canvas_layout.setContentsMargins(0, 0, 0, 0)
         canvas_layout.setSpacing(0)
 
+        # Note: `ConstellationCanvas.completed` is intentionally NOT wired to
+        # `on_finish_clicked` — the canvas is a decorative animation on its
+        # own wall-clock timer (started at construction, i.e. app launch,
+        # since all pages are built eagerly), unrelated to whether the real
+        # backend run has actually finished. Auto-navigating on it used to
+        # jump the whole app to the results page ~70s after launch,
+        # regardless of which page was on screen or how the real run was
+        # progressing. Only the real run's completion (see
+        # ModelExecutionLogPage.on_run_complete) and the "Finish" button
+        # navigate to results now.
         canvas = ConstellationCanvas()
-        if self._on_finish_clicked is not None:
-            canvas.completed.connect(self._on_finish_clicked)
         canvas_layout.addWidget(canvas)
         layout.addWidget(canvas_host, 1)
 
