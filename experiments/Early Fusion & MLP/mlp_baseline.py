@@ -35,7 +35,7 @@ COL_TARGET = "ln_ic50"
 
 TEST_FRAC = 0.15
 VAL_FRAC = 0.15
-RANDOM_STATE = None  # split RNG; None = fresh split each run (matches rf_baseline.py)
+RANDOM_STATE = 42  # split RNG; pinned so every experiment-matrix run sits on an identical split
 
 DTYPE = np.float32
 

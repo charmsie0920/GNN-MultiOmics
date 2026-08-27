@@ -25,9 +25,9 @@ from __future__ import annotations
 
 import argparse
 import csv
-import gzip
+import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -36,6 +36,9 @@ from rdkit import Chem, DataStructs
 from rdkit.Chem import rdFingerprintGenerator
 from torch_geometric.data import HeteroData
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from src.data.graph_utils import build_gene_symbol_to_ensp  # noqa: E402
+
 TRANSCRIPTOMICS_PCA_PATH = Path("data/processed/transcriptomics_pca.csv")
 GENOMICS_PCA_PATH = Path("data/processed/genomics_pca.csv")
 PROTEOMICS_PCA_PATH = Path("data/processed/proteomics_pca.csv")
@@ -43,7 +46,7 @@ DRUG_SMILES_PATH = Path("data/raw/pubchem/gdsc_drug_smiles.csv")
 GDSC_COMPOUNDS_PATH = Path("data/raw/gdsc/screened_compounds_rel_8.5.csv")
 STRING_LINKS_PATH = Path("data/raw/string/9606.protein.links.v12.0.txt.gz")
 STRING_ALIASES_PATH = Path("data/raw/string/9606.protein.aliases.v12.0.txt.gz")
-OUTPUT_PATH = Path("data/processed/hetero_graph.pt")
+OUTPUT_PATH = Path("src/graph/hetero_graph.pt")
 
 # STRING's standard "high confidence" cutoff on combined_score (0-999 scale).
 PPI_SCORE_THRESHOLD = 700
@@ -158,28 +161,6 @@ def load_drug_targets() -> Dict[str, List[str]]:
         symbols = [token.strip() for token in raw.split(",") if token.strip()]
         targets_by_drug_id[row["DRUG_ID"]] = symbols
     return targets_by_drug_id
-
-
-def build_gene_symbol_to_ensp(referenced_symbols: Set[str]) -> Dict[str, str]:
-    """Build a gene_symbol -> ENSP map from the STRING alias file, filtered to referenced symbols.
-
-    The full alias file has ~40M rows; loading it wholesale into memory is
-    unnecessary when only ~380 distinct GDSC target symbols need resolving, so
-    this does a single streamed pass and only retains rows whose alias is in
-    `referenced_symbols`. The first ENSP seen for a symbol is kept (STRING
-    lists the same gene symbol from multiple alias sources for the same
-    canonical protein in practice; no attempt is made to adjudicate
-    conflicting sources beyond first-match).
-    """
-
-    symbol_to_ensp: Dict[str, str] = {}
-    with gzip.open(STRING_ALIASES_PATH, "rt", encoding="utf-8") as handle:
-        next(handle)  # header: #string_protein_id, alias, source
-        for line in handle:
-            protein_id, alias, _source = line.rstrip("\n").split("\t")
-            if alias in referenced_symbols and alias not in symbol_to_ensp:
-                symbol_to_ensp[alias] = protein_id
-    return symbol_to_ensp
 
 
 def build_drug_target_edges(
