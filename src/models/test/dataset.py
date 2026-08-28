@@ -1,6 +1,6 @@
 import pandas as pd
 import torch
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit
 
 # 1. Load Graph and Master Response
 graph = torch.load("src/graph/hetero_graph.pt", weights_only=False)
@@ -25,13 +25,24 @@ df_valid["drug_idx"] = df_valid["drug_idx"].astype(int)
 # Identify Target Label Column
 target_col = "nlme_result" if "nlme_result" in df_valid.columns else df_valid.columns[-1]
 
-# 6. Train / Val / Test Splits (80 / 10 / 10)
-train_df, test_df = train_test_split(df_valid, test_size=0.2, random_state=42)
-val_df, test_df = train_test_split(test_df, test_size=0.5, random_state=42)
+# 6. Train / Val / Test Splits (70 / 15 / 15), grouped by cell line so no
+# cell line appears in more than one split (a plain random split leaks the
+# same cell line's other drug-response rows into both train and test).
+groups = df_valid[sanger_col].to_numpy()
+gss1 = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=42)
+train_idx, rest_idx = next(gss1.split(df_valid, groups=groups))
 
+gss2 = GroupShuffleSplit(n_splits=1, test_size=0.5, random_state=42)
+rel_val, rel_test = next(gss2.split(df_valid.iloc[rest_idx], groups=groups[rest_idx]))
+val_idx, test_idx = rest_idx[rel_val], rest_idx[rel_test]
+
+train_df, val_df, test_df = df_valid.iloc[train_idx], df_valid.iloc[val_idx], df_valid.iloc[test_idx]
 df_valid.loc[train_df.index, "split"] = "train"
 df_valid.loc[val_df.index, "split"] = "val"
 df_valid.loc[test_df.index, "split"] = "test"
+
+overlap = set(groups[train_idx]) & (set(groups[val_idx]) | set(groups[test_idx]))
+assert not overlap, f"cell line leaked across splits: {sorted(overlap)[:5]}"
 
 # 7. Save Processed Dataset
 df_valid.to_csv("data/raw/aligned_ic50_pairs.csv", index=False)

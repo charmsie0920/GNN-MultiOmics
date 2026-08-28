@@ -81,6 +81,9 @@ def main():
 
     src, dst = edge_index_dict[("drug", "targets", "protein")]
     edge_index_dict[("protein", "rev_targets", "drug")] = torch.stack([dst, src])
+
+    src, dst = edge_index_dict[("cell_line", "has_mutation", "protein")]
+    edge_index_dict[("protein", "rev_has_mutation", "cell_line")] = torch.stack([dst, src])
     # 3. Load Supervisory Pairs
     df = pd.read_csv("data/raw/aligned_ic50_pairs.csv")
     target_col = "ln_ic50"
@@ -110,17 +113,20 @@ def main():
     test_loader = make_loader(test_df, shuffle=False, batch_size=2048)
 
     # 5. Initialize Model, Loss, and Optimizer
-    model = HeteroIC50GNN(hidden_dim=128).to(device)
+    num_proteins = x_dict["protein"].shape[0]
+    model = HeteroIC50GNN(num_proteins=num_proteins, hidden_dim=128).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
     criterion = nn.MSELoss()
 
     # 6. Training Loop
-    epochs = 30
-    best_val_r = -1.0
-    # best_val_mse = float("inf")
+    max_epochs = 200
+    patience = 15
+    best_val_rmse = float("inf")
+    best_epoch = 0
+    stale = 0
 
-    print(f"\nStarting GNN Training for {epochs} epochs...\n" + "-" * 55)
-    for epoch in range(1, epochs + 1):
+    print(f"\nStarting GNN Training for up to {max_epochs} epochs (patience={patience})...\n" + "-" * 55)
+    for epoch in range(1, max_epochs + 1):
         train_loss = train_epoch(
             model, train_loader, x_dict, edge_index_dict, optimizer, criterion, device
         )
@@ -129,19 +135,26 @@ def main():
         )
 
         print(
-            f"Epoch {epoch:02d}/{epochs:02d} | "
+            f"Epoch {epoch:02d}/{max_epochs:02d} | "
             f"Train Loss: {train_loss:.4f} | "
             f"Val MSE: {val_mse:.4f} | "
             f"Val RMSE: {val_rmse:.4f} | "
             f"Val Pearson r: {val_r:.4f}"
         )
 
-        # Save Best Checkpoint
-        if val_r > best_val_r:
-            best_val_r = val_r
+        # Save Best Checkpoint (selected on val RMSE, the metric we actually
+        # care about minimizing -- not Pearson r, which kept climbing well
+        # past the point the model started overfitting on RMSE).
+        if val_rmse < best_val_rmse - 1e-4:
+            best_val_rmse, best_epoch, stale = val_rmse, epoch, 0
             torch.save(
                 model.state_dict(), "models/checkpoints/best_hetero_gnn.pt"
             )
+        else:
+            stale += 1
+            if stale >= patience:
+                print(f"[early stop] epoch {epoch}, best epoch {best_epoch}, val_rmse={best_val_rmse:.4f}")
+                break
 
     # 7. Final Test Set Evaluation
     print("-" * 55)

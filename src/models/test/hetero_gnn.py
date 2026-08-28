@@ -6,13 +6,17 @@ from torch_geometric.nn import HeteroConv, SAGEConv
 
 class HeteroIC50GNN(nn.Module):
 
-    def __init__(self, hidden_dim=128):
+    def __init__(self, num_proteins, hidden_dim=128):
         super().__init__()
 
         # 1. Project mismatched raw feature dimensions into unified hidden space D
         self.cell_proj = nn.Linear(384, hidden_dim)
         self.drug_proj = nn.Linear(2048, hidden_dim)
-        self.prot_proj = nn.Linear(128, hidden_dim)
+        # Protein nodes carry no real features (all-zero placeholders on the
+        # graph), so give them a learnable identity embedding instead of
+        # projecting zeros -- a Linear on an all-zero input collapses every
+        # protein to the same vector.
+        self.protein_embedding = nn.Embedding(num_proteins, hidden_dim)
 
         # 2. Layer 1 Message Passing
         self.conv1 = HeteroConv(
@@ -24,6 +28,12 @@ class HeteroIC50GNN(nn.Module):
                     hidden_dim, hidden_dim
                 ),
                 ("protein", "rev_targets", "drug"): SAGEConv(hidden_dim, hidden_dim),
+                ("cell_line", "has_mutation", "protein"): SAGEConv(
+                    hidden_dim, hidden_dim
+                ),
+                ("protein", "rev_has_mutation", "cell_line"): SAGEConv(
+                    hidden_dim, hidden_dim
+                ),
             },
             aggr="sum",
         )
@@ -38,6 +48,12 @@ class HeteroIC50GNN(nn.Module):
                     hidden_dim, hidden_dim
                 ),
                 ("protein", "rev_targets", "drug"): SAGEConv(hidden_dim, hidden_dim),
+                ("cell_line", "has_mutation", "protein"): SAGEConv(
+                    hidden_dim, hidden_dim
+                ),
+                ("protein", "rev_has_mutation", "cell_line"): SAGEConv(
+                    hidden_dim, hidden_dim
+                ),
             },
             aggr="sum",
         )
@@ -57,7 +73,7 @@ class HeteroIC50GNN(nn.Module):
         h_dict = {
             "cell_line": F.relu(self.cell_proj(x_dict["cell_line"])),
             "drug": F.relu(self.drug_proj(x_dict["drug"])),
-            "protein": F.relu(self.prot_proj(x_dict["protein"])),
+            "protein": self.protein_embedding.weight,
         }
 
         out = self.conv1(h_dict, edge_index_dict)
