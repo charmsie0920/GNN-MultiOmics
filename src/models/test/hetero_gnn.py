@@ -59,14 +59,19 @@ class HeteroIC50GNN(nn.Module):
         )
 
         # 4. IC50 Regression Head
-        self.predictor = nn.Sequential(
-            nn.Linear(hidden_dim * 2, 128),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, 1),
-        )
+        # Matches the tracked HeteroGNN's head (src/models/hetero_gnn.py):
+        # (256, 128) hidden dims with BatchNorm and dropout 0.3. The shallower
+        # no-BatchNorm head this replaced was one of the remaining differences
+        # against the tracked E12 configuration.
+        head_hidden_dims = (256, 128)
+        head_dropout = 0.3
+        layers = []
+        prev = hidden_dim * 2  # cell_line embedding ++ drug embedding
+        for h in head_hidden_dims:
+            layers += [nn.Linear(prev, h), nn.BatchNorm1d(h), nn.ReLU(), nn.Dropout(head_dropout)]
+            prev = h
+        layers.append(nn.Linear(prev, 1))
+        self.predictor = nn.Sequential(*layers)
 
     def forward(self, x_dict, edge_index_dict, cell_idx, drug_idx):
         # Initial projection to hidden_dim

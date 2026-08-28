@@ -100,22 +100,31 @@ def main():
     test_df = df[df["split"] == "test"]
 
     # 4. Create PyTorch DataLoaders
-    def make_loader(data_frame, shuffle=False, batch_size=1024):
+    def make_loader(data_frame, shuffle=False, batch_size=1024, drop_last=False):
         dataset = TensorDataset(
             torch.tensor(data_frame["cell_idx"].values, dtype=torch.long),
             torch.tensor(data_frame["drug_idx"].values, dtype=torch.long),
             torch.tensor(data_frame[target_col].values, dtype=torch.float32),
         )
-        return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+        return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last)
 
-    train_loader = make_loader(train_df, shuffle=True, batch_size=1024)
+    # drop_last so BatchNorm in the head never sees a 1-sample final batch.
+    train_loader = make_loader(train_df, shuffle=True, batch_size=1024, drop_last=True)
     val_loader = make_loader(val_df, shuffle=False, batch_size=2048)
     test_loader = make_loader(test_df, shuffle=False, batch_size=2048)
 
     # 5. Initialize Model, Loss, and Optimizer
     num_proteins = x_dict["protein"].shape[0]
     model = HeteroIC50GNN(num_proteins=num_proteins, hidden_dim=128).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    # weight_decay overridable from the CLI so the 1e-4 vs 1e-5 arm can be
+    # compared without editing the file; 1e-5 matches the tracked HeteroGNN.
+    weight_decay = float(sys.argv[1]) if len(sys.argv) > 1 else 1e-5
+    print(f"[config] weight_decay={weight_decay:g}")
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=weight_decay)
+    # Halve the LR when val RMSE plateaus, as the tracked gnn_baseline.py does.
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=5
+    )
     criterion = nn.MSELoss()
 
     # 6. Training Loop
@@ -133,6 +142,7 @@ def main():
         val_mse, val_rmse, val_r = evaluate(
             model, val_loader, x_dict, edge_index_dict, device
         )
+        scheduler.step(val_rmse)
 
         print(
             f"Epoch {epoch:02d}/{max_epochs:02d} | "

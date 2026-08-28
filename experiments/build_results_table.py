@@ -21,6 +21,7 @@ SOURCES = [
     ("experiments/Full Matrix/mlp_matrix_results.csv", "mlp_ablation_results.md"),
     ("experiments/Full Matrix/cross_attention_matrix_results.csv", "cross_attention_ablation_results.md"),
     ("experiments/GNN Ablation/gnn_results.csv", "gnn_ablation_results.md"),
+    ("experiments/GNN Ablation/hetero_ic50_gnn_results.csv", "hetero_gnn_test_bugfixes.md"),
 ]
 ENSEMBLE_CSV = Path("experiments/Ensemble Refinement/ensemble_results.csv")
 OUTPUT = Path("docs/results.md")

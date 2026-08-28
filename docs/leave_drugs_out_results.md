@@ -117,6 +117,93 @@ Reporting only the cell-line-grouped comparison would make the fingerprint
 choice look unjustified. Reporting only this one would overstate its
 in-distribution value. Both are needed.
 
+## GNN — does the graph help on unseen drugs?
+
+**Script:** [`experiments/Leave Drugs Out/leave_drugs_out_gnn.py`](../experiments/Leave%20Drugs%20Out/leave_drugs_out_gnn.py)
+**Raw results:** `experiments/Leave Drugs Out/leave_drugs_out_gnn_results.csv`
+**Date:** 2026-08-28
+
+The three architectures above are all flat models over a concatenated feature
+vector. None of them use the `cell_line`/`drug`/`protein` graph. Since the
+whole rationale for the graph is that PPI topology and drug–target edges carry
+biological signal a flat vector cannot, the obvious question is whether the
+graph helps on precisely the axis it should help most: scoring compounds never
+seen in training.
+
+It does not. Running the tracked `HeteroGNN` (variant `gcn`, with mutation
+edges — the E12 configuration, RMSE 1.3513 on the cell-line split) through
+`leave_drugs_out_split`:
+
+| Model | Drug rep | Test RMSE | R² | PCC |
+|---|---|---|---|---|
+| MLP | fingerprint | **1.8516** | **0.463** | — |
+| RF | fingerprint | 1.8719 | 0.451 | — |
+| CrossAttention | fingerprint | 1.9200 | 0.422 | — |
+| HeteroIC50GNN (tuned) | fingerprint | 1.9704 | 0.391 | 0.658 |
+| **GNN-GCN (tracked, E12)** | fingerprint | **2.0636** | **0.333** | 0.628 |
+| *mean-only floor* | — | *2.5500* | — | — |
+
+Both GNNs land **below every flat baseline**. The tracked GNN-GCN is worst,
+0.21 RMSE behind the flat MLP on identical Morgan fingerprints, clearing the
+mean-only floor by only 0.49 (vs the MLP's 0.70). There is no one-hot arm:
+the graph's drug nodes carry fingerprint features by construction, so this is
+inherently fingerprint-only.
+
+The second GNN row is the tuned `HeteroIC50GNN`
+(`src/models/test/hetero_gnn.py`, script:
+[`leave_drugs_out_gnn_test_model.py`](../experiments/Leave%20Drugs%20Out/leave_drugs_out_gnn_test_model.py)),
+included because it *beats* the tracked HeteroGNN on the cell-line split
+(1.3301 vs 1.3513 — see
+[`hetero_gnn_test_bugfixes.md`](./hetero_gnn_test_bugfixes.md)). That
+advantage does carry over here (+0.093 RMSE, +0.058 R² over E12), so it is
+genuinely the better GNN on both protocols — but it is still 0.12 RMSE behind
+the plain MLP and does not overturn the finding.
+
+**That the gap survived a deliberate tuning effort is itself the evidence.**
+If the GNN were merely undertrained, adding an LR scheduler, a deeper
+BatchNorm head, and proper early stopping — which bought 0.048 RMSE on the
+cell-line split — should have closed some of it. It did not. The limitation
+is in what the graph carries, not in how the model is fit.
+
+**The result is stronger than it looks, because the setup favours the GNN.**
+This is full-batch transductive message passing over one fixed graph, so a
+held-out drug's node — its fingerprint *and* its `drug→protein` target edges —
+is present throughout training; only its IC50 labels are withheld from the
+loss. The MLP and RF are strictly inductive by comparison, seeing a held-out
+drug's features for the first time at test time. The GNN had a structural
+advantage and still lost. A like-for-like inductive comparison would require
+masking held-out drug nodes out of the graph during training, and would likely
+be *worse* for the GNN, not better.
+
+### Why the graph probably isn't contributing
+
+Two properties of the constructed graph are the more plausible culprits than
+the model architecture:
+
+- **Protein nodes carry no features.** All 16,214 protein feature vectors are
+  all-zero placeholders (`03_graph_construction.py` zero-fills them);
+  `HeteroGNN` substitutes a learnable `nn.Embedding`, so protein identity is
+  learned purely from topology with no biological prior attached.
+- **Drug–target edges are extremely sparse.** 683 `drug→targets→protein`
+  edges across 498 drug nodes — averaging ~1.4 known targets per compound,
+  and many drugs likely have none. A held-out drug with no target edge is
+  connected to the rest of the graph by nothing at all, leaving the GNN with
+  only its fingerprint — the same information the MLP has, routed through more
+  parameters and more opportunity to overfit.
+
+A held-out drug with no target edge is connected to the rest of the graph by
+nothing at all — so the GNN has exactly the information the MLP has (the
+fingerprint), routed through 2.8M parameters with more opportunity to overfit.
+No amount of tuning manufactures signal the graph does not carry, which is
+what the tuned model's result above demonstrates.
+
+Combined with both GNNs also trailing the flat MLP on the cell-line split
+(1.3301 for the best-tuned variant, vs E04's 1.2843 — see
+[`hetero_gnn_test_bugfixes.md`](./hetero_gnn_test_bugfixes.md)), the graph is
+currently not earning its place on **either** axis. Improving graph
+construction (real protein features, denser drug–target coverage) is a more
+promising direction than further tuning the GNN architecture.
+
 ## Caveats
 
 - **Absolute numbers here are not comparable to the main matrix.** Predicting

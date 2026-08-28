@@ -151,14 +151,73 @@ scheduler, `Adam` with `weight_decay=1e-5` (vs. plain `AdamW` at `1e-4`
 here), and a deeper prediction head with `BatchNorm` and more dropout —
 `HeteroIC50GNN` has none of those.
 
+## Follow-up: closing the gap to E12 (Experiment A)
+
+The ~0.05 RMSE gap above was attributable to three remaining differences
+against the tracked `HeteroGNN`, all since applied to the test model:
+
+1. **`ReduceLROnPlateau` scheduler** (`factor=0.5, patience=5`), stepped on
+   val RMSE — matching `gnn_baseline.py::train`.
+2. **Deeper prediction head** — `(256, 128)` with `BatchNorm1d` and
+   `dropout=0.3`, replacing the shallow no-BatchNorm `(128, 64)` head.
+3. **Weight decay** — made CLI-overridable and both arms tested.
+
+`05_train.py` now also sets `drop_last=True` on the train loader so BatchNorm
+never sees a 1-sample final batch.
+
+| Run | Weight decay | Stop | Best epoch | Test RMSE | Test PCC |
+|---|---|---|---|---|---|
+| Baseline (bugs 1–4 fixed only) | 1e-4 | early stop @ 18 | 3 | 1.4050 | 0.8716 |
+| + scheduler + deep head | 1e-5 | early stop @ 47 | 32 | 1.3368 | 0.8769 |
+| + scheduler + deep head | **1e-4** | early stop @ 28 | 13 | **1.3035** | **0.8837** |
+
+**The scheduler was the decisive change, not the weight decay.** The original
+`1e-4` turned out to be the better setting; `1e-5` was worse in this
+configuration. What mattered was that the LR schedule let training run to
+epoch 28–47 with a meaningful best epoch (13–32), instead of peaking at epoch
+3 and immediately overfitting as every prior run had.
+
+### Which number is the comparable one: 1.3035 vs 1.3301
+
+The 1.3035 above comes from `05_train.py`, which builds its own split in
+`dataset.py`. That split uses the same *protocol* as the matrix (70/15/15
+`GroupShuffleSplit` by cell line, `random_state=42`) and lands on the same
+111,799-pair population — but it is computed independently, over a different
+row ordering, so it is not the identical partition.
+
+Re-running the same tuned model through the matrix's own shared code path
+(`gnn_baseline.load_graph_and_pairs` -> `experiment_utils.grouped_split` ->
+`experiment_utils.evaluate`) gives **RMSE 1.3301 / PCC 0.8805**, via
+[`experiments/GNN Ablation/hetero_ic50_gnn_matrix.py`](../experiments/GNN%20Ablation/hetero_ic50_gnn_matrix.py).
+
+**1.3301 is the number to quote.** The 0.027 difference between the two is
+split-luck, not model improvement, and only the shared-split run is comparable
+to the rest of [`results.md`](./results.md). This is exactly why the row in
+that table comes from the matrix-protocol script rather than from
+`05_train.py`.
+
+**Final (shared protocol): RMSE 1.3301 / PCC 0.8805.** That beats the tracked
+GNN-GCN (E12, 1.3513) by 0.021, making this the best graph model in the
+project — but it does *not* beat CrossAttention/fingerprint (E10, 1.3205) or
+the flat MLP (E04, 1.2843), as the more favourable 1.3035 figure would have
+suggested.
+
 ## Conclusion
 
-The fixes make `src/models/test/hetero_gnn.py` a legitimate, trustworthy
-result instead of a broken one, and it now lands in the same neighborhood as
-the tracked GNN-GCN experiment. It does not become a new best-model
-candidate — E04 (MLP/fingerprint, 1.2843) and E12 (GNN-GCN, 1.3513) both
-still beat it. It remains useful mainly as a simpler reference implementation
-of the same graph, now correctly wired.
+The fixes take `src/models/test/hetero_gnn.py` from a broken, non-comparable
+prototype to **the best-performing GNN in the project** on the cell-line
+split (RMSE 1.3301, vs. tracked E12's 1.3513).
+
+It still does not beat the flat MLP baseline (E04, 1.2843), nor
+cross-attention on the same fingerprints (E10, 1.3205). That matters more than
+the intra-GNN win: the proposal's stated success criterion (§3, line 177) is
+beating a flat concatenation baseline on RMSE, and no graph or attention model
+in the project currently clears that bar when using the SMILES-derived drug
+representation the proposal requires.
+
+See [`leave_drugs_out_results.md`](./leave_drugs_out_results.md) §GNN for the
+companion result on unseen drugs, where the graph performs *worse* than every
+flat baseline.
 
 ## Files changed
 
