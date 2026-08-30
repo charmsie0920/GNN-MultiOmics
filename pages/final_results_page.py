@@ -1,9 +1,9 @@
 """Final Results page.
 
 The last stop in the workflow: shows the model's predicted drug rankings for
-the current patient alongside supporting visualizations (IC50 distribution,
-biomarker correlation scatter) and detail panels (top drug details, patient
-molecular profile).
+the selected target cell line, alongside supporting visualizations (IC50
+distribution, biomarker correlation scatter — still mocked) and detail
+panels (top drug details, sample profile).
 
 Main UI components:
     - Shared sidebar (`widgets.navigation.build_sidebar`) — this page has no
@@ -13,18 +13,19 @@ Main UI components:
       "Results" marked as the active workflow tab.
     - A "Predicted Drug Results Panel" table, styled with the same shared
       table helpers (`widgets.tables`) as the model execution log page's
-      pipeline table, so the two read as one design system.
+      pipeline table, so the two read as one design system. Populated from
+      real backend inference via `load_results(run_id)`.
     - Two custom-painted placeholder charts (`IC50DistributionWidget`,
-      `ScatterPlaceholderWidget`).
-    - Drug detail and molecular profile summary cards.
+      `ScatterPlaceholderWidget`) — still mocked; out of scope for now.
+    - Drug detail and sample profile summary cards, populated from the same
+      real results.
 
 Interactions with other pages:
     - `on_upload_clicked` navigates back to `DatasetInitializationPage`.
     - `on_model_running_clicked` navigates to `ModelExecutionLogPage`.
-    Both callbacks are supplied and wired by `main.py`.
-
-The entire results payload (drug rankings, chart data, patient profile) is
-currently mocked and must be replaced by real backend inference output.
+    Both callbacks are supplied and wired by `UILauncher.py`, which also
+    calls `load_results(run_id)` / `set_sample_id(target_cell_line)` before
+    switching to this page.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QTableWidget,
@@ -47,6 +49,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from client.workers import ResultsWorker
 from styles.theme import (
     BORDER,
     CARD_CONTAINER_STYLE,
@@ -79,6 +82,21 @@ from widgets.tables import build_mini_progress_bar, build_status_badge, style_da
 
 # Sensitivity ranking label -> status badge tone (see widgets.tables.build_status_badge).
 _RANK_TO_BADGE_TONE = {"HIGH SENSITIVITY": "positive", "MEDIUM": "neutral", "LOW": "muted"}
+
+
+def _format_ic50(value: float) -> str:
+    """Format a predicted IC50 (uM) with precision that scales to its magnitude.
+
+    A flat `.1f` rounds any sub-0.05 uM prediction (a real, very sensitive
+    result -- GDSC ln_ic50 values span roughly -10 to 10, i.e. ~5e-5 to
+    ~22000 uM) down to a misleading "0.0". Below 1 uM, show 3 significant
+    figures instead so small-but-real values stay visible.
+    """
+    if value == 0:
+        return "0.0"
+    if abs(value) >= 1:
+        return f"{value:.1f}"
+    return f"{value:.3g}"
 
 
 @dataclass(frozen=True)
@@ -221,10 +239,44 @@ class FinalResultsPage(QWidget):
         """
         super().__init__(parent)
         self.setObjectName("FinalResultsPage")
-        # * Entire results payload is currently mocked and must be replaced by backend inference outputs.
         self._on_upload_clicked = on_upload_clicked
         self._on_model_running_clicked = on_model_running_clicked
+
+        self._results_worker: ResultsWorker | None = None
+        self._table: QTableWidget | None = None
+        self._drug_name_label: QLabel | None = None
+        self._drug_ic50_value: QLabel | None = None
+        self._drug_confidence_value: QLabel | None = None
+        self._drug_rank_slot: QVBoxLayout | None = None
+        self._sample_subtitle_label: QLabel | None = None
+
         self._build_ui()
+
+    # -- live results -----------------------------------------------------
+
+    def load_results(self, run_id: str) -> None:
+        """Fetch and display the ranked drug predictions for `run_id`."""
+        self._results_worker = ResultsWorker(run_id, parent=self)
+        self._results_worker.succeeded.connect(self._on_results_succeeded)
+        self._results_worker.failed.connect(self._on_results_failed)
+        self._results_worker.start()
+
+    def _on_results_succeeded(self, raw_results: list[dict]) -> None:
+        rows = [
+            DrugResult(
+                name=item["drug_name"],
+                ic50=item["predicted_ic50_um"],
+                rank=item["ranking"],
+                confidence=item["confidence_percent"],
+            )
+            for item in raw_results
+        ]
+        rows.sort(key=lambda row: row.ic50)
+        self._populate_table(rows)
+        self._populate_drug_details(rows[0] if rows else None)
+
+    def _on_results_failed(self, message: str) -> None:
+        QMessageBox.critical(self, "Could Not Load Results", message)
 
     def _build_ui(self) -> None:
         """Lay out the sidebar, header, and scrollable body content."""
@@ -329,7 +381,7 @@ class FinalResultsPage(QWidget):
         right_col = QVBoxLayout()
         right_col.setSpacing(SECTION_SPACING)
         right_col.addWidget(self._build_drug_details_panel())
-        right_col.addWidget(self._build_molecular_profile_panel())
+        right_col.addWidget(self._build_sample_profile_panel())
         right_col.addStretch(1)
 
         left_host = QWidget()
@@ -370,37 +422,51 @@ class FinalResultsPage(QWidget):
         header_row.addWidget(info_icon)
         layout.addWidget(header)
 
-        rows = [
-            # * Replace with backend response from /api/v1/results/drug-ranking.
-            DrugResult("Afatinib", 15.2, "HIGH SENSITIVITY", 98.4),
-            DrugResult("Erlotinib", 25.0, "HIGH SENSITIVITY", 95.1),
-            DrugResult("Gefitinib", 32.8, "HIGH SENSITIVITY", 92.0),
-            DrugResult("Osimertinib", 58.5, "MEDIUM", 88.2),
-            DrugResult("Dacomitinib", 85.0, "LOW", 81.5),
-        ]
-
-        table = QTableWidget(len(rows), 4)
+        table = QTableWidget(0, 4)
         table.setHorizontalHeaderLabels(["Drug Name", "Predicted IC50 (uM)", "Sensitivity Ranking", "Confidence"])
         style_data_table(table, header_background=WINDOW_BACKGROUND)
+        table.setColumnWidth(0, 140)
+        table.setColumnWidth(1, 150)
+        table.setColumnWidth(2, 170)
+        self._table = table
+        self._populate_table([])
 
+        layout.addWidget(table)
+        return card
+
+    def _populate_table(self, rows: list[DrugResult]) -> None:
+        """(Re)fill the predicted-results table from real `DrugResult` rows.
+
+        Called with an empty list while a run's results haven't loaded yet
+        (shows a single "waiting" placeholder row), and again once
+        `load_results` fetches the real ranked predictions.
+        """
+        table = self._table
+        if table is None:
+            return
+
+        if not rows:
+            table.setRowCount(1)
+            waiting_item = QTableWidgetItem("Waiting for a completed model run...")
+            waiting_item.setForeground(QColor(TEXT_MUTED))
+            table.setItem(0, 0, waiting_item)
+            table.setSpan(0, 0, 1, 4)
+            return
+
+        table.clearSpans()
+        table.setRowCount(len(rows))
         for row_index, row in enumerate(rows):
             name_item = QTableWidgetItem(row.name)
             name_item.setForeground(QColor(TEXT))
             table.setItem(row_index, 0, name_item)
 
-            ic50_item = QTableWidgetItem(f"{row.ic50:.1f}")
+            ic50_item = QTableWidgetItem(_format_ic50(row.ic50))
             ic50_item.setForeground(QColor(TEXT_MUTED))
             table.setItem(row_index, 1, ic50_item)
 
             tone = _RANK_TO_BADGE_TONE.get(row.rank, "neutral")
             table.setCellWidget(row_index, 2, build_status_badge(row.rank, tone))
             table.setCellWidget(row_index, 3, self._build_confidence_cell(row.confidence))
-
-        table.setColumnWidth(0, 140)
-        table.setColumnWidth(1, 150)
-        table.setColumnWidth(2, 170)
-        layout.addWidget(table)
-        return card
 
     @staticmethod
     def _build_confidence_cell(confidence: float) -> QWidget:
@@ -470,7 +536,12 @@ class FinalResultsPage(QWidget):
         return card
 
     def _build_drug_details_panel(self) -> QFrame:
-        """Build the top-ranked drug's detail card (name, structure, description, metadata)."""
+        """Build the top-ranked drug's detail card (name, predicted IC50, ranking, confidence).
+
+        Only shows values the model actually produces — no fabricated
+        chemistry (formula/weight/description); the repo has no drug
+        metadata source to back those with real data.
+        """
         card = QFrame()
         card.setStyleSheet(CARD_CONTAINER_STYLE)
         layout = QVBoxLayout(card)
@@ -479,47 +550,16 @@ class FinalResultsPage(QWidget):
 
         top = QHBoxLayout()
         title_col = QVBoxLayout()
-        drug_name = QLabel("Afatinib")
+        drug_name = QLabel("—")
         drug_name.setStyleSheet(label_style(f"font-size: 24px; font-weight: 600; color: {TEXT};"))
-        drug_type = QLabel("Tyrosine Kinase Inhibitor")
-        drug_type.setStyleSheet(LABEL_CAPS_STYLE)
+        self._drug_name_label = drug_name
+        subtitle = QLabel("Top Predicted Match")
+        subtitle.setStyleSheet(LABEL_CAPS_STYLE)
         title_col.addWidget(drug_name)
-        title_col.addWidget(drug_type)
+        title_col.addWidget(subtitle)
         top.addLayout(title_col)
         top.addStretch(1)
-
-        open_btn = QPushButton(icon_text("open_in_new"))
-        open_btn.setFixedSize(32, 32)
-        open_btn.setStyleSheet(
-            f"border: 1px solid {BORDER}; border-radius: 4px; background: {SURFACE}; color: {TEXT_MUTED};"
-        )
-        top.addWidget(open_btn)
         layout.addLayout(top)
-
-        molecule_frame = QFrame()
-        molecule_frame.setFixedHeight(180)
-        molecule_frame.setStyleSheet(
-            "background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #f3f3f3, stop:1 #e8e8e8);"
-            f" border: 1px solid {BORDER}; border-radius: 6px;"
-        )
-        molecule_layout = QVBoxLayout(molecule_frame)
-        molecule_layout.setContentsMargins(0, 0, 0, 0)
-        molecule_label = QLabel("C24H25ClFN5O3")
-        molecule_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        molecule_label.setStyleSheet(label_style(f"font-family: Consolas, monospace; font-size: 14px; color: {TEXT};"))
-        molecule_layout.addWidget(molecule_label)
-        layout.addWidget(molecule_frame)
-
-        description_title = QLabel("Clinical Description")
-        description_title.setStyleSheet(LABEL_CAPS_STYLE)
-        description = QLabel(
-            "An irreversible kinase inhibitor that selectively targets EGFR and HER2 with therapeutic"
-            " potential in solid tumors."
-        )
-        description.setWordWrap(True)
-        description.setStyleSheet(label_style(f"font-size: 14px; color: {TEXT};"))
-        layout.addWidget(description_title)
-        layout.addWidget(description)
 
         separator = QFrame()
         separator.setFrameShape(QFrame.Shape.HLine)
@@ -528,53 +568,81 @@ class FinalResultsPage(QWidget):
 
         metadata = QGridLayout()
         metadata.setHorizontalSpacing(16)
-        composition_label = QLabel("Composition")
-        composition_value = QLabel("C24H25ClFN5O3")
-        weight_label = QLabel("Weight")
-        weight_value = QLabel("485.94 g/mol")
-        for label in (composition_label, weight_label):
+        metadata.setVerticalSpacing(4)
+        ic50_label = QLabel("Predicted IC50 (uM)")
+        confidence_label = QLabel("Confidence")
+        ic50_value = QLabel("—")
+        confidence_value = QLabel("—")
+        for label in (ic50_label, confidence_label):
             label.setStyleSheet(LABEL_CAPS_STYLE)
-        for value in (composition_value, weight_value):
-            value.setStyleSheet(label_style(f"font-family: Consolas, monospace; font-size: 13px; color: {TEXT};"))
-        metadata.addWidget(composition_label, 0, 0)
-        metadata.addWidget(weight_label, 0, 1)
-        metadata.addWidget(composition_value, 1, 0)
-        metadata.addWidget(weight_value, 1, 1)
+        for value in (ic50_value, confidence_value):
+            value.setStyleSheet(label_style(f"font-family: Consolas, monospace; font-size: 16px; color: {TEXT};"))
+        self._drug_ic50_value = ic50_value
+        self._drug_confidence_value = confidence_value
+        metadata.addWidget(ic50_label, 0, 0)
+        metadata.addWidget(confidence_label, 0, 1)
+        metadata.addWidget(ic50_value, 1, 0)
+        metadata.addWidget(confidence_value, 1, 1)
         layout.addLayout(metadata)
+
+        rank_slot = QVBoxLayout()
+        rank_slot.setContentsMargins(0, 4, 0, 0)
+        self._drug_rank_slot = rank_slot
+        layout.addLayout(rank_slot)
+
         return card
 
-    def _build_molecular_profile_panel(self) -> QFrame:
-        """Build the patient molecular profile card (mutations, expression, network proximity)."""
+    def _populate_drug_details(self, top_result: DrugResult | None) -> None:
+        """Fill the drug details card from the top-ranked real prediction."""
+        if top_result is None:
+            return
+        if self._drug_name_label is not None:
+            self._drug_name_label.setText(top_result.name)
+        if self._drug_ic50_value is not None:
+            self._drug_ic50_value.setText(_format_ic50(top_result.ic50))
+        if self._drug_confidence_value is not None:
+            self._drug_confidence_value.setText(f"{top_result.confidence:.1f}%")
+        if self._drug_rank_slot is not None:
+            while self._drug_rank_slot.count():
+                item = self._drug_rank_slot.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+            tone = _RANK_TO_BADGE_TONE.get(top_result.rank, "neutral")
+            self._drug_rank_slot.addWidget(build_status_badge(top_result.rank, tone))
+
+    def _build_sample_profile_panel(self) -> QFrame:
+        """Build the sample profile card: target cell line + omics modalities used.
+
+        Replaces the old "Molecular Profile" card, which fabricated a
+        patient ID and gene mutations that don't exist anywhere in this
+        cell-line-based pipeline.
+        """
         card = QFrame()
         card.setStyleSheet(CARD_CONTAINER_STYLE)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        title = QLabel("Molecular Profile")
+        title = QLabel("Sample Profile")
         title.setStyleSheet(CARD_TITLE_STYLE)
-        subtitle = QLabel("Patient: PT-8842-AX")
-        # * Replace patient identifier and molecular details with backend-provided patient context.
+        subtitle = QLabel("Cell Line: —")
         subtitle.setStyleSheet(label_style(f"font-size: 14px; color: {TEXT_MUTED};"))
+        self._sample_subtitle_label = subtitle
         layout.addWidget(title)
         layout.addWidget(subtitle)
 
-        mutations_title = QLabel("Key Mutations Identified")
-        mutations_title.setStyleSheet(LABEL_CAPS_STYLE)
-        layout.addWidget(mutations_title)
+        modalities_title = QLabel("Omics Modalities Used")
+        modalities_title.setStyleSheet(LABEL_CAPS_STYLE)
+        layout.addWidget(modalities_title)
 
         chips = QHBoxLayout()
         chips.setSpacing(8)
-        chips.addWidget(self._chip("EGFR L858R", primary=True))
-        chips.addWidget(self._chip("TP53 R175H"))
-        chips.addWidget(self._chip("PIK3CA E545K"))
+        chips.addWidget(self._chip("Transcriptomics", primary=True))
+        chips.addWidget(self._chip("Genomics (Mut/CNV)"))
+        chips.addWidget(self._chip("Proteomics"))
         chips.addStretch(1)
         layout.addLayout(chips)
-
-        expression_title = QLabel("Expression Summary")
-        expression_title.setStyleSheet(LABEL_CAPS_STYLE)
-        layout.addWidget(expression_title)
-        layout.addWidget(self._build_expression_summary())
 
         network_title = QLabel("Network Proximity")
         network_title.setStyleSheet(LABEL_CAPS_STYLE)
@@ -583,28 +651,10 @@ class FinalResultsPage(QWidget):
 
         return card
 
-    @staticmethod
-    def _build_expression_summary() -> QFrame:
-        """Build the "EGFR Overexpression" row with a value label and progress bar."""
-        card = QFrame()
-        card.setStyleSheet(f"background: {WINDOW_BACKGROUND}; border: 1px solid {BORDER}; border-radius: 6px;")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(6)
-
-        row = QHBoxLayout()
-        overexpression_label = QLabel("EGFR Overexpression")
-        overexpression_label.setStyleSheet(label_style(f"font-size: 14px; color: {TEXT};"))
-        row.addWidget(overexpression_label)
-        value = QLabel("High (98th pct)")
-        value.setStyleSheet(label_style(f"font-family: Consolas, monospace; font-weight: 700; color: {TEXT};"))
-        row.addStretch(1)
-        row.addWidget(value)
-        layout.addLayout(row)
-
-        bar = build_mini_progress_bar(98, height=6)
-        layout.addWidget(bar)
-        return card
+    def set_sample_id(self, sanger_model_id: str) -> None:
+        """Update the Sample Profile card's cell-line identifier."""
+        if self._sample_subtitle_label is not None:
+            self._sample_subtitle_label.setText(f"Cell Line: {sanger_model_id}")
 
     @staticmethod
     def _build_network_proximity_placeholder() -> QFrame:

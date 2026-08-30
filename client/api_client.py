@@ -40,8 +40,14 @@ def upload_dataset_csv(file_path: str) -> dict:
     return _unwrap(response)
 
 
-def start_run(backend_name: str | None = None) -> dict:
+def start_run(target_cell_line: str, backend_name: str | None = None) -> dict:
     """Start a model run for the most recently uploaded dataset.
+
+    Args:
+        target_cell_line: The `sanger_model_id` to predict drug rankings for
+            once training finishes.
+        backend_name: Optional backend override (defaults to the server's
+            configured default).
 
     Returns the parsed JSON response (`run_id`, `device`,
     `expected_duration_seconds`, ...) on success.
@@ -49,7 +55,9 @@ def start_run(backend_name: str | None = None) -> dict:
     Raises:
         ApiError: On a network failure or a non-2xx response.
     """
-    params = {"backend_name": backend_name} if backend_name else None
+    params = {"target_cell_line": target_cell_line}
+    if backend_name:
+        params["backend_name"] = backend_name
     try:
         response = requests.post(f"{BASE_URL}/api/v1/model/run/start", params=params, timeout=10)
     except requests.RequestException as exc:
@@ -69,6 +77,20 @@ def get_run_status(run_id: str, since: int = 0) -> dict:
             params={"since": since},
             timeout=10,
         )
+    except requests.RequestException as exc:
+        raise ApiError(f"Could not reach the backend: {exc}") from exc
+    return _unwrap(response)
+
+
+def get_drug_ranking(run_id: str) -> list[dict]:
+    """Fetch the ranked drug predictions for a completed run.
+
+    Raises:
+        ApiError: On a network failure or a non-2xx response (including a
+            run that hasn't produced results yet).
+    """
+    try:
+        response = requests.get(f"{BASE_URL}/api/v1/results/drug-ranking/{run_id}", timeout=10)
     except requests.RequestException as exc:
         raise ApiError(f"Could not reach the backend: {exc}") from exc
     return _unwrap(response)

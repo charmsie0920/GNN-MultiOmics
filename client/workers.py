@@ -6,13 +6,18 @@ import time
 
 from PySide6.QtCore import QThread, Signal
 
-from client.api_client import ApiError, get_run_status, start_run, upload_dataset_csv
+from client.api_client import ApiError, get_drug_ranking, get_run_status, start_run, upload_dataset_csv
 
 POLL_INTERVAL_SECONDS = 1.0
 
 
 class UploadWorker(QThread):
-    """Uploads a dataset CSV, then starts a model run, off the UI thread."""
+    """Uploads a dataset CSV off the UI thread.
+
+    Only uploads — starting a run needs a target cell line, chosen by the
+    user from `cell_line_ids` in the result, so that's a separate step via
+    `StartRunWorker`.
+    """
 
     succeeded = Signal(dict)
     failed = Signal(str)
@@ -24,11 +29,48 @@ class UploadWorker(QThread):
     def run(self) -> None:  # noqa: N802
         try:
             upload_result = upload_dataset_csv(self._file_path)
-            run_result = start_run()
         except ApiError as exc:
             self.failed.emit(str(exc))
         else:
-            self.succeeded.emit({**upload_result, **run_result})
+            self.succeeded.emit(upload_result)
+
+
+class StartRunWorker(QThread):
+    """Starts a model run for a chosen target cell line, off the UI thread."""
+
+    succeeded = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, target_cell_line: str, parent=None) -> None:
+        super().__init__(parent)
+        self._target_cell_line = target_cell_line
+
+    def run(self) -> None:  # noqa: N802
+        try:
+            run_result = start_run(self._target_cell_line)
+        except ApiError as exc:
+            self.failed.emit(str(exc))
+        else:
+            self.succeeded.emit(run_result)
+
+
+class ResultsWorker(QThread):
+    """Fetches the ranked drug predictions for a completed run, off the UI thread."""
+
+    succeeded = Signal(list)
+    failed = Signal(str)
+
+    def __init__(self, run_id: str, parent=None) -> None:
+        super().__init__(parent)
+        self._run_id = run_id
+
+    def run(self) -> None:  # noqa: N802
+        try:
+            results = get_drug_ranking(self._run_id)
+        except ApiError as exc:
+            self.failed.emit(str(exc))
+        else:
+            self.succeeded.emit(results)
 
 
 class RunStatusPoller(QThread):

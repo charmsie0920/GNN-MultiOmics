@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from backend.routers.dataset import router as dataset_router
 from backend.routers.model_run import router as model_run_router
+from backend.routers.results import router as results_router
 
 app = FastAPI(title="MSC16 Placeholder API", version="0.1.0")
 
@@ -19,6 +20,7 @@ app.add_middleware(
 
 app.include_router(dataset_router)
 app.include_router(model_run_router)
+app.include_router(results_router)
 
 
 class HealthResponse(BaseModel):
@@ -35,13 +37,6 @@ class ModelLogEntry(BaseModel):
     time: str
     level: str
     message: str
-
-
-class DrugResult(BaseModel):
-    drug_name: str
-    predicted_ic50_um: float
-    ranking: str
-    confidence_percent: float
 
 
 @app.get("/api/v1/health", response_model=HealthResponse)
@@ -80,30 +75,6 @@ def model_visualization_state() -> dict[str, int | str]:
         "status": "computing",
         "progress_percent": 68,
         "elapsed_seconds": 252,
-    }
-
-
-@app.get("/api/v1/results/drug-ranking", response_model=list[DrugResult])
-def drug_ranking() -> list[DrugResult]:
-    # * Placeholder results payload shown in Results page.
-    # * Replace with post-inference ranked drug outputs per patient.
-    return [
-        DrugResult(drug_name="Afatinib", predicted_ic50_um=15.2, ranking="HIGH SENSITIVITY", confidence_percent=98.4),
-        DrugResult(drug_name="Erlotinib", predicted_ic50_um=25.0, ranking="HIGH SENSITIVITY", confidence_percent=95.1),
-        DrugResult(drug_name="Gefitinib", predicted_ic50_um=32.8, ranking="HIGH SENSITIVITY", confidence_percent=92.0),
-        DrugResult(drug_name="Osimertinib", predicted_ic50_um=58.5, ranking="MEDIUM", confidence_percent=88.2),
-        DrugResult(drug_name="Dacomitinib", predicted_ic50_um=85.0, ranking="LOW", confidence_percent=81.5),
-    ]
-
-
-@app.get("/api/v1/results/patient-profile")
-def patient_profile() -> dict[str, object]:
-    # * Placeholder patient profile payload used by molecular profile cards.
-    # * Replace with real patient omics/mutation profile from data services.
-    return {
-        "patient_id": "PT-8842-AX",
-        "mutations": ["EGFR L858R", "TP53 R175H", "PIK3CA E545K"],
-        "egfr_overexpression_percentile": 98,
     }
 
 

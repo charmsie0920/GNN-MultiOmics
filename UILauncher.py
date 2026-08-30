@@ -57,6 +57,12 @@ def main() -> int:
 
     stack = QStackedWidget()
 
+    # Set whenever a run starts (`show_log_page`), read by
+    # `show_final_results_page` — a simple shared reference so the run id
+    # and target cell line don't need to be threaded through every page
+    # callback signature.
+    current_run: dict[str, str | None] = {"run_id": None, "target_cell_line": None}
+
     # Each page is built with callbacks pointing at these closures rather
     # than at each other, so pages stay decoupled from one another and only
     # need to know about the navigation *action*, not the destination page.
@@ -68,6 +74,8 @@ def main() -> int:
         # response) — never connect this directly to a Qt signal, since
         # PySide would pass the `clicked(checked: bool)` argument through
         # as `run_info`.
+        current_run["run_id"] = run_info["run_id"]
+        current_run["target_cell_line"] = run_info.get("target_cell_line")
         log_page.start_watching(run_info)
         stack.setCurrentWidget(log_page)
 
@@ -78,6 +86,10 @@ def main() -> int:
         stack.setCurrentWidget(visualization_page)
 
     def show_final_results_page() -> None:
+        if current_run["run_id"] is not None:
+            final_results_page.load_results(current_run["run_id"])
+        if current_run["target_cell_line"] is not None:
+            final_results_page.set_sample_id(current_run["target_cell_line"])
         stack.setCurrentWidget(final_results_page)
 
     upload_page = DatasetInitializationPage(on_initialize_upload=show_log_page)

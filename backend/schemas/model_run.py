@@ -20,3 +20,6 @@ class RunStatusResponse(BaseModel):
     new_log_lines: list[str]
     next_since: int
     error_message: str | None = None
+    current_epoch: int = 0
+    max_epochs: int = 0
+    estimated_remaining_seconds: float | None = None

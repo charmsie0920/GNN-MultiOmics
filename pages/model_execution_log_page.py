@@ -184,10 +184,24 @@ class ModelExecutionLogPage(QWidget):
         status = payload.get("status", "running")
         expected = payload.get("expected_duration_seconds") or self._expected_duration_seconds
         elapsed = payload.get("elapsed_seconds", 0.0)
-        self._update_progress_ui(payload.get("progress_percent", 0.0), elapsed, expected, status)
+        current_epoch = payload.get("current_epoch", 0)
+        max_epochs = payload.get("max_epochs", 0)
+        self._update_progress_ui(
+            payload.get("progress_percent", 0.0),
+            elapsed,
+            expected,
+            status,
+            current_epoch=current_epoch,
+            max_epochs=max_epochs,
+            estimated_remaining_seconds=payload.get("estimated_remaining_seconds"),
+        )
 
         if status == "running":
-            fraction = elapsed / expected if expected else 0.0
+            # Real epoch progress once training has reported at least one
+            # epoch; falls back to a rough time-based guess only for the
+            # brief window before that (or for a backend that never reports
+            # epochs at all).
+            fraction = (current_epoch / max_epochs) if max_epochs else (elapsed / expected if expected else 0.0)
             self._update_pipeline_progress(fraction)
         elif status == "completed":
             self._mark_pipeline_done()
@@ -339,8 +353,23 @@ class ModelExecutionLogPage(QWidget):
         track_layout.addStretch(100 - percent)
         return track
 
-    def _update_progress_ui(self, percent: float, elapsed: float, expected: float, status: str) -> None:
-        """Refresh the progress bar fill and the progress/remaining-time labels."""
+    def _update_progress_ui(
+        self,
+        percent: float,
+        elapsed: float,
+        expected: float,
+        status: str,
+        *,
+        current_epoch: int = 0,
+        max_epochs: int = 0,
+        estimated_remaining_seconds: float | None = None,
+    ) -> None:
+        """Refresh the progress bar fill and the progress/remaining-time labels.
+
+        Prefers real training progress (epoch count, and a remaining-time
+        estimate derived from the observed per-epoch rate) over the fixed
+        time-based guess, once the run has reported at least one epoch.
+        """
         clamped = max(0, min(100, round(percent)))
 
         if self._progress_bar_slot is not None:
@@ -352,13 +381,17 @@ class ModelExecutionLogPage(QWidget):
             self._progress_bar_slot.addWidget(self._build_overall_progress_bar(percent=clamped))
 
         if self._progress_label is not None:
-            self._progress_label.setText(f"Overall Progress: {clamped}%")
+            if max_epochs:
+                self._progress_label.setText(f"Overall Progress: {clamped}% (epoch {current_epoch}/{max_epochs})")
+            else:
+                self._progress_label.setText(f"Overall Progress: {clamped}%")
 
         if self._remaining_label is not None:
             if status == "running":
-                remaining = max(0.0, expected - elapsed)
+                remaining = estimated_remaining_seconds if estimated_remaining_seconds is not None else max(0.0, expected - elapsed)
                 minutes, seconds = divmod(int(remaining), 60)
-                self._remaining_label.setText(f"Est. Time Remaining: {minutes}m {seconds:02d}s")
+                prefix = "Est. Time Remaining" if estimated_remaining_seconds is not None else "Est. Time Remaining (rough)"
+                self._remaining_label.setText(f"{prefix}: {minutes}m {seconds:02d}s")
             elif status == "completed":
                 self._remaining_label.setText("Est. Time Remaining: Complete")
             else:

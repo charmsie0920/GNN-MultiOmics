@@ -52,7 +52,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from client.workers import UploadWorker
+from client.workers import StartRunWorker, UploadWorker
 from styles.theme import LABEL_CAPS_STYLE, PAGE_MARGIN, PAGE_TITLE_STYLE, SECTION_SPACING
 from widgets.cards import OptionTile, SurfaceCard, UploadCard
 from widgets.icons import icon_text
@@ -95,6 +95,13 @@ class DatasetInitializationPage(QWidget):
         self._upload_heading: QLabel | None = None
         self._initialize_button: QPushButton | None = None
         self._upload_worker: UploadWorker | None = None
+        self._start_run_worker: StartRunWorker | None = None
+        self._cell_line_combo: QComboBox | None = None
+        self._selected_cell_line: str | None = None
+        # "upload" until a CSV has been accepted and its cell-line list
+        # fetched; "start_run" once the user just needs to pick a target
+        # sample and kick off the run.
+        self._stage = "upload"
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -158,6 +165,7 @@ class DatasetInitializationPage(QWidget):
         right_stack.setSpacing(SECTION_SPACING)
         right_stack.addWidget(self._build_omics_card())
         right_stack.addWidget(self._build_analysis_profile_card())
+        right_stack.addWidget(self._build_target_sample_card())
         right_stack.addWidget(self._build_initialize_button())
         right_stack.addItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
 
@@ -373,6 +381,29 @@ class DatasetInitializationPage(QWidget):
         layout.addWidget(genome_combo)
         return card
 
+    def _build_target_sample_card(self) -> SurfaceCard:
+        """Build the "Target Sample" card: picks the cell line to run predictions for.
+
+        Disabled until a dataset has been uploaded, since the choices come
+        from the intersection of the uploaded CSV's cell lines and the
+        model's fixed omics reference files (see `backend/routers/dataset.py`).
+        """
+        card = SurfaceCard()
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(12)
+
+        title = QLabel("Target Sample")
+        title.setStyleSheet(LABEL_CAPS_STYLE)
+        layout.addWidget(title)
+
+        combo = QComboBox()
+        combo.addItem("Upload a dataset first")
+        combo.setEnabled(False)
+        self._cell_line_combo = combo
+        layout.addWidget(combo)
+        return card
+
     def _build_initialize_button(self) -> QWidget:
         """Build the "Initialize Upload" submit button.
 
@@ -425,7 +456,19 @@ class DatasetInitializationPage(QWidget):
             self._upload_heading.setText(Path(path).name)
 
     def _on_initialize_clicked(self) -> None:
-        """Upload the staged file to the backend, then navigate on success."""
+        """Dispatch the primary button's click to the current stage.
+
+        Stage "upload": uploads the staged CSV and, on success, populates
+        the Target Sample dropdown from the response's `cell_line_ids` and
+        advances to stage "start_run". Stage "start_run": starts a model run
+        for the selected cell line and navigates via `on_initialize_upload`.
+        """
+        if self._stage == "upload":
+            self._start_upload()
+        else:
+            self._start_run()
+
+    def _start_upload(self) -> None:
         if self._selected_file_path is None:
             self._show_message("Initialize Upload", "Select a dataset CSV first.")
             return
@@ -440,17 +483,65 @@ class DatasetInitializationPage(QWidget):
         self._upload_worker.start()
 
     def _on_upload_succeeded(self, result: dict) -> None:
-        self._reset_initialize_button()
-        if self._on_initialize_upload is not None:
-            self._on_initialize_upload(result)
-        else:
-            self._show_message("Initialize Upload", "Upload succeeded (no navigation callback configured).")
+        cell_line_ids = result.get("cell_line_ids") or []
+        if not cell_line_ids:
+            self._reset_to_upload_stage()
+            QMessageBox.critical(
+                self,
+                "Upload Failed",
+                "None of this dataset's cell lines have matching omics reference data, "
+                "so no target sample can be selected.",
+            )
+            return
+
+        if self._cell_line_combo is not None:
+            self._cell_line_combo.clear()
+            self._cell_line_combo.addItems(cell_line_ids)
+            self._cell_line_combo.setEnabled(True)
+
+        self._stage = "start_run"
+        if self._initialize_button is not None:
+            self._initialize_button.setEnabled(True)
+            self._initialize_button.setText("Start Run")
 
     def _on_upload_failed(self, message: str) -> None:
-        self._reset_initialize_button()
+        self._reset_to_upload_stage()
         QMessageBox.critical(self, "Upload Failed", message)
 
-    def _reset_initialize_button(self) -> None:
+    def _start_run(self) -> None:
+        if self._cell_line_combo is None or not self._cell_line_combo.isEnabled():
+            self._show_message("Start Run", "Upload a dataset first.")
+            return
+        self._selected_cell_line = self._cell_line_combo.currentText()
+
+        if self._initialize_button is not None:
+            self._initialize_button.setEnabled(False)
+            self._initialize_button.setText("Starting Run...")
+
+        self._start_run_worker = StartRunWorker(self._selected_cell_line, parent=self)
+        self._start_run_worker.succeeded.connect(self._on_start_run_succeeded)
+        self._start_run_worker.failed.connect(self._on_start_run_failed)
+        self._start_run_worker.start()
+
+    def _on_start_run_succeeded(self, result: dict) -> None:
+        self._reset_to_upload_stage()
+        if self._on_initialize_upload is not None:
+            self._on_initialize_upload({**result, "target_cell_line": self._selected_cell_line})
+        else:
+            self._show_message("Start Run", "Run started (no navigation callback configured).")
+
+    def _on_start_run_failed(self, message: str) -> None:
+        if self._initialize_button is not None:
+            self._initialize_button.setEnabled(True)
+            self._initialize_button.setText("Start Run")
+        QMessageBox.critical(self, "Run Failed to Start", message)
+
+    def _reset_to_upload_stage(self) -> None:
+        self._stage = "upload"
+        if self._cell_line_combo is not None:
+            self._cell_line_combo.clear()
+            self._cell_line_combo.addItem("Upload a dataset first")
+            self._cell_line_combo.setEnabled(False)
         if self._initialize_button is not None:
             self._initialize_button.setEnabled(True)
             self._initialize_button.setText("Initialize Upload")

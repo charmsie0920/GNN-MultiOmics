@@ -1,0 +1,10 @@
+from __future__ import annotations
+
+from pydantic import BaseModel
+
+
+class DrugResult(BaseModel):
+    drug_name: str
+    predicted_ic50_um: float
+    ranking: str
+    confidence_percent: float

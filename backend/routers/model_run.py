@@ -12,8 +12,8 @@ router = APIRouter(prefix="/api/v1/model", tags=["model-run"])
 
 
 @router.post("/run/start", response_model=StartRunResponse)
-def start_run(backend_name: str = DEFAULT_BACKEND) -> StartRunResponse:
-    state = run_manager.start_run(backend_name)
+def start_run(target_cell_line: str, backend_name: str = DEFAULT_BACKEND) -> StartRunResponse:
+    state = run_manager.start_run(target_cell_line, backend_name)
     return StartRunResponse(
         run_id=state.run_id,
         backend=state.backend_name,
@@ -45,4 +45,7 @@ def run_status(run_id: str, since: int = 0) -> RunStatusResponse:
         new_log_lines=new_log_lines,
         next_since=next_since,
         error_message=state.error_message,
+        current_epoch=state.current_epoch,
+        max_epochs=state.max_epochs,
+        estimated_remaining_seconds=state.estimated_remaining_seconds(elapsed),
     )
