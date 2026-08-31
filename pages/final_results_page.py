@@ -1,9 +1,9 @@
 """Final Results page.
 
 The last stop in the workflow: shows the model's predicted drug rankings for
-the selected target cell line, alongside supporting visualizations (IC50
-distribution, biomarker correlation scatter — still mocked) and detail
-panels (top drug details, sample profile).
+the selected target cell line, alongside supporting visualizations (training
+curve, predicted IC50 vs. confidence) and detail panels (top drug details,
+sample profile).
 
 Main UI components:
     - Shared sidebar (`widgets.navigation.build_sidebar`) — this page has no
@@ -15,8 +15,12 @@ Main UI components:
       table helpers (`widgets.tables`) as the model execution log page's
       pipeline table, so the two read as one design system. Populated from
       real backend inference via `load_results(run_id)`.
-    - Two custom-painted placeholder charts (`IC50DistributionWidget`,
-      `ScatterPlaceholderWidget`) — still mocked; out of scope for now.
+    - Two custom-painted charts fed from real run data: `TrainingCurveWidget`
+      (train_loss/val_rmse per epoch, from `on_training_history`) and
+      `PredictionScatterWidget` (predicted IC50 vs. confidence, one point
+      per ranked drug, from the same rows as the results table). The
+      network proximity box on the sample profile card is still a
+      placeholder — out of scope for now.
     - Drug detail and sample profile summary cards, populated from the same
       real results.
 
@@ -30,16 +34,19 @@ Interactions with other pages:
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -49,7 +56,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from client.workers import ResultsWorker
+from client.workers import ResultsWorker, TrainingHistoryWorker
 from styles.theme import (
     BORDER,
     CARD_CONTAINER_STYLE,
@@ -109,113 +116,182 @@ class DrugResult:
     confidence: float
 
 
-class IC50DistributionWidget(QWidget):
-    """Custom-painted placeholder line chart for the IC50 distribution panel."""
+class TrainingCurveWidget(QWidget):
+    """Custom-painted line chart of the run's real per-epoch train loss / val RMSE.
+
+    Fed from `on_training_history` (backend/model_backends/cross_attention.py),
+    parsed straight out of `train()`'s own
+    "[epoch N] train_loss=... val_rmse=... val_pcc=..." log line -- these are
+    the model's actual convergence numbers for this run, not mocked data.
+
+    Each series is normalized to its own 0-1 range (their absolute scales
+    aren't comparable -- loss and RMSE are different units), so the numeric
+    value range for each is spelled out in its legend label instead of a
+    shared y-axis, alongside epoch ticks on the x-axis.
+    """
+
+    # Warm/cool complementary pair so the two series stay visually distinct
+    # even though they share the same normalized 0-1 vertical space.
+    _TRAIN_LOSS_COLOR = "#8a3419"
+    _VAL_RMSE_COLOR = "#1c4a7a"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setMinimumHeight(185)
+        self._history: list[dict] = []
+
+    def set_history(self, history: list[dict]) -> None:
+        self._history = history
+        self.update()
 
     def paintEvent(self, event) -> None:  # noqa: N802
-        """Paint a dashed gridline background and a shaded distribution curve."""
+        """Paint a dashed gridline background plus the train-loss/val-RMSE curves."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), QColor(WINDOW_BACKGROUND))
 
-        margin = 12
-        width = max(1, self.width() - (margin * 2))
-        height = max(1, self.height() - (margin * 2))
+        margin_left, margin_right = 10, 10
+        margin_top, margin_bottom = 22, 18
+        width = max(1, self.width() - margin_left - margin_right)
+        height = max(1, self.height() - margin_top - margin_bottom)
 
         grid_pen = QPen(QColor(SURFACE_CONTAINER))
         grid_pen.setStyle(Qt.PenStyle.DashLine)
         painter.setPen(grid_pen)
         for ratio in (0.25, 0.5, 0.75):
-            y = margin + int(height * ratio)
-            painter.drawLine(margin, y, margin + width, y)
+            y = margin_top + int(height * ratio)
+            painter.drawLine(margin_left, y, margin_left + width, y)
 
-        # Normalized (0-1, 0-1) placeholder curve points; replace with real
-        # IC50 distribution samples once backend results are available.
-        points = [
-            (0.00, 0.90),
-            (0.10, 0.88),
-            (0.22, 0.42),
-            (0.36, 0.30),
-            (0.53, 0.20),
-            (0.66, 0.72),
-            (0.79, 0.54),
-            (0.90, 0.66),
-            (1.00, 0.60),
-        ]
+        if len(self._history) < 2:
+            painter.setPen(QColor(TEXT_MUTED))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Waiting for training history...")
+            return
 
-        def map_xy(px: float, py: float) -> QPointF:
-            return QPointF(margin + (px * width), margin + (py * height))
+        epochs = [point["epoch"] for point in self._history]
+        e_lo, e_hi = min(epochs), max(epochs)
+        e_span = (e_hi - e_lo) or 1
 
-        stroke_path = QPainterPath()
-        area_path = QPainterPath()
-        first = map_xy(points[0][0], points[0][1])
-        stroke_path.moveTo(first)
-        area_path.moveTo(margin, margin + height)
-        area_path.lineTo(first)
+        def normalize(values: list[float]) -> list[float]:
+            lo, hi = min(values), max(values)
+            span = (hi - lo) or 1.0
+            return [(v - lo) / span for v in values]
 
-        for x, y in points[1:]:
-            pt = map_xy(x, y)
-            stroke_path.lineTo(pt)
-            area_path.lineTo(pt)
+        def map_xy(epoch: int, normalized_value: float) -> QPointF:
+            px = (epoch - e_lo) / e_span
+            py = 1.0 - normalized_value
+            return QPointF(margin_left + (px * width), margin_top + (py * height))
 
-        area_path.lineTo(margin + width, margin + height)
-        area_path.closeSubpath()
-        painter.fillPath(area_path, QColor(116, 120, 120, 60))
+        def draw_series(values: list[float], color: str) -> None:
+            path = QPainterPath()
+            path.moveTo(map_xy(epochs[0], values[0]))
+            for epoch, value in zip(epochs[1:], values[1:]):
+                path.lineTo(map_xy(epoch, value))
+            pen = QPen(QColor(color))
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.drawPath(path)
 
-        line_pen = QPen(QColor("#1c1b1b"))
-        line_pen.setWidth(2)
-        painter.setPen(line_pen)
-        painter.drawPath(stroke_path)
+        train_loss_values = [point["train_loss"] for point in self._history]
+        val_rmse_values = [point["val_rmse"] for point in self._history]
+        draw_series(normalize(train_loss_values), self._TRAIN_LOSS_COLOR)
+        draw_series(normalize(val_rmse_values), self._VAL_RMSE_COLOR)
+
+        # Legend with each series' real value range (its absolute numbers,
+        # since the lines themselves are drawn normalized).
+        painter.setPen(QColor(self._TRAIN_LOSS_COLOR))
+        loss_label = f"● Train Loss {min(train_loss_values):.3f}–{max(train_loss_values):.3f}"
+        painter.drawText(margin_left, 14, loss_label)
+        loss_label_width = painter.fontMetrics().horizontalAdvance(loss_label)
+        painter.setPen(QColor(self._VAL_RMSE_COLOR))
+        rmse_label = f"● Val RMSE {min(val_rmse_values):.3f}–{max(val_rmse_values):.3f}"
+        painter.drawText(margin_left + loss_label_width + 14, 14, rmse_label)
+
+        # Epoch ticks along the x-axis.
+        painter.setPen(QColor(TEXT_MUTED))
+        painter.drawText(margin_left, margin_top + height + 14, f"Epoch {e_lo}")
+        hi_text = f"Epoch {e_hi}"
+        hi_text_width = painter.fontMetrics().horizontalAdvance(hi_text)
+        painter.drawText(margin_left + width - hi_text_width, margin_top + height + 14, hi_text)
 
 
-class ScatterPlaceholderWidget(QWidget):
-    """Custom-painted placeholder scatter chart for the biomarker correlation panel."""
+class PredictionScatterWidget(QWidget):
+    """Custom-painted scatter chart: predicted IC50 vs. confidence, one point per ranked drug.
+
+    Fed from the same ranked predictions already loaded into the results
+    table (`FinalResultsPage._on_results_succeeded`) -- real per-drug output
+    from this run, not mocked data. IC50 (uM) is plotted on a log scale
+    since predictions span several orders of magnitude (see `_format_ic50`).
+    Each point is colored along a low-to-high confidence gradient so the
+    color itself carries information rather than being purely decorative.
+    """
+
+    # Low-confidence points read as amber/uncertain, high-confidence points
+    # as green/trustworthy -- interpolated per point in `_confidence_color`.
+    _LOW_CONFIDENCE_COLOR = QColor(133, 77, 24)
+    _HIGH_CONFIDENCE_COLOR = QColor(27, 94, 54)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setMinimumHeight(185)
+        self._points: list[tuple[float, float]] = []
+
+    def set_points(self, points: list[tuple[float, float]]) -> None:
+        self._points = points
+        self.update()
+
+    @classmethod
+    def _confidence_color(cls, confidence_percent: float) -> QColor:
+        t = max(0.0, min(1.0, confidence_percent / 100.0))
+        low, high = cls._LOW_CONFIDENCE_COLOR, cls._HIGH_CONFIDENCE_COLOR
+        return QColor(
+            int(low.red() + (high.red() - low.red()) * t),
+            int(low.green() + (high.green() - low.green()) * t),
+            int(low.blue() + (high.blue() - low.blue()) * t),
+            190,
+        )
 
     def paintEvent(self, event) -> None:  # noqa: N802
-        """Paint a bordered plot area with scattered points and a highlighted cluster."""
+        """Paint a bordered plot area with one point per ranked drug prediction."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), QColor(WINDOW_BACKGROUND))
 
-        margin = 14
-        width = max(1, self.width() - (margin * 2))
-        height = max(1, self.height() - (margin * 2))
+        margin_left, margin_right = 10, 10
+        margin_top, margin_bottom = 10, 18
+        width = max(1, self.width() - margin_left - margin_right)
+        height = max(1, self.height() - margin_top - margin_bottom)
 
         painter.setPen(QPen(QColor(SURFACE_CONTAINER), 1))
-        painter.drawRect(margin, margin, width, height)
+        painter.drawRect(margin_left, margin_top, width, height)
 
-        # Normalized (0-1, 0-1) placeholder scatter points; replace with real
-        # biomarker correlation samples once backend results are available.
-        points = [
-            (0.10, 0.80),
-            (0.18, 0.70),
-            (0.24, 0.65),
-            (0.31, 0.45),
-            (0.38, 0.55),
-            (0.47, 0.35),
-            (0.54, 0.32),
-            (0.63, 0.23),
-            (0.72, 0.18),
-            (0.81, 0.28),
-            (0.88, 0.12),
-        ]
+        if not self._points:
+            painter.setPen(QColor(TEXT_MUTED))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Waiting for results...")
+            return
+
+        ic50_values = [ic50 for ic50, _confidence in self._points]
+        log_ic50 = [math.log10(max(ic50, 1e-6)) for ic50 in ic50_values]
+        lo, hi = min(log_ic50), max(log_ic50)
+        span = (hi - lo) or 1.0
+
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(68, 71, 72, 160))
-        for x, y in points:
-            px = margin + int(x * width)
-            py = margin + int(y * height)
-            painter.drawEllipse(QPointF(px, py), 3.2, 3.2)
+        for (_ic50, confidence), log_value in zip(self._points, log_ic50):
+            px = margin_left + int(((log_value - lo) / span) * width)
+            py = margin_top + int((1.0 - (confidence / 100.0)) * height)
+            painter.setBrush(self._confidence_color(confidence))
+            painter.drawEllipse(QPointF(px, py), 3.6, 3.6)
 
-        painter.setBrush(QColor(26, 28, 28, 55))
-        painter.drawEllipse(QPointF(margin + (width / 2), margin + (height / 2)), 22, 22)
+        # Y-axis (confidence %) ticks.
+        painter.setPen(QColor(TEXT_MUTED))
+        painter.drawText(margin_left + 4, margin_top + 12, "100%")
+        painter.drawText(margin_left + 4, margin_top + height - 4, "0%")
+
+        # X-axis (predicted IC50, uM) ticks -- real min/max of this run's points.
+        lo_text = _format_ic50(min(ic50_values))
+        painter.drawText(margin_left, margin_top + height + 14, lo_text)
+        hi_text = _format_ic50(max(ic50_values))
+        hi_text_width = painter.fontMetrics().horizontalAdvance(hi_text)
+        painter.drawText(margin_left + width - hi_text_width, margin_top + height + 14, hi_text)
 
 
 class FinalResultsPage(QWidget):
@@ -243,23 +319,34 @@ class FinalResultsPage(QWidget):
         self._on_model_running_clicked = on_model_running_clicked
 
         self._results_worker: ResultsWorker | None = None
+        self._training_history_worker: TrainingHistoryWorker | None = None
         self._table: QTableWidget | None = None
         self._drug_name_label: QLabel | None = None
         self._drug_ic50_value: QLabel | None = None
         self._drug_confidence_value: QLabel | None = None
         self._drug_rank_slot: QVBoxLayout | None = None
         self._sample_subtitle_label: QLabel | None = None
+        self._training_curve_widget: TrainingCurveWidget | None = None
+        self._scatter_widget: PredictionScatterWidget | None = None
+        self._all_rows: list[DrugResult] = []
+        self._search_input: QLineEdit | None = None
+        self._rank_filter_combo: QComboBox | None = None
+        self._sort_combo: QComboBox | None = None
 
         self._build_ui()
 
     # -- live results -----------------------------------------------------
 
     def load_results(self, run_id: str) -> None:
-        """Fetch and display the ranked drug predictions for `run_id`."""
+        """Fetch and display the ranked drug predictions and training curve for `run_id`."""
         self._results_worker = ResultsWorker(run_id, parent=self)
         self._results_worker.succeeded.connect(self._on_results_succeeded)
         self._results_worker.failed.connect(self._on_results_failed)
         self._results_worker.start()
+
+        self._training_history_worker = TrainingHistoryWorker(run_id, parent=self)
+        self._training_history_worker.succeeded.connect(self._on_training_history_succeeded)
+        self._training_history_worker.start()
 
     def _on_results_succeeded(self, raw_results: list[dict]) -> None:
         rows = [
@@ -272,11 +359,21 @@ class FinalResultsPage(QWidget):
             for item in raw_results
         ]
         rows.sort(key=lambda row: row.ic50)
-        self._populate_table(rows)
+        self._all_rows = rows
         self._populate_drug_details(rows[0] if rows else None)
+        if self._scatter_widget is not None:
+            self._scatter_widget.set_points([(row.ic50, row.confidence) for row in rows])
+        self._apply_filters()
 
     def _on_results_failed(self, message: str) -> None:
         QMessageBox.critical(self, "Could Not Load Results", message)
+
+    def _on_training_history_succeeded(self, history: list[dict]) -> None:
+        # No failure handler wired -- the training curve is a supplementary
+        # panel, not worth interrupting the user with an error dialog if it
+        # can't be fetched; it just keeps showing its "waiting" state.
+        if self._training_curve_widget is not None:
+            self._training_curve_widget.set_history(history)
 
     def _build_ui(self) -> None:
         """Lay out the sidebar, header, and scrollable body content."""
@@ -422,6 +519,40 @@ class FinalResultsPage(QWidget):
         header_row.addWidget(info_icon)
         layout.addWidget(header)
 
+        controls = QFrame()
+        controls.setStyleSheet(f"background: {SURFACE}; border-bottom: 1px solid {SURFACE_CONTAINER};")
+        controls_row = QHBoxLayout(controls)
+        controls_row.setContentsMargins(16, 10, 16, 10)
+        controls_row.setSpacing(8)
+
+        search_input = QLineEdit()
+        search_input.setPlaceholderText("Search drug name...")
+        search_input.textChanged.connect(self._apply_filters)
+        self._search_input = search_input
+
+        rank_filter_combo = QComboBox()
+        rank_filter_combo.addItems(["All Rankings", "HIGH SENSITIVITY", "MEDIUM", "LOW"])
+        rank_filter_combo.currentTextChanged.connect(self._apply_filters)
+        self._rank_filter_combo = rank_filter_combo
+
+        sort_combo = QComboBox()
+        sort_combo.addItems(
+            [
+                "IC50 (Low → High)",
+                "IC50 (High → Low)",
+                "Confidence (High → Low)",
+                "Confidence (Low → High)",
+                "Drug Name (A → Z)",
+            ]
+        )
+        sort_combo.currentTextChanged.connect(self._apply_filters)
+        self._sort_combo = sort_combo
+
+        controls_row.addWidget(search_input, 1)
+        controls_row.addWidget(rank_filter_combo)
+        controls_row.addWidget(sort_combo)
+        layout.addWidget(controls)
+
         table = QTableWidget(0, 4)
         table.setHorizontalHeaderLabels(["Drug Name", "Predicted IC50 (uM)", "Sensitivity Ranking", "Confidence"])
         style_data_table(table, header_background=WINDOW_BACKGROUND)
@@ -434,12 +565,15 @@ class FinalResultsPage(QWidget):
         layout.addWidget(table)
         return card
 
-    def _populate_table(self, rows: list[DrugResult]) -> None:
+    def _populate_table(self, rows: list[DrugResult], empty_message: str = "Waiting for a completed model run...") -> None:
         """(Re)fill the predicted-results table from real `DrugResult` rows.
 
         Called with an empty list while a run's results haven't loaded yet
-        (shows a single "waiting" placeholder row), and again once
-        `load_results` fetches the real ranked predictions.
+        (shows a single `empty_message` placeholder row, default "waiting"),
+        and again -- via `_apply_filters` -- once `load_results` fetches the
+        real ranked predictions or the user changes the search/filter/sort
+        controls (with `empty_message` swapped to a "no matches" message
+        when a filter excludes every row).
         """
         table = self._table
         if table is None:
@@ -447,7 +581,7 @@ class FinalResultsPage(QWidget):
 
         if not rows:
             table.setRowCount(1)
-            waiting_item = QTableWidgetItem("Waiting for a completed model run...")
+            waiting_item = QTableWidgetItem(empty_message)
             waiting_item.setForeground(QColor(TEXT_MUTED))
             table.setItem(0, 0, waiting_item)
             table.setSpan(0, 0, 1, 4)
@@ -467,6 +601,41 @@ class FinalResultsPage(QWidget):
             tone = _RANK_TO_BADGE_TONE.get(row.rank, "neutral")
             table.setCellWidget(row_index, 2, build_status_badge(row.rank, tone))
             table.setCellWidget(row_index, 3, self._build_confidence_cell(row.confidence))
+
+    # Sort dropdown label -> (sort key, reverse). Keeps `_apply_filters`
+    # itself free of a long if/elif chain.
+    _SORT_OPTIONS: dict[str, tuple[Callable[["DrugResult"], object], bool]] = {
+        "IC50 (Low → High)": (lambda row: row.ic50, False),
+        "IC50 (High → Low)": (lambda row: row.ic50, True),
+        "Confidence (High → Low)": (lambda row: row.confidence, True),
+        "Confidence (Low → High)": (lambda row: row.confidence, False),
+        "Drug Name (A → Z)": (lambda row: row.name.lower(), False),
+    }
+
+    def _apply_filters(self) -> None:
+        """Re-derive the table's rows from `self._all_rows` per the current
+        search/filter/sort controls, leaving `self._all_rows` itself (and
+        anything else driven from it, like the top-drug and scatter panels)
+        untouched.
+        """
+        if self._search_input is None or self._rank_filter_combo is None or self._sort_combo is None:
+            return
+
+        search_text = self._search_input.text().strip().lower()
+        rank_filter = self._rank_filter_combo.currentText()
+
+        filtered = [
+            row
+            for row in self._all_rows
+            if (not search_text or search_text in row.name.lower())
+            and (rank_filter == "All Rankings" or row.rank == rank_filter)
+        ]
+
+        sort_key, reverse = self._SORT_OPTIONS.get(self._sort_combo.currentText(), (lambda row: row.ic50, False))
+        filtered.sort(key=sort_key, reverse=reverse)
+
+        empty_message = "No drugs match your search/filter." if self._all_rows else "Waiting for a completed model run..."
+        self._populate_table(filtered, empty_message=empty_message)
 
     @staticmethod
     def _build_confidence_cell(confidence: float) -> QWidget:
@@ -498,12 +667,14 @@ class FinalResultsPage(QWidget):
         return wrapper
 
     def _build_ic50_panel(self) -> QFrame:
-        """Build the "IC50 Distribution Comparison" chart card."""
-        return self._build_chart_panel("IC50 Distribution Comparison", IC50DistributionWidget())
+        """Build the "Training Curve" chart card (real train_loss/val_rmse per epoch)."""
+        self._training_curve_widget = TrainingCurveWidget()
+        return self._build_chart_panel("Training Curve (Train Loss / Val RMSE)", self._training_curve_widget)
 
     def _build_scatter_panel(self) -> QFrame:
-        """Build the "Biomarker Correlation Scatter" chart card."""
-        return self._build_chart_panel("Biomarker Correlation Scatter", ScatterPlaceholderWidget())
+        """Build the "Predicted IC50 vs. Confidence" chart card."""
+        self._scatter_widget = PredictionScatterWidget()
+        return self._build_chart_panel("Predicted IC50 vs. Confidence", self._scatter_widget)
 
     @staticmethod
     def _build_chart_panel(title_text: str, chart_widget: QWidget) -> QFrame:

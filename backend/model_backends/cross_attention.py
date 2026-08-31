@@ -53,7 +53,7 @@ def _sensitivity_ranking(ic50_um: float) -> str:
     return "LOW"
 
 
-def _rank_predictions(raw: list[dict], val_rmse: float) -> list[dict]:
+def _rank_predictions(raw: list[dict], val_rmse: float, drug_info: dict[str, dict]) -> list[dict]:
     """Turn raw per-drug {drug_id, ln_ic50_mean, ln_ic50_std} into display-ready results.
 
     - predicted_ic50_um: back-transform from ln(IC50 uM), the model's native scale.
@@ -65,6 +65,8 @@ def _rank_predictions(raw: list[dict], val_rmse: float) -> list[dict]:
       another to exactly 100% regardless of whether the underlying spread is
       actually large or small.
     - ranking: fixed IC50 (uM) thresholds, see `_sensitivity_ranking`.
+    - drug_name/putative_target/pathway_name: looked up from `drug_info`
+      (built in `_prepare_and_train`, keyed by the same raw `drug_id` string).
     """
     if not raw:
         return []
@@ -76,15 +78,20 @@ def _rank_predictions(raw: list[dict], val_rmse: float) -> list[dict]:
     scale = max(val_rmse, 1e-6)
     confidence = 100.0 * np.exp(-stds / scale)
 
-    return [
-        {
-            "drug_name": raw[i]["drug_id"],
-            "predicted_ic50_um": float(ic50_um[i]),
-            "ranking": _sensitivity_ranking(float(ic50_um[i])),
-            "confidence_percent": float(confidence[i]),
-        }
-        for i in range(len(raw))
-    ]
+    results = []
+    for i in range(len(raw)):
+        info = drug_info.get(raw[i]["drug_id"], {})
+        results.append(
+            {
+                "drug_name": info.get("drug_name") or raw[i]["drug_id"],
+                "putative_target": info.get("putative_target", ""),
+                "pathway_name": info.get("pathway_name", ""),
+                "predicted_ic50_um": float(ic50_um[i]),
+                "ranking": _sensitivity_ranking(float(ic50_um[i])),
+                "confidence_percent": float(confidence[i]),
+            }
+        )
+    return results
 
 
 def _load_module() -> types.ModuleType:
@@ -111,6 +118,35 @@ def _prepare_and_train(module: types.ModuleType) -> dict:
     del omics
 
     drug_levels = module.pd.factorize(y_df[module.COL_DRUG], sort=True)[1]
+
+    # Descriptive metadata (names, not indices) for the drugs/cell lines this
+    # run trains on, read straight from the same merged CSV used for targets
+    # -- keyed by the same raw id strings as drug_levels/cell_ids, so there's
+    # no separate id-mapping step that could drift out of sync.
+    meta = module.pd.read_csv(
+        module.TARGET_CSV,
+        usecols=[module.COL_DRUG, module.COL_CELL_LINE, "drug_name", "putative_target", "pathway_name", "cell_line_name", "tissue", "cancer_type"],
+        dtype=str,
+        keep_default_na=False,
+    )
+    drug_meta = meta[[module.COL_DRUG, "drug_name", "putative_target", "pathway_name"]].drop_duplicates(module.COL_DRUG)
+    drug_info = {
+        row[module.COL_DRUG]: {
+            "drug_name": row["drug_name"],
+            "putative_target": row["putative_target"],
+            "pathway_name": row["pathway_name"],
+        }
+        for row in drug_meta.to_dict("records")
+    }
+    cell_meta = meta[[module.COL_CELL_LINE, "cell_line_name", "tissue", "cancer_type"]].drop_duplicates(module.COL_CELL_LINE)
+    cell_info = {
+        row[module.COL_CELL_LINE]: {
+            "cell_line_name": row["cell_line_name"],
+            "tissue": row["tissue"],
+            "cancer_type": row["cancer_type"],
+        }
+        for row in cell_meta.to_dict("records")
+    }
 
     train_idx, val_idx, _test_idx = module.grouped_split(groups)
     omics_train = {k: v[train_idx] for k, v in gathered.items()}
@@ -139,6 +175,8 @@ def _prepare_and_train(module: types.ModuleType) -> dict:
         "gathered": gathered,
         "cell_ids": cell_ids,
         "drug_levels": drug_levels,
+        "drug_info": drug_info,
+        "cell_info": cell_info,
         "n_drugs": n_drugs,
         "val_rmse": val_rmse,
         "device": device,
@@ -208,6 +246,9 @@ def _predict_drug_panel(module: types.ModuleType, artifacts: dict, target_cell_l
 
 #  train()'s own epoch line: "[epoch  12] train_loss=... val_rmse=... val_pcc=..."
 _EPOCH_LINE_RE = re.compile(r"^\[epoch\s*(\d+)\]")
+_EPOCH_METRICS_RE = re.compile(
+    r"^\[epoch\s*(\d+)\]\s+train_loss=([\d.eE+-]+)\s+val_rmse=([\d.eE+-]+)\s+val_pcc=([\d.eE+-]+)"
+)
 
 
 class CrossAttentionBackend(ModelBackend):
@@ -224,9 +265,11 @@ class CrossAttentionBackend(ModelBackend):
         target_cell_line: str,
         on_results: Callable[[list[dict]], None],
         on_progress: Callable[[int, int], None],
+        on_training_history: Callable[[list[dict]], None],
     ) -> None:
         module = _load_module()
         on_progress(0, module.MAX_EPOCHS)
+        history: list[dict] = []
 
         def tee_print(*args: object, sep: str = " ", end: str = "\n", **kwargs: object) -> None:
             builtins.print(*args, sep=sep, end=end, **kwargs)
@@ -238,6 +281,16 @@ class CrossAttentionBackend(ModelBackend):
             match = _EPOCH_LINE_RE.match(text)
             if match:
                 on_progress(int(match.group(1)), module.MAX_EPOCHS)
+            metrics_match = _EPOCH_METRICS_RE.match(text)
+            if metrics_match:
+                history.append(
+                    {
+                        "epoch": int(metrics_match.group(1)),
+                        "train_loss": float(metrics_match.group(2)),
+                        "val_rmse": float(metrics_match.group(3)),
+                        "val_pcc": float(metrics_match.group(4)),
+                    }
+                )
 
         # Every function in `module` resolves the bare name `print` against
         # the module's own globals, so this alone routes all of the
@@ -247,10 +300,16 @@ class CrossAttentionBackend(ModelBackend):
 
         try:
             artifacts = _prepare_and_train(module)
+            on_training_history(history)
             log(f"[confidence] validation RMSE (ln IC50) = {artifacts['val_rmse']:.4f} -- used as the confidence scale")
+            cell_info = artifacts["cell_info"].get(target_cell_line, {})
+            log(
+                f"[cell-line] {target_cell_line} -> {cell_info.get('cell_line_name', 'unknown')} "
+                f"({cell_info.get('tissue', 'unknown')}, {cell_info.get('cancer_type', 'unknown')})"
+            )
             log(f"Running inference for target cell line: {target_cell_line}")
             raw_predictions = _predict_drug_panel(module, artifacts, target_cell_line, mc_samples=_MC_SAMPLES)
-            on_results(_rank_predictions(raw_predictions, artifacts["val_rmse"]))
+            on_results(_rank_predictions(raw_predictions, artifacts["val_rmse"], artifacts["drug_info"]))
         finally:
             # The backend process stays alive across runs (each run just
             # loads a fresh copy of the script), so the trained model,

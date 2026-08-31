@@ -6,7 +6,14 @@ import time
 
 from PySide6.QtCore import QThread, Signal
 
-from client.api_client import ApiError, get_drug_ranking, get_run_status, start_run, upload_dataset_csv
+from client.api_client import (
+    ApiError,
+    get_drug_ranking,
+    get_run_status,
+    get_training_history,
+    start_run,
+    upload_dataset_csv,
+)
 
 POLL_INTERVAL_SECONDS = 1.0
 
@@ -71,6 +78,25 @@ class ResultsWorker(QThread):
             self.failed.emit(str(exc))
         else:
             self.succeeded.emit(results)
+
+
+class TrainingHistoryWorker(QThread):
+    """Fetches the per-epoch training curve for a completed run, off the UI thread."""
+
+    succeeded = Signal(list)
+    failed = Signal(str)
+
+    def __init__(self, run_id: str, parent=None) -> None:
+        super().__init__(parent)
+        self._run_id = run_id
+
+    def run(self) -> None:  # noqa: N802
+        try:
+            history = get_training_history(self._run_id)
+        except ApiError as exc:
+            self.failed.emit(str(exc))
+        else:
+            self.succeeded.emit(history)
 
 
 class RunStatusPoller(QThread):

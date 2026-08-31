@@ -96,6 +96,20 @@ def get_drug_ranking(run_id: str) -> list[dict]:
     return _unwrap(response)
 
 
+def get_training_history(run_id: str) -> list[dict]:
+    """Fetch the per-epoch training curve (train_loss/val_rmse/val_pcc) for a completed run.
+
+    Raises:
+        ApiError: On a network failure or a non-2xx response (including a
+            run that hasn't produced training history yet).
+    """
+    try:
+        response = requests.get(f"{BASE_URL}/api/v1/results/training-history/{run_id}", timeout=10)
+    except requests.RequestException as exc:
+        raise ApiError(f"Could not reach the backend: {exc}") from exc
+    return _unwrap(response)
+
+
 def _unwrap(response: requests.Response) -> dict:
     if not response.ok:
         detail = response.text

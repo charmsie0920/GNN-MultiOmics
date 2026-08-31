@@ -24,6 +24,7 @@ class ModelBackend(ABC):
         target_cell_line: str,
         on_results: Callable[[list[dict]], None],
         on_progress: Callable[[int, int], None],
+        on_training_history: Callable[[list[dict]], None],
     ) -> None:
         """Execute the backend, forwarding relevant stdout lines to `log`.
 
@@ -32,5 +33,8 @@ class ModelBackend(ABC):
         available) so the UI can show real progress instead of a fixed
         time estimate. After training, run inference for `target_cell_line`
         across every drug the run was trained on and pass the ranked
-        results to `on_results`.
+        results to `on_results`. If the wrapped script logs per-epoch
+        metrics, call `on_training_history` once with the full list of
+        `{"epoch": int, "train_loss": float, "val_rmse": float, "val_pcc": float}`
+        entries collected during training (empty list if none were parsed).
         """

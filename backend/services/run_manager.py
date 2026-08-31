@@ -39,6 +39,7 @@ class RunState:
     log_lines: list[str] = field(default_factory=list)
     error_message: str | None = None
     results: list[dict] | None = None
+    training_history: list[dict] | None = None
     current_epoch: int = 0
     max_epochs: int = 0
     lock: threading.Lock = field(default_factory=threading.Lock)
@@ -50,6 +51,10 @@ class RunState:
     def set_results(self, results: list[dict]) -> None:
         with self.lock:
             self.results = results
+
+    def set_training_history(self, training_history: list[dict]) -> None:
+        with self.lock:
+            self.training_history = training_history
 
     def set_progress(self, current_epoch: int, max_epochs: int) -> None:
         with self.lock:
@@ -133,6 +138,7 @@ class RunManager:
                 target_cell_line=target_cell_line,
                 on_results=state.set_results,
                 on_progress=state.set_progress,
+                on_training_history=state.set_training_history,
             )
         except Exception as exc:  # noqa: BLE001 - surfaced to the UI, full traceback stays in the terminal
             traceback.print_exc()
