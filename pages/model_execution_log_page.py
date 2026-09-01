@@ -80,6 +80,11 @@ from widgets.tables import build_mini_progress_bar, build_status_badge, style_da
 # Pipeline row state -> status badge tone (see widgets.tables.build_status_badge).
 _STATE_TO_BADGE_TONE = {"done": "positive", "active": "neutral", "pending": "muted"}
 
+# Flat estimate for a run's total duration, used to drive the progress bar
+# and pipeline row fill. Replaces the old epoch-based estimate (current_epoch
+# / max_epochs), which was inaccurate when epoch counts varied run to run.
+_ESTIMATED_RUN_SECONDS = 12 * 60.0
+
 # (filename, status label, state) — the real inputs cross_attention_baseline.py
 # reads, in the order it loads them. Size/percent aren't known ahead of time
 # so every row starts pending and flips to done together once the run
@@ -123,7 +128,6 @@ class ModelExecutionLogPage(QWidget):
 
         self._poller: RunStatusPoller | None = None
         self._current_run_id: str | None = None
-        self._expected_duration_seconds = 0.0
 
         # Keeps animations alive; QPropertyAnimation is not retained by Qt
         # once its local variable goes out of scope.
@@ -148,9 +152,9 @@ class ModelExecutionLogPage(QWidget):
 
         Args:
             run_info: The merged upload+run-start response from
-                `client.workers.UploadWorker` (must include `run_id`;
-                `expected_duration_seconds` is used to drive the progress
-                bar).
+                `client.workers.UploadWorker` (must include `run_id`; the
+                progress bar is driven by a flat `_ESTIMATED_RUN_SECONDS`
+                estimate rather than anything in this dict).
         """
         if self._poller is not None:
             self._poller.stop()
@@ -162,8 +166,7 @@ class ModelExecutionLogPage(QWidget):
         self._current_run_id = run_info["run_id"]
         self._reset_log()
         self._reset_pipeline()
-        self._expected_duration_seconds = run_info.get("expected_duration_seconds", 0.0)
-        self._update_progress_ui(0.0, 0.0, self._expected_duration_seconds, "running")
+        self._update_progress_ui(0.0, 0.0, "running")
 
         self._poller = RunStatusPoller(run_info["run_id"], parent=self)
         self._poller.statusUpdate.connect(self._on_status_update)
@@ -182,26 +185,11 @@ class ModelExecutionLogPage(QWidget):
             self._append_log_line(line)
 
         status = payload.get("status", "running")
-        expected = payload.get("expected_duration_seconds") or self._expected_duration_seconds
         elapsed = payload.get("elapsed_seconds", 0.0)
-        current_epoch = payload.get("current_epoch", 0)
-        max_epochs = payload.get("max_epochs", 0)
-        self._update_progress_ui(
-            payload.get("progress_percent", 0.0),
-            elapsed,
-            expected,
-            status,
-            current_epoch=current_epoch,
-            max_epochs=max_epochs,
-            estimated_remaining_seconds=payload.get("estimated_remaining_seconds"),
-        )
+        fraction = max(0.0, min(1.0, elapsed / _ESTIMATED_RUN_SECONDS))
+        self._update_progress_ui(fraction, elapsed, status)
 
         if status == "running":
-            # Real epoch progress once training has reported at least one
-            # epoch; falls back to a rough time-based guess only for the
-            # brief window before that (or for a backend that never reports
-            # epochs at all).
-            fraction = (current_epoch / max_epochs) if max_epochs else (elapsed / expected if expected else 0.0)
             self._update_pipeline_progress(fraction)
         elif status == "completed":
             self._mark_pipeline_done()
@@ -260,18 +248,17 @@ class ModelExecutionLogPage(QWidget):
     def _build_sidebar(self) -> QFrame:
         """Build the shared sidebar with "Model Logs" as the active nav item."""
         nav_widgets = [
-            make_sidebar_nav_button(
-                "Model Visualization",
-                "insights",
-                callback=self._on_model_visualization_clicked,
-            ),
+            # !Hidden: ModelVisualizationPage is a decorative placeholder
+            # (fake canvas + hardcoded run stats), hidden from navigation
+            # until it's wired to real data.
+            # make_sidebar_nav_button(
+            #     "Model Visualization",
+            #     "insights",
+            #     callback=self._on_model_visualization_clicked,
+            # ),
             make_sidebar_nav_button("Model Logs", "terminal", active=True),
         ]
-        footer_widgets = [
-            make_sidebar_nav_button("History", "history"),
-            make_sidebar_nav_button("Settings", "settings"),
-            make_sidebar_nav_button("Support", "help_outline"),
-        ]
+        footer_widgets = [make_sidebar_nav_button("Support", "help_outline")]
         return build_sidebar(
             nav_widgets,
             footer_widgets,
@@ -353,24 +340,20 @@ class ModelExecutionLogPage(QWidget):
         track_layout.addStretch(100 - percent)
         return track
 
-    def _update_progress_ui(
-        self,
-        percent: float,
-        elapsed: float,
-        expected: float,
-        status: str,
-        *,
-        current_epoch: int = 0,
-        max_epochs: int = 0,
-        estimated_remaining_seconds: float | None = None,
-    ) -> None:
+    def _update_progress_ui(self, fraction: float, elapsed: float, status: str) -> None:
         """Refresh the progress bar fill and the progress/remaining-time labels.
 
-        Prefers real training progress (epoch count, and a remaining-time
-        estimate derived from the observed per-epoch rate) over the fixed
-        time-based guess, once the run has reported at least one epoch.
+        Progress is a flat estimate of `elapsed / _ESTIMATED_RUN_SECONDS`
+        (15 minutes) rather than the previous epoch-count-based fraction,
+        which was inaccurate when epoch counts varied run to run. Capped at
+        99% while still running so it never visually completes early; jumps
+        to 100% once `status` is `"completed"`.
         """
-        clamped = max(0, min(100, round(percent)))
+        fraction = max(0.0, min(1.0, fraction))
+        if status == "completed":
+            clamped = 100
+        else:
+            clamped = min(99, round(fraction * 100))
 
         if self._progress_bar_slot is not None:
             while self._progress_bar_slot.count():
@@ -381,17 +364,13 @@ class ModelExecutionLogPage(QWidget):
             self._progress_bar_slot.addWidget(self._build_overall_progress_bar(percent=clamped))
 
         if self._progress_label is not None:
-            if max_epochs:
-                self._progress_label.setText(f"Overall Progress: {clamped}% (epoch {current_epoch}/{max_epochs})")
-            else:
-                self._progress_label.setText(f"Overall Progress: {clamped}%")
+            self._progress_label.setText(f"Overall Progress: {clamped}%")
 
         if self._remaining_label is not None:
             if status == "running":
-                remaining = estimated_remaining_seconds if estimated_remaining_seconds is not None else max(0.0, expected - elapsed)
+                remaining = max(0.0, _ESTIMATED_RUN_SECONDS - elapsed)
                 minutes, seconds = divmod(int(remaining), 60)
-                prefix = "Est. Time Remaining" if estimated_remaining_seconds is not None else "Est. Time Remaining (rough)"
-                self._remaining_label.setText(f"{prefix}: {minutes}m {seconds:02d}s")
+                self._remaining_label.setText(f"Est. Time Remaining: {minutes}m {seconds:02d}s")
             elif status == "completed":
                 self._remaining_label.setText("Est. Time Remaining: Complete")
             else:

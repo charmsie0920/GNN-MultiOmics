@@ -34,14 +34,17 @@ Interactions with other pages:
 
 from __future__ import annotations
 
+import csv
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -375,6 +378,66 @@ class FinalResultsPage(QWidget):
         if self._training_curve_widget is not None:
             self._training_curve_widget.set_history(history)
 
+    # -- export -------------------------------------------------------------
+
+    def _on_download_data_clicked(self) -> None:
+        """Save the full predicted drug results (`self._all_rows`) as CSV."""
+        if not self._all_rows:
+            QMessageBox.information(self, "No Results", "No results to export yet.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Download Data", "predicted_drug_results.csv", "CSV Files (*.csv)"
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as file:
+                writer = csv.writer(file)
+                writer.writerow(["Drug Name", "Predicted IC50 (uM)", "Sensitivity Ranking", "Confidence (%)"])
+                for row in self._all_rows:
+                    writer.writerow([row.name, row.ic50, row.rank, row.confidence])
+        except OSError as exc:
+            QMessageBox.critical(self, "Could Not Save File", str(exc))
+            return
+
+        QMessageBox.information(self, "Download Complete", f"Saved to {path}")
+
+    def _on_export_report_clicked(self) -> None:
+        """Save a plain-text clinical summary report of `self._all_rows`."""
+        if not self._all_rows:
+            QMessageBox.information(self, "No Results", "No results to export yet.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Clinical Report", "clinical_report.txt", "Text Files (*.txt)"
+        )
+        if not path:
+            return
+
+        lines = [
+            "Predicted Drug Sensitivity Report",
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"Total drugs ranked: {len(self._all_rows)}",
+            "",
+        ]
+        for index, row in enumerate(self._all_rows, start=1):
+            lines.append(f"{index}. {row.name}")
+            lines.append(f"   Predicted IC50: {_format_ic50(row.ic50)} uM")
+            lines.append(f"   Sensitivity Ranking: {row.rank}")
+            lines.append(f"   Confidence: {row.confidence:.1f}%")
+            lines.append("")
+
+        try:
+            with open(path, "w", encoding="utf-8") as file:
+                file.write("\n".join(lines))
+        except OSError as exc:
+            QMessageBox.critical(self, "Could Not Save File", str(exc))
+            return
+
+        QMessageBox.information(self, "Export Complete", f"Saved to {path}")
+
     def _build_ui(self) -> None:
         """Lay out the sidebar, header, and scrollable body content."""
         root = QHBoxLayout(self)
@@ -411,11 +474,7 @@ class FinalResultsPage(QWidget):
 
     def _build_sidebar(self) -> QFrame:
         """Build the shared sidebar (no model nav section on this page)."""
-        footer_widgets = [
-            make_sidebar_nav_button("History", "history"),
-            make_sidebar_nav_button("Settings", "settings"),
-            make_sidebar_nav_button("Support", "help_outline"),
-        ]
+        footer_widgets = [make_sidebar_nav_button("Support", "help_outline")]
         return build_sidebar(footer_widgets=footer_widgets, cta_widget=make_primary_cta_button())
 
     def _build_header(self) -> QFrame:
@@ -444,8 +503,10 @@ class FinalResultsPage(QWidget):
         actions.setSpacing(12)
         download_btn = QPushButton(f"{icon_text('download')}  Download Data")
         download_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        download_btn.clicked.connect(self._on_download_data_clicked)
         export_btn = QPushButton(f"{icon_text('summarize')}  Export Clinical Report")
         export_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        export_btn.clicked.connect(self._on_export_report_clicked)
         actions.addWidget(download_btn)
         actions.addWidget(export_btn)
         title_row.addLayout(actions)
@@ -559,6 +620,7 @@ class FinalResultsPage(QWidget):
         table.setColumnWidth(0, 140)
         table.setColumnWidth(1, 150)
         table.setColumnWidth(2, 170)
+        table.setMinimumHeight(360)
         self._table = table
         self._populate_table([])
 
@@ -815,10 +877,12 @@ class FinalResultsPage(QWidget):
         chips.addStretch(1)
         layout.addLayout(chips)
 
-        network_title = QLabel("Network Proximity")
-        network_title.setStyleSheet(LABEL_CAPS_STYLE)
-        layout.addWidget(network_title)
-        layout.addWidget(self._build_network_proximity_placeholder())
+        # !Hidden: Network Proximity is an empty placeholder box, out of
+        # scope for now — see _build_network_proximity_placeholder below.
+        # network_title = QLabel("Network Proximity")
+        # network_title.setStyleSheet(LABEL_CAPS_STYLE)
+        # layout.addWidget(network_title)
+        # layout.addWidget(self._build_network_proximity_placeholder())
 
         return card
 
