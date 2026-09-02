@@ -33,6 +33,8 @@ TEXT_FAINT = "#a8abab"
 PRIMARY = "#000000"
 PRIMARY_SOFT = "#2f3131"
 ACCENT = "#5f5e5e"
+SUCCESS = "#1a7f37"
+SUCCESS_SOFT = "#156429"
 
 # --- Layout scale ------------------------------------------------------------
 # Shared sizing so every page's chrome (sidebar/header) lines up pixel-for-pixel.
@@ -100,6 +102,26 @@ PRIMARY_BUTTON_STYLE = (
     f"height: 40px; padding: 0 16px; border: none; border-radius: {BUTTON_RADIUS}px; background: {PRIMARY};"
     f" color: {SURFACE}; font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;"
 )
+
+# Green variant of the big `QPushButton#PrimaryActionButton` QSS rule (see
+# APP_STYLESHEET below), set inline on a specific button instance to signal
+# a "ready to go, action is affirmative" state — e.g. the dataset
+# initialization page's submit button once it's about to start a run rather
+# than upload a file.
+START_ACTION_BUTTON_STYLE = f"""
+    QPushButton {{
+        background: {SUCCESS};
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 12px 16px;
+        font-size: 18px;
+        font-weight: 600;
+    }}
+    QPushButton:hover {{
+        background: {SUCCESS_SOFT};
+    }}
+"""
 
 
 def table_stylesheet(header_background: str = WINDOW_BACKGROUND) -> str:

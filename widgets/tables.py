@@ -23,7 +23,8 @@ the base container every custom cell widget in this module starts from.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -41,6 +42,46 @@ from widgets.icons import icon_text
 # reads as complete/favorable, "neutral" as in-progress/moderate, and
 # "muted" as not-yet-relevant/unfavorable.
 _BADGE_TONES = ("positive", "neutral", "muted")
+
+
+class SpinningIconLabel(QLabel):
+    """A small rotating ring, standing in for the static "sync" icon.
+
+    Rotating the tiny "sync" text glyph itself (an earlier version of this
+    widget) read as choppy and clipped at small font sizes — glyph hinting
+    at 12px doesn't rotate cleanly. Drawing a plain arc directly avoids
+    that entirely and reads as a standard loading spinner.
+    """
+
+    def __init__(self, text: str, color: str, *, interval_ms: int = 16, degrees_per_tick: float = 6.0) -> None:
+        del text  # kept for call-site compatibility; nothing is drawn from it
+        super().__init__()
+        self._angle = 0.0
+        self._degrees_per_tick = degrees_per_tick
+        self._color = QColor(color)
+        self.setFixedSize(14, 14)
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._advance)
+        self._timer.start(interval_ms)
+
+    def _advance(self) -> None:
+        self._angle = (self._angle + self._degrees_per_tick) % 360
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(self._color)
+        pen.setWidth(2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        rect = self.rect().adjusted(1, 1, -1, -1)
+        # Qt angles are in 1/16ths of a degree, measured counter-clockwise
+        # from the 3 o'clock position.
+        start_angle = int(-self._angle * 16)
+        span_angle = int(270 * 16)
+        painter.drawArc(rect, start_angle, span_angle)
+        painter.end()
 
 
 def transparent_cell_widget() -> QWidget:
@@ -127,7 +168,10 @@ def build_status_badge(text: str, tone: str, *, icon_name: str | None = None) ->
         text_color = TEXT_MUTED
     elif tone == "neutral":
         if icon_name is not None:
-            icon = QLabel(icon_text(icon_name))
+            if icon_name == "sync":
+                icon = SpinningIconLabel(icon_text(icon_name), PRIMARY)
+            else:
+                icon = QLabel(icon_text(icon_name))
             icon.setStyleSheet(f"background: transparent; border: none; color: {PRIMARY}; font-size: 12px;")
             pill_layout.addWidget(icon)
         text_color = PRIMARY

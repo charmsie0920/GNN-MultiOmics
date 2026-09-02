@@ -8,3 +8,7 @@ PySide6>=6.9.2
 rdkit==2026.3.5
 torch_geometric==2.8.0.post1
 xgboost
+fastapi
+uvicorn
+python-multipart
+requests
