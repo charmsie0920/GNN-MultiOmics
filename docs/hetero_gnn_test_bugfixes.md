@@ -80,7 +80,7 @@ in both the training set and the test set, just paired with different
 partners. The model could partly "look up" a cell line or drug it had already
 seen elsewhere in training, rather than generalize to a truly new one.
 
-**Why it matters:** this is exactly the leakage pattern `split_protocol_comparison.md`
+**Why it matters:** this is exactly the leakage pattern `09_split_protocol_comparison.md`
 documents inflating MoGraphDRP's published numbers relative to this project's
 own `GroupShuffleSplit`-by-cell-line protocol. Every other tracked experiment
 in the matrix (`experiment_utils.grouped_split`, 70/15/15,
@@ -117,7 +117,7 @@ no way to stop once the metric that matters started getting worse.
 
 **Fix:** switched to `max_epochs=200` with early stopping (`patience=15`) and
 checkpointing on best validation RMSE — the same criterion and patience
-`experiments/GNN Ablation/gnn_baseline.py` already uses for the tracked
+`experiments/07_gnn_ablation/gnn_baseline.py` already uses for the tracked
 `HeteroGNN` runs, so the two are now trained under comparable stopping rules.
 
 ## Test runs
@@ -188,7 +188,7 @@ row ordering, so it is not the identical partition.
 Re-running the same tuned model through the matrix's own shared code path
 (`gnn_baseline.load_graph_and_pairs` -> `experiment_utils.grouped_split` ->
 `experiment_utils.evaluate`) gives **RMSE 1.3301 / PCC 0.8805**, via
-[`experiments/GNN Ablation/hetero_ic50_gnn_matrix.py`](../experiments/GNN%20Ablation/hetero_ic50_gnn_matrix.py).
+[`experiments/07_gnn_ablation/hetero_ic50_gnn_matrix.py`](../experiments/07_gnn_ablation/hetero_ic50_gnn_matrix.py).
 
 **1.3301 is the number to quote.** The 0.027 difference between the two is
 split-luck, not model improvement, and only the shared-split run is comparable
@@ -215,7 +215,7 @@ beating a flat concatenation baseline on RMSE, and no graph or attention model
 in the project currently clears that bar when using the SMILES-derived drug
 representation the proposal requires.
 
-See [`leave_drugs_out_results.md`](./leave_drugs_out_results.md) §GNN for the
+See [`10_leave_drugs_out_results.md`](./10_leave_drugs_out_results.md) §GNN for the
 companion result on unseen drugs, where the graph performs *worse* than every
 flat baseline.
 

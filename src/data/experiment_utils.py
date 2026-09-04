@@ -345,7 +345,7 @@ def random_pair_split(
     This exists solely to produce a like-for-like number against the paper's
     published RMSE, and to test whether their XGBoost refinement gain depends on
     this leakage. `grouped_split` remains the protocol for every real result --
-    see docs/split_protocol_comparison.md.
+    see docs/09_split_protocol_comparison.md.
     """
     rng = np.random.default_rng(RANDOM_STATE)
     perm = rng.permutation(n_rows)

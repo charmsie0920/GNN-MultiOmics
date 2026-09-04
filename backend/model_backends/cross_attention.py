@@ -1,4 +1,4 @@
-"""Backend wrapper for experiments/Cross Attention Fusion/cross_attention_baseline.py.
+"""Backend wrapper for experiments/01_cross_attention_fusion/cross_attention_baseline.py.
 
 Runs the script completely unmodified — loads it as a module, monkeypatches
 its `print` to also stream lines to the UI, then drives its own top-level
@@ -29,7 +29,7 @@ from backend.model_backends.base import ModelBackend
 from backend.model_backends.registry import register
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCRIPT_PATH = _REPO_ROOT / "experiments" / "Cross Attention Fusion" / "cross_attention_baseline.py"
+_SCRIPT_PATH = _REPO_ROOT / "experiments" / "01_cross_attention_fusion" / "cross_attention_baseline.py"
 
 # MC-dropout forward passes per (cell-line, drug) pair used to derive the
 # confidence score — see _predict_drug_panel below.

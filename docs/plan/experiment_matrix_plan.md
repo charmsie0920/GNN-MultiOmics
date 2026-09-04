@@ -10,15 +10,15 @@
       AUC 0.7520 / F1 0.6435 and floor 2.7097 exactly.)
 - [x] **Phase 1 — Flat-feature matrix (RF + MLP), 42 runs** (21 + 21; grew from
       28 when the population-control arm was added). RF 482.8s, MLP 903.7s.
-      Docs: `rf_ablation_results.md`, `mlp_ablation_results.md`.
+      Docs: `06_rf_ablation_results.md`, `06_mlp_ablation_results.md`.
 - [x] **Phase 2 — Cross-attention matrix, 12 runs** (grew from 8). 1466.0s.
-      Doc: `cross_attention_ablation_results.md`.
+      Doc: `06_cross_attention_ablation_results.md`.
 - [x] **Phase 3 — Graph linkage + GNN matrix, 4 runs.** 669.3s. Linkage added
       4,341 driver-mutation edges linking 526/532 cell lines.
-      Doc: `gnn_ablation_results.md`.
+      Doc: `07_gnn_ablation_results.md`.
 - [x] **Phase 4 — XGBoost ensemble refinement.** 225.7s. **Negative result** —
       refinement made both best models slightly worse (−0.9%, −0.7%), opposite
-      to the paper's +19.7%. Doc: `ensemble_refinement_results.md`.
+      to the paper's +19.7%. Doc: `08_ensemble_refinement_results.md`.
 - [x] **Phase 5 — Consolidation.** `docs/results.md` auto-generated from the
       result CSVs by `experiments/build_results_table.py` (58 runs).
 - [x] **Phase 6 (added post-hoc) — Split-protocol comparison.** 428.2s. Runs the
@@ -26,7 +26,7 @@
       alone is worth 0.347 RMSE (1.2442 → 0.8971), 60% of the apparent gap to
       the paper's 0.6622. Also confirms the Phase 4 leakage hypothesis: XGBoost
       refinement flips from −0.92% (grouped) to +0.96% (random).
-      Doc: `split_protocol_comparison.md`.
+      Doc: `09_split_protocol_comparison.md`.
 - [x] **Phase 7 (added post-hoc) — Leave-drugs-out.** 6 runs. Holds out drugs
       instead of cell lines, the only protocol where the drug representation's
       purpose is testable. One-hot collapses to near the mean-only floor
@@ -34,7 +34,7 @@
       +0.49 to +0.58 RMSE gap reproduced across RF, MLP, and cross-attention.
       **This is the experimental justification for the proposal's §4.1.2
       Morgan-fingerprint choice**, and resolves why fingerprints looked worse
-      in the main matrix. Doc: `leave_drugs_out_results.md`.
+      in the main matrix. Doc: `10_leave_drugs_out_results.md`.
 
 **Mid-execution amendment (approved):** the fingerprint arm covers only 111,799
 pairs vs one-hot's 134,764 (123 GDSC drugs never resolved to a SMILES), so
@@ -138,11 +138,11 @@ time/peak RSS.
 ## Phase 0 — Shared infrastructure (blocks every other phase)
 
 1. **Pin `random_state=42`** in `src/data_engineering/models/rf_baseline.py`
-   and `experiments/Early Fusion & MLP/mlp_baseline.py` (currently `None` —
+   and `experiments/04_early_fusion_mlp/mlp_baseline.py` (currently `None` —
    the reproducibility gap flagged by the earlier RF results doc).
 2. **New `src/data/experiment_utils.py`** — extract the boilerplate currently
    duplicated near-verbatim across `rf_baseline.py`, `mlp_baseline.py`,
-   `experiments/Cross Attention Fusion/cross_attention_baseline.py`:
+   `experiments/01_cross_attention_fusion/cross_attention_baseline.py`:
    - `load_omics_subset(modalities: list[str]) -> dict[str, pd.DataFrame]` —
      reads the requested subset of `{transcriptomics,genomics,proteomics}_pca.csv`.
    - `load_drug_features(mode: Literal["onehot","fingerprint"]) -> dict[str, np.ndarray]`
@@ -171,25 +171,25 @@ time/peak RSS.
 
 ## Phase 1 — Flat-feature matrix (RF + MLP), 28 runs
 
-New `experiments/Full Matrix/rf_matrix.py` and
-`experiments/Full Matrix/mlp_matrix.py`, each looping the 7 omics subsets ×
+New `experiments/06_full_matrix/rf_matrix.py` and
+`experiments/06_full_matrix/mlp_matrix.py`, each looping the 7 omics subsets ×
 2 drug reps via Phase 0's shared utils. Build each of the 14 distinct
 (omics-subset, drug-rep) pair-matrices **once**, reuse for both RF and MLP
 (halves data-prep work). Log every run's metrics into a running
 in-script dict/CSV for Phase 5.
 
-**Doc:** `docs/rf_ablation_results.md` and `docs/mlp_ablation_results.md`
+**Doc:** `docs/06_rf_ablation_results.md` and `docs/06_mlp_ablation_results.md`
 — one consolidated doc per model family, each with one results table (14
 rows) covering all its omics/drug-rep cells, following the existing
 results-doc style (what ran, why, numbers, interpretation).
 
 ## Phase 2 — Cross-attention matrix, 8 runs
 
-New `experiments/Full Matrix/cross_attention_matrix.py`, using the
+New `experiments/06_full_matrix/cross_attention_matrix.py`, using the
 generalized fusion class from Phase 0, looping the 4 omics subsets with
 ≥2 modalities × 2 drug reps.
 
-**Doc:** `docs/cross_attention_ablation_results.md` (8-row table).
+**Doc:** `docs/06_cross_attention_ablation_results.md` (8-row table).
 
 ## Phase 3 — Graph linkage + GNN matrix, 4 runs
 
@@ -210,12 +210,12 @@ generalized fusion class from Phase 0, looping the 4 omics subsets with
    MLP → `ln_ic50`. Protein node features start as the existing
    zero-initialized placeholder, now genuinely learned via `nn.Embedding`
    during training (the graph doc's already-flagged next step).
-3. **New `experiments/GNN Ablation/gnn_baseline.py`** — joins GDSC IC50
+3. **New `experiments/07_gnn_ablation/gnn_baseline.py`** — joins GDSC IC50
    labels onto `hetero_graph.pt`'s `cell_line.node_ids` /
    `drug.node_ids`, trains {GCN, GAT} × {with, without the new
    `has_mutation` edges} = 4 runs, same split/metrics as every other phase.
 
-**Doc:** `docs/gnn_ablation_results.md` (4-row table), explicitly including
+**Doc:** `docs/07_gnn_ablation_results.md` (4-row table), explicitly including
 whether the new cell_line→protein linkage helped (mirrors the paper's own
 "without graph" ablation finding that graph structure mattered most).
 
@@ -228,7 +228,7 @@ residual-corrected ln_ic50`, applied to whichever 1-2 models score best
 across Phases 1-3 (data-driven choice — can't be pre-specified before those
 results land). Adds `xgboost` to `requirements.txt`.
 
-**Doc:** `docs/ensemble_refinement_results.md` — with-vs-without comparison
+**Doc:** `docs/08_ensemble_refinement_results.md` — with-vs-without comparison
 on the chosen model(s), matching the paper's Table 7 style.
 
 ## Phase 5 — Consolidation
@@ -248,20 +248,20 @@ format is needed.
 - `src/data/04_link_cell_lines.py` (graph edge addition)
 - `src/models/hetero_gnn.py` (GCN + GAT model classes)
 - `src/models/ensemble_refinement.py` (XGBoost wrapper)
-- `experiments/Full Matrix/rf_matrix.py`
-- `experiments/Full Matrix/mlp_matrix.py`
-- `experiments/Full Matrix/cross_attention_matrix.py`
-- `experiments/GNN Ablation/gnn_baseline.py`
-- `docs/rf_ablation_results.md`, `docs/mlp_ablation_results.md`,
-  `docs/cross_attention_ablation_results.md`, `docs/gnn_ablation_results.md`,
-  `docs/ensemble_refinement_results.md`, `docs/results.md`
+- `experiments/06_full_matrix/rf_matrix.py`
+- `experiments/06_full_matrix/mlp_matrix.py`
+- `experiments/06_full_matrix/cross_attention_matrix.py`
+- `experiments/07_gnn_ablation/gnn_baseline.py`
+- `docs/06_rf_ablation_results.md`, `docs/06_mlp_ablation_results.md`,
+  `docs/06_cross_attention_ablation_results.md`, `docs/07_gnn_ablation_results.md`,
+  `docs/08_ensemble_refinement_results.md`, `docs/results.md`
 
 ## Files to modify
 
 - `src/models/cross_attention_fusion.py` (generalize to arbitrary modality
   subsets)
 - `src/data_engineering/models/rf_baseline.py`,
-  `experiments/Early Fusion & MLP/mlp_baseline.py` (pin `random_state=42`)
+  `experiments/04_early_fusion_mlp/mlp_baseline.py` (pin `random_state=42`)
 - `src/data/03_graph_construction.py` (factor `build_gene_symbol_to_ensp()`
   and the Morgan-fingerprint builder into importable functions, no behavior
   change)

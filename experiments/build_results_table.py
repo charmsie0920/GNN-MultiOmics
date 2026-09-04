@@ -17,13 +17,13 @@ from pathlib import Path
 import pandas as pd
 
 SOURCES = [
-    ("experiments/Full Matrix/rf_matrix_results.csv", "rf_ablation_results.md"),
-    ("experiments/Full Matrix/mlp_matrix_results.csv", "mlp_ablation_results.md"),
-    ("experiments/Full Matrix/cross_attention_matrix_results.csv", "cross_attention_ablation_results.md"),
-    ("experiments/GNN Ablation/gnn_results.csv", "gnn_ablation_results.md"),
-    ("experiments/GNN Ablation/hetero_ic50_gnn_results.csv", "hetero_gnn_test_bugfixes.md"),
+    ("experiments/06_full_matrix/rf_matrix_results.csv", "06_rf_ablation_results.md"),
+    ("experiments/06_full_matrix/mlp_matrix_results.csv", "06_mlp_ablation_results.md"),
+    ("experiments/06_full_matrix/cross_attention_matrix_results.csv", "06_cross_attention_ablation_results.md"),
+    ("experiments/07_gnn_ablation/gnn_results.csv", "07_gnn_ablation_results.md"),
+    ("experiments/07_gnn_ablation/hetero_ic50_gnn_results.csv", "hetero_gnn_test_bugfixes.md"),
 ]
-ENSEMBLE_CSV = Path("experiments/Ensemble Refinement/ensemble_results.csv")
+ENSEMBLE_CSV = Path("experiments/08_ensemble_refinement/ensemble_results.csv")
 OUTPUT = Path("docs/results.md")
 
 METRICS = ["test_rmse", "test_mae", "test_r2", "test_pcc", "test_scc", "test_auc", "test_f1"]
@@ -122,7 +122,7 @@ population, **2.7690** on the 111,799-pair fingerprint-resolvable population.
 {ens_rows}
 
 Refinement made both models worse — see
-[ensemble_refinement_results](./ensemble_refinement_results.md) for why
+[ensemble_refinement_results](./08_ensemble_refinement_results.md) for why
 (the paper's +19.7% gain likely depends on their random split allowing
 cell-line leakage).
 
@@ -155,7 +155,7 @@ baseline for that comparison.
   generalization to unseen cell lines. They say nothing about generalization to
   unseen *drugs* — the case where Morgan fingerprints matter most. That is
   measured separately in
-  [leave_drugs_out_results](./leave_drugs_out_results.md): on compounds never
+  [leave_drugs_out_results](./10_leave_drugs_out_results.md): on compounds never
   screened during training, one-hot collapses to R² 0.024 while fingerprints
   hold at R² 0.422. **Do not read the fingerprint rows below as evidence
   against the fingerprint representation** — they measure the axis on which it
@@ -165,7 +165,7 @@ baseline for that comparison.
   training and test. Measured under *their* protocol our best model reaches
   RMSE 0.8971 — so of the 0.582 apparent gap, 0.347 (60%) is protocol and
   0.235 (40%) is genuine architectural difference. See
-  [split_protocol_comparison](./split_protocol_comparison.md).
+  [split_protocol_comparison](./09_split_protocol_comparison.md).
 """
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
