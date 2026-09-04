@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[3]))
-from src.models.test.hetero_gnn import HeteroIC50GNN
+from src.models.train.hetero_gnn import HeteroIC50GNN
 
 
 def compute_metrics(y_true, y_pred):
