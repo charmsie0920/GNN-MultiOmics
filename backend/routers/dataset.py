@@ -16,11 +16,19 @@ router = APIRouter(prefix="/api/v1/dataset", tags=["dataset"])
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 TARGET_CSV_PATH = _REPO_ROOT / "data" / "processed" / "aligned" / "gdsc2_response_master.csv"
 
-# One of the fixed per-modality omics reference files cross_attention_baseline.py
-# loads cell-line features from (any of the three shares the same cell-line
-# index) -- used to filter the upload's cell lines down to ones the model can
-# actually produce a prediction for.
+# The heterogeneous graph the active backend predicts over: only cell lines
+# that exist as `cell_line` nodes in it can be scored, so it is the real
+# source of truth for which uploaded cell lines are selectable.
+_GRAPH_PATH = _REPO_ROOT / "src" / "graph" / "hetero_graph.pt"
+
+# Fallback for when the graph file is missing: one of the fixed per-modality
+# omics reference files (any of the three shares the same cell-line index).
 _OMICS_REFERENCE_CSV = _REPO_ROOT / "data" / "processed" / "transcriptomics_pca.csv"
+
+# The graph is ~21 MB, so the node id list is read once per process rather
+# than on every upload. `None` means "not loaded yet"; an empty set is a
+# legitimate cached result.
+_graph_cell_ids: set[str] | None = None
 
 
 @router.post("/upload", response_model=DatasetUploadResponse)
@@ -56,11 +64,34 @@ async def upload_dataset(file: UploadFile) -> DatasetUploadResponse:
     )
 
 
-def _valid_target_cell_lines(frame: pd.DataFrame) -> list[str]:
-    """Cell lines the trained model can actually predict for: present in both
-    the upload and the fixed omics reference files (see `_OMICS_REFERENCE_CSV`)."""
+def _reference_cell_ids() -> set[str]:
+    """Cell-line ids the active backend can score, preferring the graph's own
+    `cell_line` node ids and degrading to the omics reference CSV if the graph
+    file is unavailable."""
+    global _graph_cell_ids
+
+    if _graph_cell_ids is None and _GRAPH_PATH.exists():
+        try:
+            import torch
+
+            graph = torch.load(_GRAPH_PATH, weights_only=False)
+            _graph_cell_ids = {str(cell_id) for cell_id in graph["cell_line"].node_ids}
+        except Exception:  # noqa: BLE001 - fall back rather than fail the upload
+            _graph_cell_ids = set()
+
+    if _graph_cell_ids:
+        return _graph_cell_ids
+
     if not _OMICS_REFERENCE_CSV.exists():
+        return set()
+    return set(pd.read_csv(_OMICS_REFERENCE_CSV, index_col=0, usecols=[0]).index.astype(str))
+
+
+def _valid_target_cell_lines(frame: pd.DataFrame) -> list[str]:
+    """Cell lines the model can actually predict for: present in both the
+    upload and the backend's reference set (see `_reference_cell_ids`)."""
+    reference_ids = _reference_cell_ids()
+    if not reference_ids:
         return []
-    reference_ids = set(pd.read_csv(_OMICS_REFERENCE_CSV, index_col=0, usecols=[0]).index.astype(str))
     uploaded_ids = frame["sanger_model_id"].astype(str).unique()
     return sorted(cell_id for cell_id in uploaded_ids if cell_id in reference_ids)

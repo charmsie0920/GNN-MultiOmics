@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from backend.model_backends.base import ModelBackend
 
-DEFAULT_BACKEND = "cross_attention"
+DEFAULT_BACKEND = "hetero_gnn"
 
 _BACKENDS: dict[str, ModelBackend] = {}
 

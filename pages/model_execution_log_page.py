@@ -83,18 +83,21 @@ _STATE_TO_BADGE_TONE = {"done": "positive", "active": "neutral", "pending": "mut
 # Flat estimate for a run's total duration, used to drive the progress bar
 # and pipeline row fill. Replaces the old epoch-based estimate (current_epoch
 # / max_epochs), which was inaccurate when epoch counts varied run to run.
-_ESTIMATED_RUN_SECONDS = 12 * 60.0
+# The hetero GNN backend loads pretrained weights rather than retraining, so
+# a run completes in seconds; the old 12-minute estimate (sized for the
+# cross-attention backend, which retrained every run) would leave the bar
+# pinned near zero for the entire run.
+_ESTIMATED_RUN_SECONDS = 45.0
 
-# (filename, status label, state) — the real inputs cross_attention_baseline.py
+# (filename, status label, state) — the real inputs the hetero GNN backend
 # reads, in the order it loads them. Size/percent aren't known ahead of time
 # so every row starts pending and flips to done together once the run
 # completes (no per-line attribution to individual rows).
 _PIPELINE_ROWS = [
-    ("transcriptomics_pca.csv", "PENDING", "pending"),
-    ("genomics_pca.csv", "PENDING", "pending"),
-    ("proteomics_pca.csv", "PENDING", "pending"),
+    ("hetero_graph.pt", "PENDING", "pending"),
     ("gdsc2_response_master.csv", "PENDING", "pending"),
-    ("Cross-Attention Fusion Training", "PENDING", "pending"),
+    ("best_hetero_gnn.pt", "PENDING", "pending"),
+    ("Hetero GNN Inference", "PENDING", "pending"),
 ]
 
 
@@ -392,7 +395,7 @@ class ModelExecutionLogPage(QWidget):
         header_title.setStyleSheet(CARD_TITLE_STYLE)
         header_layout.addWidget(header_title)
         header_layout.addStretch(1)
-        badge = QLabel("Cross-Attention Fusion")
+        badge = QLabel("Hetero GNN")
         badge.setStyleSheet(
             f"background: {SURFACE_CONTAINER}; border: none; color: {TEXT_MUTED}; border-radius: 4px;"
             " padding: 4px 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.05em;"

@@ -122,10 +122,11 @@ class DrugResult:
 class TrainingCurveWidget(QWidget):
     """Custom-painted line chart of the run's real per-epoch train loss / val RMSE.
 
-    Fed from `on_training_history` (backend/model_backends/cross_attention.py),
-    parsed straight out of `train()`'s own
-    "[epoch N] train_loss=... val_rmse=... val_pcc=..." log line -- these are
-    the model's actual convergence numbers for this run, not mocked data.
+    Fed from `on_training_history` (backend/model_backends/hetero_gnn.py) --
+    the model's actual per-epoch convergence numbers for this run, not mocked
+    data. Stays empty when the backend loads pretrained weights instead of
+    training, since there are no epochs to plot in that case (see the
+    `len(self._history) < 2` guard in `paintEvent`).
 
     Each series is normalized to its own 0-1 range (their absolute scales
     aren't comparable -- loss and RMSE are different units), so the numeric
