@@ -41,7 +41,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from PySide6.QtCore import QPointF, Qt
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -120,24 +120,32 @@ class DrugResult:
 
 
 class TrainingCurveWidget(QWidget):
-    """Custom-painted line chart of the run's real per-epoch train loss / val RMSE.
+    """Custom-painted chart fed from `on_training_history` (backend/model_backends/hetero_gnn.py).
 
-    Fed from `on_training_history` (backend/model_backends/hetero_gnn.py) --
-    the model's actual per-epoch convergence numbers for this run, not mocked
-    data. Stays empty when the backend loads pretrained weights instead of
-    training, since there are no epochs to plot in that case (see the
-    `len(self._history) < 2` guard in `paintEvent`).
+    Renders one of two things depending on how the run produced its model,
+    both real per-run data, never mocked:
 
-    Each series is normalized to its own 0-1 range (their absolute scales
-    aren't comparable -- loss and RMSE are different units), so the numeric
-    value range for each is spelled out in its legend label instead of a
-    shared y-axis, alongside epoch ticks on the x-axis.
+    - Training curve: when the backend actually trained, the real per-epoch
+      train loss / val RMSE (see `_paint_training_curve`). Each series is
+      normalized to its own 0-1 range (their absolute scales aren't
+      comparable -- loss and RMSE are different units), so the numeric value
+      range for each is spelled out in its legend label instead of a shared
+      y-axis, alongside epoch ticks on the x-axis.
+    - Validation scatter: when the backend loaded a pretrained checkpoint
+      instead (no epochs to plot), a sample of held-out predicted-vs-actual
+      ln(IC50) pairs from that same run's validation pass (see
+      `_paint_validation_scatter`) -- a real calibration check in place of a
+      curve that doesn't exist for this run.
+
+    `set_history` picks the mode from which fields are present on the first
+    point (see `TrainingHistoryPoint`).
     """
 
     # Warm/cool complementary pair so the two series stay visually distinct
     # even though they share the same normalized 0-1 vertical space.
     _TRAIN_LOSS_COLOR = "#8a3419"
     _VAL_RMSE_COLOR = "#1c4a7a"
+    _SCATTER_POINT_COLOR = "#1c4a7a"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -148,8 +156,18 @@ class TrainingCurveWidget(QWidget):
         self._history = history
         self.update()
 
+    def _mode(self) -> str:
+        if not self._history:
+            return "empty"
+        first = self._history[0]
+        if first.get("epoch") is not None:
+            return "curve"
+        if first.get("actual_ln_ic50") is not None:
+            return "scatter"
+        return "empty"
+
     def paintEvent(self, event) -> None:  # noqa: N802
-        """Paint a dashed gridline background plus the train-loss/val-RMSE curves."""
+        """Paint a dashed gridline background plus whichever mode `_mode` selects."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), QColor(WINDOW_BACKGROUND))
@@ -166,11 +184,52 @@ class TrainingCurveWidget(QWidget):
             y = margin_top + int(height * ratio)
             painter.drawLine(margin_left, y, margin_left + width, y)
 
-        if len(self._history) < 2:
+        mode = self._mode()
+        if mode == "scatter":
+            self._paint_validation_scatter(painter, margin_left, margin_top, width, height)
+            return
+
+        if mode != "curve" or len(self._history) < 2:
             painter.setPen(QColor(TEXT_MUTED))
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Waiting for training history...")
             return
 
+        self._paint_training_curve(painter, margin_left, margin_top, width, height)
+
+    def _paint_validation_scatter(self, painter: QPainter, margin_left: int, margin_top: int, width: int, height: int) -> None:
+        """Predicted vs. actual ln(IC50) on the held-out validation set, with a diagonal reference line."""
+        actual = [point["actual_ln_ic50"] for point in self._history]
+        predicted = [point["predicted_ln_ic50"] for point in self._history]
+        lo = min(min(actual), min(predicted))
+        hi = max(max(actual), max(predicted))
+        span = (hi - lo) or 1.0
+
+        def map_xy(x_value: float, y_value: float) -> QPointF:
+            px = (x_value - lo) / span
+            py = 1.0 - (y_value - lo) / span
+            return QPointF(margin_left + px * width, margin_top + py * height)
+
+        diagonal_pen = QPen(QColor(TEXT_MUTED))
+        diagonal_pen.setStyle(Qt.PenStyle.DashLine)
+        painter.setPen(diagonal_pen)
+        painter.drawLine(map_xy(lo, lo), map_xy(hi, hi))
+
+        painter.setPen(QPen(QColor(self._SCATTER_POINT_COLOR), 1))
+        painter.setBrush(QBrush(QColor(self._SCATTER_POINT_COLOR)))
+        for x_value, y_value in zip(actual, predicted):
+            painter.drawEllipse(map_xy(x_value, y_value), 2.5, 2.5)
+
+        painter.setPen(QColor(TEXT_MUTED))
+        painter.drawText(
+            margin_left, 14, f"Loaded from checkpoint -- validation set: predicted vs. actual ln(IC50), {len(actual)} pairs"
+        )
+        painter.drawText(margin_left, margin_top + height + 14, f"{lo:.2f}")
+        hi_text = f"{hi:.2f}"
+        hi_text_width = painter.fontMetrics().horizontalAdvance(hi_text)
+        painter.drawText(margin_left + width - hi_text_width, margin_top + height + 14, hi_text)
+
+    def _paint_training_curve(self, painter: QPainter, margin_left: int, margin_top: int, width: int, height: int) -> None:
+        """The real train_loss/val_rmse-per-epoch line chart."""
         epochs = [point["epoch"] for point in self._history]
         e_lo, e_hi = min(epochs), max(epochs)
         e_span = (e_hi - e_lo) or 1
@@ -730,9 +789,12 @@ class FinalResultsPage(QWidget):
         return wrapper
 
     def _build_ic50_panel(self) -> QFrame:
-        """Build the "Training Curve" chart card (real train_loss/val_rmse per epoch)."""
+        """Build the model performance chart card: a real per-epoch training
+        curve, or -- when the run loaded a pretrained checkpoint instead of
+        training -- a validation predicted-vs-actual scatter. See
+        `TrainingCurveWidget`."""
         self._training_curve_widget = TrainingCurveWidget()
-        return self._build_chart_panel("Training Curve (Train Loss / Val RMSE)", self._training_curve_widget)
+        return self._build_chart_panel("Model Performance", self._training_curve_widget)
 
     def _build_scatter_panel(self) -> QFrame:
         """Build the "Predicted IC50 vs. Confidence" chart card."""

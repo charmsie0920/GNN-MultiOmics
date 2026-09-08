@@ -202,8 +202,15 @@ def _make_loader(frame: pd.DataFrame, batch_size: int, shuffle: bool = False, dr
 
 
 @torch.no_grad()
-def _evaluate(model: nn.Module, loader: DataLoader, graph_maps: dict, device: torch.device) -> tuple[float, float]:
-    """Deterministic RMSE and Pearson r over `loader`."""
+def _evaluate(
+    model: nn.Module, loader: DataLoader, graph_maps: dict, device: torch.device
+) -> tuple[float, float, np.ndarray, np.ndarray]:
+    """Deterministic RMSE, Pearson r, and the raw (predicted, actual) arrays over `loader`.
+
+    The raw arrays are needed by `run()` to build the validation-pair scatter
+    that stands in for a training curve when the backend loaded a checkpoint
+    instead of training (see `_sample_val_scatter`).
+    """
     model.eval()
     preds, targets = [], []
     for cell_idx, drug_idx, batch_target in loader:
@@ -216,7 +223,29 @@ def _evaluate(model: nn.Module, loader: DataLoader, graph_maps: dict, device: to
     rmse = float(np.sqrt(np.mean((pred - true) ** 2)))
     # pearsonr needs variance in both inputs; a degenerate split would raise.
     pcc = float(pearsonr(true, pred)[0]) if len(pred) > 1 and np.std(pred) > 0 else 0.0
-    return rmse, pcc
+    return rmse, pcc, pred, true
+
+
+# Cap on how many validation pairs get sent to the UI for the scatter
+# fallback -- the validation split can be tens of thousands of rows, far more
+# than a small custom-painted widget needs to show the calibration pattern.
+_MAX_SCATTER_POINTS = 400
+
+
+def _sample_val_scatter(pred: np.ndarray, true: np.ndarray, seed: int = _SEED) -> list[dict]:
+    """Down-sample (predicted, actual) ln_ic50 pairs into history-shaped dicts.
+
+    Used only when no real per-epoch history exists (checkpoint mode), so the
+    results page's training-curve panel still has real, run-specific data to
+    plot instead of sitting empty.
+    """
+    n = len(pred)
+    if n > _MAX_SCATTER_POINTS:
+        idx = np.random.default_rng(seed).choice(n, size=_MAX_SCATTER_POINTS, replace=False)
+        pred, true = pred[idx], true[idx]
+    return [
+        {"actual_ln_ic50": float(t), "predicted_ln_ic50": float(p)} for t, p in zip(true.tolist(), pred.tolist())
+    ]
 
 
 def _train_model(
@@ -259,7 +288,7 @@ def _train_model(
             running_loss += loss.item() * len(batch_target)
 
         train_loss = running_loss / max(1, len(train_loader.dataset))
-        val_rmse, val_pcc = _evaluate(model, val_loader, graph_maps, device)
+        val_rmse, val_pcc, _val_preds, _val_true = _evaluate(model, val_loader, graph_maps, device)
         scheduler.step(val_rmse)
 
         history.append(
@@ -403,13 +432,23 @@ class HeteroGNNBackend(ModelBackend):
             drug_info, cell_info = _load_metadata()
 
             model = _load_or_train(pairs, graph_maps, device, log, on_progress, history)
-            on_training_history(history)
 
             # Held-out validation error, both as a quality readout and as the
             # scale the confidence score is calibrated against (see
             # `rank_predictions`). One cheap forward pass in checkpoint mode.
-            val_rmse, val_pcc = _evaluate(model, _make_loader(pairs["val"], _EVAL_BATCH_SIZE), graph_maps, device)
+            val_rmse, val_pcc, val_preds, val_true = _evaluate(
+                model, _make_loader(pairs["val"], _EVAL_BATCH_SIZE), graph_maps, device
+            )
             log(f"[eval] validation RMSE (ln IC50) = {val_rmse:.4f}, PCC = {val_pcc:.4f} -- used as the confidence scale")
+
+            if not history:
+                # No epochs ran (checkpoint mode), so there is no curve to
+                # show on the results page's training-curve panel. Give it
+                # real data anyway: a sample of predicted-vs-actual ln_ic50
+                # pairs from the same validation pass above.
+                history = _sample_val_scatter(val_preds, val_true)
+                log(f"[eval] no training curve to show (loaded from checkpoint) -- sending {len(history)} validation pairs instead")
+            on_training_history(history)
 
             info = cell_info.get(target_cell_line, {})
             log(
