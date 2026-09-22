@@ -87,7 +87,7 @@ _STATE_TO_BADGE_TONE = {"done": "positive", "active": "neutral", "pending": "mut
 # a run completes in seconds; the old 12-minute estimate (sized for the
 # cross-attention backend, which retrained every run) would leave the bar
 # pinned near zero for the entire run.
-_ESTIMATED_RUN_SECONDS = 45.0
+_ESTIMATED_RUN_SECONDS = 10
 
 # (filename, status label, state) — the real inputs the hetero GNN backend
 # reads, in the order it loads them. Size/percent aren't known ahead of time

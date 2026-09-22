@@ -221,7 +221,7 @@ class TrainingCurveWidget(QWidget):
 
         painter.setPen(QColor(TEXT_MUTED))
         painter.drawText(
-            margin_left, 14, f"Loaded from checkpoint -- validation set: predicted vs. actual ln(IC50), {len(actual)} pairs"
+            margin_left, 14, f"Loaded from checkpoint -- validation set"
         )
         painter.drawText(margin_left, margin_top + height + 14, f"{lo:.2f}")
         hi_text = f"{hi:.2f}"
