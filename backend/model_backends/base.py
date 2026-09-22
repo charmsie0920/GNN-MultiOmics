@@ -17,6 +17,29 @@ class ModelBackend(ABC):
     name: str
     expected_duration_seconds: dict[str, float]
 
+    # Whether this backend can explain an individual prediction in terms of
+    # genes. Not every model can: a backend trained on PCA-projected omics has
+    # no per-gene identity left to attribute to, so the capability is declared
+    # rather than assumed, and the UI hides its interpretation panels when a
+    # run reports False.
+    supports_interpretation: bool = False
+
+    def explain(
+        self,
+        run_id: str,
+        target_cell_line: str,
+        drug_id: str,
+        top_k: int = 50,
+    ) -> list[dict]:
+        """Per-gene attribution for one (cell line, drug) prediction.
+
+        Only backends that set `supports_interpretation = True` need to
+        implement this. Each returned dict describes one gene: `gene_symbol`,
+        `protein_id`, signed `score`, `direction`, `is_driver_mutation` and
+        `is_drug_target`, ordered most important first.
+        """
+        raise NotImplementedError(f"{self.name} does not support interpretation.")
+
     @abstractmethod
     def run(
         self,

@@ -59,7 +59,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from client.workers import ResultsWorker, TrainingHistoryWorker
+from client.workers import EnrichmentWorker, GeneAttributionWorker, ResultsWorker, TrainingHistoryWorker
 from styles.theme import (
     BORDER,
     CARD_CONTAINER_STYLE,
@@ -113,6 +113,9 @@ def _format_ic50(value: float) -> str:
 class DrugResult:
     """One row of the predicted drug results table."""
 
+    # Drug names repeat in GDSC (two rows both read "Dactinomycin"), so the id
+    # is what identifies the row when asking the backend to explain it.
+    drug_id: str
     name: str
     ic50: float
     rank: str
@@ -383,6 +386,18 @@ class FinalResultsPage(QWidget):
 
         self._results_worker: ResultsWorker | None = None
         self._training_history_worker: TrainingHistoryWorker | None = None
+        # Held on self because an unreferenced QThread is collected mid-flight.
+        self._gene_worker: GeneAttributionWorker | None = None
+        self._enrichment_worker: EnrichmentWorker | None = None
+        self._run_id: str | None = None
+        self._selected_drug_id: str | None = None
+        self._visible_rows: list[DrugResult] = []
+        self._gene_table: QTableWidget | None = None
+        self._enrichment_table: QTableWidget | None = None
+        self._gene_panel_subtitle: QLabel | None = None
+        self._enrichment_status_label: QLabel | None = None
+        self._recovery_slot: QVBoxLayout | None = None
+        self._bio_host: QWidget | None = None
         self._table: QTableWidget | None = None
         self._drug_name_label: QLabel | None = None
         self._drug_ic50_value: QLabel | None = None
@@ -402,6 +417,8 @@ class FinalResultsPage(QWidget):
 
     def load_results(self, run_id: str) -> None:
         """Fetch and display the ranked drug predictions and training curve for `run_id`."""
+        self._run_id = run_id
+        self._selected_drug_id = None
         self._results_worker = ResultsWorker(run_id, parent=self)
         self._results_worker.succeeded.connect(self._on_results_succeeded)
         self._results_worker.failed.connect(self._on_results_failed)
@@ -414,6 +431,7 @@ class FinalResultsPage(QWidget):
     def _on_results_succeeded(self, raw_results: list[dict]) -> None:
         rows = [
             DrugResult(
+                drug_id=str(item["drug_id"]),
                 name=item["drug_name"],
                 ic50=item["predicted_ic50_um"],
                 rank=item["ranking"],
@@ -611,6 +629,21 @@ class FinalResultsPage(QWidget):
         grid.addWidget(right_host, 0, 1)
         grid.setColumnStretch(0, 2)
         grid.setColumnStretch(1, 1)
+
+        # Biological interpretation of whichever drug is selected above. Spans
+        # both columns: the pathway terms are long, and the body already sits
+        # in a scroll area so the extra height costs nothing.
+        bio = QGridLayout()
+        bio.setContentsMargins(0, 0, 0, 0)
+        bio.setHorizontalSpacing(SECTION_SPACING)
+        bio.addWidget(self._build_gene_panel(), 0, 0)
+        bio.addWidget(self._build_enrichment_panel(), 0, 1)
+        bio.setColumnStretch(0, 1)
+        bio.setColumnStretch(1, 2)
+        bio_host = QWidget()
+        bio_host.setLayout(bio)
+        self._bio_host = bio_host
+        grid.addWidget(bio_host, 1, 0, 1, 2)
         return grid
 
     def _build_predicted_results_panel(self) -> QFrame:
@@ -677,6 +710,13 @@ class FinalResultsPage(QWidget):
         table = QTableWidget(0, 4)
         table.setHorizontalHeaderLabels(["Drug Name", "Predicted IC50 (uM)", "Sensitivity Ranking", "Confidence"])
         style_data_table(table, header_background=WINDOW_BACKGROUND)
+        # `style_data_table` makes tables non-selectable, which is right for the
+        # read-only ones. This one picks the drug the interpretation panels
+        # explain, so selection is re-enabled to give that click feedback.
+        table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setCursor(Qt.CursorShape.PointingHandCursor)
+        table.cellClicked.connect(self._on_row_clicked)
         table.setColumnWidth(0, 140)
         table.setColumnWidth(1, 150)
         table.setColumnWidth(2, 170)
@@ -757,7 +797,296 @@ class FinalResultsPage(QWidget):
         filtered.sort(key=sort_key, reverse=reverse)
 
         empty_message = "No drugs match your search/filter." if self._all_rows else "Waiting for a completed model run..."
+        self._visible_rows = filtered
         self._populate_table(filtered, empty_message=empty_message)
+
+        # Explain the top row by default, so the interpretation panels are
+        # populated on arrival rather than waiting for a click. Re-selects only
+        # when the previous choice has been filtered away.
+        if filtered and not any(row.drug_id == self._selected_drug_id for row in filtered):
+            self._select_drug(filtered[0])
+
+    # -- biological interpretation -----------------------------------------
+
+    def set_supports_interpretation(self, supported: bool) -> None:
+        """Show or hide the interpretation panels for the current run's backend.
+
+        Not every model can attribute a prediction to genes -- one trained on
+        PCA-projected omics has no per-gene identity left -- so the backend
+        declares the capability and the panels disappear entirely rather than
+        sitting permanently empty.
+        """
+        if self._bio_host is not None:
+            self._bio_host.setVisible(supported)
+
+    def _on_row_clicked(self, row_index: int, _column: int) -> None:
+        if 0 <= row_index < len(self._visible_rows):
+            self._select_drug(self._visible_rows[row_index])
+
+    def _select_drug(self, row: DrugResult) -> None:
+        """Fetch gene attribution and enrichment for one drug of the current run."""
+        if self._run_id is None:
+            return
+        self._selected_drug_id = row.drug_id
+
+        if self._gene_panel_subtitle is not None:
+            self._gene_panel_subtitle.setText(f"Driving {row.name}")
+        self._populate_gene_table([], empty_message="Attributing...")
+        self._populate_enrichment_table([], empty_message="Querying Enrichr...")
+        if self._enrichment_status_label is not None:
+            self._enrichment_status_label.setText("Loading...")
+
+        self._gene_worker = GeneAttributionWorker(self._run_id, row.drug_id, parent=self)
+        self._gene_worker.succeeded.connect(self._on_gene_attribution_succeeded)
+        self._gene_worker.failed.connect(self._on_gene_attribution_failed)
+        self._gene_worker.unsupported.connect(lambda: self.set_supports_interpretation(False))
+        self._gene_worker.start()
+
+        self._enrichment_worker = EnrichmentWorker(self._run_id, row.drug_id, parent=self)
+        self._enrichment_worker.succeeded.connect(self._on_enrichment_succeeded)
+        self._enrichment_worker.failed.connect(self._on_enrichment_failed)
+        self._enrichment_worker.start()
+
+    def _on_gene_attribution_succeeded(self, payload: dict) -> None:
+        self._populate_gene_table(payload.get("genes", []))
+        self._populate_recovery(payload.get("target_recovery", {}))
+
+    def _on_gene_attribution_failed(self, message: str) -> None:
+        # Supplementary panel: degrade in place rather than interrupting with a
+        # modal, the same policy the training-curve panel already follows.
+        self._populate_gene_table([], empty_message=message)
+
+    def _on_enrichment_succeeded(self, payload: dict) -> None:
+        terms = payload.get("terms", [])
+        status = payload.get("status", "")
+        message = payload.get("message", "")
+        self._populate_enrichment_table(
+            terms, empty_message=message or "No significantly enriched pathways."
+        )
+        if self._enrichment_status_label is not None:
+            self._enrichment_status_label.setText(
+                f"{len(terms)} enriched terms" if status == "ok" else (message or status)
+            )
+
+    def _on_enrichment_failed(self, message: str) -> None:
+        self._populate_enrichment_table([], empty_message=message)
+        if self._enrichment_status_label is not None:
+            self._enrichment_status_label.setText("Unavailable")
+
+    @staticmethod
+    def _importance_percent(score: float, max_abs: float) -> int:
+        """Bar fill for one gene's contribution, on a log scale.
+
+        Contributions span several orders of magnitude: a drug's own target
+        routinely scores ~100x everything else, because the target edge is the
+        drug node's only connection into the graph. Scaled linearly that leaves
+        one full bar above a column of invisible slivers, so magnitude is
+        compressed across five decades and the exact value shown as text.
+        """
+        if max_abs <= 0 or score == 0:
+            return 0
+        decades = 5.0
+        ratio = max(abs(score) / max_abs, 10.0 ** -decades)
+        return int(round(5 + 95 * max(0.0, 1.0 + math.log10(ratio) / decades)))
+
+    def _populate_gene_table(
+        self, genes: list[dict], empty_message: str = "Select a drug to see the genes behind it."
+    ) -> None:
+        table = self._gene_table
+        if table is None:
+            return
+        if not genes:
+            table.setRowCount(1)
+            item = QTableWidgetItem(empty_message)
+            item.setForeground(QColor(TEXT_MUTED))
+            table.setItem(0, 0, item)
+            table.setSpan(0, 0, 1, 4)
+            return
+
+        table.clearSpans()
+        table.setRowCount(len(genes))
+        max_abs = max(abs(float(gene["score"])) for gene in genes)
+        for row_index, gene in enumerate(genes):
+            score = float(gene["score"])
+
+            symbol_item = QTableWidgetItem(str(gene["gene_symbol"]))
+            symbol_item.setForeground(QColor(TEXT))
+            table.setItem(row_index, 0, symbol_item)
+
+            table.setCellWidget(row_index, 1, self._build_contribution_cell(score, max_abs))
+
+            direction_item = QTableWidgetItem("Sensitising" if score < 0 else "Resistance")
+            direction_item.setForeground(QColor(TEXT if score < 0 else TEXT_MUTED))
+            table.setItem(row_index, 2, direction_item)
+
+            if gene.get("is_drug_target"):
+                badge = build_status_badge("Drug target", "positive")
+            elif gene.get("is_driver_mutation"):
+                badge = build_status_badge("Driver mutation", "neutral")
+            else:
+                badge = build_status_badge("Network", "muted")
+            table.setCellWidget(row_index, 3, badge)
+
+    def _build_contribution_cell(self, score: float, max_abs: float) -> QWidget:
+        """Signed contribution as a numeric label over a log-scaled bar."""
+        wrapper = transparent_cell_widget()
+        layout = QVBoxLayout(wrapper)
+        layout.setContentsMargins(0, 8, 0, 8)
+        layout.setSpacing(4)
+
+        value = QLabel(f"{score:+.4g}")
+        value.setStyleSheet(
+            label_style(f"font-family: Consolas, monospace; font-size: 12px; color: {TEXT};")
+        )
+        layout.addWidget(value)
+        layout.addWidget(build_mini_progress_bar(self._importance_percent(score, max_abs)))
+        return wrapper
+
+    def _populate_recovery(self, recovery: dict) -> None:
+        """Show whether the drug's GDSC-annotated target came back in the top genes."""
+        slot = self._recovery_slot
+        if slot is None:
+            return
+        while slot.count():
+            item = slot.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        if not recovery.get("checked"):
+            # `putative_target` is frequently a mechanism ("Microtubule
+            # destabiliser") rather than a gene, so there is nothing to check
+            # against -- say so instead of implying a failed recovery.
+            slot.addWidget(build_status_badge("No gene-level target annotated", "muted"))
+            return
+
+        recovered = recovery.get("recovered", [])
+        if recovered:
+            best = min(entry["rank"] for entry in recovered)
+            names = ", ".join(entry["gene_symbol"] for entry in recovered)
+            slot.addWidget(
+                build_status_badge(f"Known target recovered: {names} (rank {best})", "positive")
+            )
+        else:
+            targets = ", ".join(recovery.get("target_genes", []))
+            slot.addWidget(build_status_badge(f"Known target not in top genes ({targets})", "muted"))
+
+    def _populate_enrichment_table(
+        self, terms: list[dict], empty_message: str = "Select a drug to see enriched pathways."
+    ) -> None:
+        table = self._enrichment_table
+        if table is None:
+            return
+        if not terms:
+            table.setRowCount(1)
+            item = QTableWidgetItem(empty_message)
+            item.setForeground(QColor(TEXT_MUTED))
+            table.setItem(0, 0, item)
+            table.setSpan(0, 0, 1, 4)
+            return
+
+        table.clearSpans()
+        table.setRowCount(len(terms))
+        for row_index, term in enumerate(terms):
+            term_item = QTableWidgetItem(str(term["term"]))
+            term_item.setForeground(QColor(TEXT))
+            # The overlapping genes are the evidence behind the term; too many
+            # to show inline, but worth having on hover.
+            term_item.setToolTip(", ".join(term.get("genes", [])))
+            table.setItem(row_index, 0, term_item)
+
+            library_item = QTableWidgetItem(str(term["library"]).replace("_", " "))
+            library_item.setForeground(QColor(TEXT_MUTED))
+            table.setItem(row_index, 1, library_item)
+
+            p_item = QTableWidgetItem(f"{float(term['adjusted_p_value']):.2e}")
+            p_item.setForeground(QColor(TEXT_MUTED))
+            table.setItem(row_index, 2, p_item)
+
+            overlap_item = QTableWidgetItem(str(term["overlap"]))
+            overlap_item.setForeground(QColor(TEXT_MUTED))
+            table.setItem(row_index, 3, overlap_item)
+
+    def _build_gene_panel(self) -> QFrame:
+        card = QFrame()
+        card.setStyleSheet(CARD_CONTAINER_STYLE)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header = QFrame()
+        header.setStyleSheet(
+            f"background: {WINDOW_BACKGROUND}; border-bottom: 1px solid {SURFACE_CONTAINER};"
+        )
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(16, 12, 16, 12)
+        header_layout.setSpacing(2)
+        title = QLabel("Top Contributing Genes")
+        title.setStyleSheet(CARD_TITLE_STYLE)
+        subtitle = QLabel("Select a drug")
+        subtitle.setStyleSheet(label_style(f"font-size: 12px; color: {TEXT_MUTED};"))
+        self._gene_panel_subtitle = subtitle
+        header_layout.addWidget(title)
+        header_layout.addWidget(subtitle)
+        layout.addWidget(header)
+
+        recovery_strip = QFrame()
+        recovery_strip.setStyleSheet(
+            f"background: {SURFACE}; border-bottom: 1px solid {SURFACE_CONTAINER};"
+        )
+        recovery_layout = QVBoxLayout(recovery_strip)
+        recovery_layout.setContentsMargins(16, 10, 16, 10)
+        self._recovery_slot = recovery_layout
+        layout.addWidget(recovery_strip)
+
+        table = QTableWidget(0, 4)
+        table.setHorizontalHeaderLabels(["Gene", "Contribution", "Direction", "Evidence"])
+        style_data_table(table, header_background=WINDOW_BACKGROUND)
+        table.setColumnWidth(0, 90)
+        table.setColumnWidth(1, 120)
+        table.setColumnWidth(2, 100)
+        table.setMinimumHeight(360)
+        self._gene_table = table
+        layout.addWidget(table)
+
+        self._populate_gene_table([])
+        return card
+
+    def _build_enrichment_panel(self) -> QFrame:
+        card = QFrame()
+        card.setStyleSheet(CARD_CONTAINER_STYLE)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header = QFrame()
+        header.setStyleSheet(
+            f"background: {WINDOW_BACKGROUND}; border-bottom: 1px solid {SURFACE_CONTAINER};"
+        )
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(16, 12, 16, 12)
+        title = QLabel("Pathway Enrichment")
+        title.setStyleSheet(CARD_TITLE_STYLE)
+        status = QLabel("")
+        status.setStyleSheet(label_style(f"font-size: 12px; color: {TEXT_MUTED};"))
+        self._enrichment_status_label = status
+        header_layout.addWidget(title)
+        header_layout.addStretch(1)
+        header_layout.addWidget(status)
+        layout.addWidget(header)
+
+        table = QTableWidget(0, 4)
+        table.setHorizontalHeaderLabels(["Pathway / Term", "Library", "Adj. p-value", "Overlap"])
+        style_data_table(table, header_background=WINDOW_BACKGROUND)
+        table.setColumnWidth(0, 340)
+        table.setColumnWidth(1, 170)
+        table.setColumnWidth(2, 100)
+        table.setMinimumHeight(412)
+        self._enrichment_table = table
+        layout.addWidget(table)
+
+        self._populate_enrichment_table([])
+        return card
 
     @staticmethod
     def _build_confidence_cell(confidence: float) -> QWidget:

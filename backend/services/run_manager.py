@@ -31,6 +31,10 @@ from backend.model_backends.registry import DEFAULT_BACKEND, get_backend
 class RunState:
     run_id: str
     backend_name: str
+    # Needed after the run ends: on-demand interpretation re-scores a specific
+    # (cell line, drug) pair, and the cell line is otherwise only known to the
+    # worker thread that has already exited.
+    target_cell_line: str
     device: str
     expected_duration_seconds: float
     status: str = "running"  # "running" | "completed" | "failed"
@@ -116,6 +120,7 @@ class RunManager:
         state = RunState(
             run_id=uuid.uuid4().hex,
             backend_name=backend_name,
+            target_cell_line=target_cell_line,
             device=device,
             expected_duration_seconds=backend.expected_duration_seconds[device],
         )

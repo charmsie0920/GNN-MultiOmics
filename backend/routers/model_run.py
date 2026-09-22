@@ -4,7 +4,7 @@ import time
 
 from fastapi import APIRouter, HTTPException
 
-from backend.model_backends.registry import DEFAULT_BACKEND
+from backend.model_backends.registry import DEFAULT_BACKEND, get_backend
 from backend.schemas.model_run import RunStatusResponse, StartRunResponse
 from backend.services.run_manager import run_manager
 
@@ -48,4 +48,5 @@ def run_status(run_id: str, since: int = 0) -> RunStatusResponse:
         current_epoch=state.current_epoch,
         max_epochs=state.max_epochs,
         estimated_remaining_seconds=state.estimated_remaining_seconds(elapsed),
+        supports_interpretation=get_backend(state.backend_name).supports_interpretation,
     )

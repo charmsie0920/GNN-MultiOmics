@@ -61,6 +61,11 @@ def rank_predictions(raw: list[dict], val_rmse: float, drug_info: dict[str, dict
         info = drug_info.get(raw[i]["drug_id"], {})
         results.append(
             {
+                # Kept alongside the display name because drug names are not
+                # unique in GDSC (two distinct ids both render as
+                # "Dactinomycin"), so anything addressing a specific row --
+                # per-drug interpretation in particular -- needs the id.
+                "drug_id": raw[i]["drug_id"],
                 "drug_name": info.get("drug_name") or raw[i]["drug_id"],
                 "putative_target": info.get("putative_target", ""),
                 "pathway_name": info.get("pathway_name", ""),

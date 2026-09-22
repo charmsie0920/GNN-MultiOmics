@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import gc
 import sys
+import threading
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -103,6 +105,9 @@ def _load_graph(device: torch.device) -> dict:
         "cell_to_idx": {str(cell_id): i for i, cell_id in enumerate(graph["cell_line"].node_ids)},
         "drug_to_idx": {str(drug_id): i for i, drug_id in enumerate(graph["drug"].node_ids)},
         "num_proteins": int(x_dict["protein"].shape[0]),
+        # Index i in this list *is* protein node i, same positional contract as
+        # the two maps above. Interpretation needs it to name a scored node.
+        "protein_node_ids": [str(protein_id) for protein_id in graph["protein"].node_ids],
     }
 
 
@@ -384,6 +389,84 @@ def _predict_drug_panel(
     ]
 
 
+@dataclass
+class _ExplainerSession:
+    """A run's model and graph, kept resident so per-drug explanation is cheap.
+
+    `run()` deliberately frees the model and graph when it finishes, because
+    the graph alone is ~21 MB of features plus half a million edges. But
+    interpretation is interactive -- the user clicks drug after drug -- and
+    reloading both per click would make every click a multi-second wait. One
+    session is held, for the most recent run only.
+    """
+
+    run_id: str
+    model: nn.Module
+    graph_maps: dict
+    symbol_map: dict[str, str]
+    device: torch.device
+
+
+_session: _ExplainerSession | None = None
+# Endpoints are sync, so FastAPI serves them from a threadpool; two quick
+# clicks would otherwise each build their own copy of the graph.
+_session_lock = threading.Lock()
+
+
+def _evict_session() -> None:
+    """Drop the resident session and reclaim its memory."""
+    global _session
+    if _session is None:
+        return
+    _session = None
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
+
+
+def _get_or_build_session(run_id: str) -> _ExplainerSession:
+    """Return the session for `run_id`, building it lazily on first use.
+
+    Built on demand rather than at the end of `run()` so a user who never opens
+    the interpretation panels never pays for it.
+    """
+    global _session
+    with _session_lock:
+        if _session is not None and _session.run_id == run_id:
+            return _session
+
+        _evict_session()
+
+        if not _CHECKPOINT_PATH.exists():
+            # Without a checkpoint the run trained from scratch and those
+            # weights were discarded when it finished, so there is nothing
+            # faithful to rebuild -- explaining against freshly initialised
+            # weights would be worse than refusing.
+            raise RuntimeError(
+                "Interpretation needs the trained checkpoint at "
+                f"{_CHECKPOINT_PATH.name}, which is not present. This run trained from "
+                "scratch and its weights were not retained."
+            )
+
+        from src.interpretation.genes import load_symbol_map
+        from src.models.train.hetero_gnn import HeteroIC50GNN
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        graph_maps = _load_graph(device)
+        model = HeteroIC50GNN(num_proteins=graph_maps["num_proteins"], hidden_dim=_HIDDEN_DIM).to(device)
+        model.load_state_dict(torch.load(_CHECKPOINT_PATH, map_location=device))
+        nn.Module.eval(model)
+
+        _session = _ExplainerSession(
+            run_id=run_id,
+            model=model,
+            graph_maps=graph_maps,
+            symbol_map=load_symbol_map(),
+            device=device,
+        )
+        return _session
+
+
 class HeteroGNNBackend(ModelBackend):
     """Heterogeneous GNN over the cell-line / drug / protein graph.
 
@@ -395,6 +478,9 @@ class HeteroGNNBackend(ModelBackend):
     """
 
     name = "hetero_gnn"
+    # Protein nodes are first-class in this graph, so a prediction can be
+    # attributed back to named genes.
+    supports_interpretation = True
 
     @property
     def expected_duration_seconds(self) -> dict[str, float]:
@@ -406,6 +492,49 @@ class HeteroGNNBackend(ModelBackend):
             return {"cuda": 20.0, "cpu": 45.0}
         return {"cuda": 300.0, "cpu": 1200.0}
 
+    def explain(
+        self,
+        run_id: str,
+        target_cell_line: str,
+        drug_id: str,
+        top_k: int = 50,
+    ) -> list[dict]:
+        """Attribute one (cell line, drug) prediction back to individual genes.
+
+        The checkpoint's convolutions are SAGEConv, so there are no attention
+        weights to read; `attribute_pair` differentiates the prediction with
+        respect to the protein embedding table instead. See
+        `src/interpretation/hetero_gnn_attribution.py`.
+        """
+        from src.interpretation.genes import annotate_genes
+        from src.interpretation.hetero_gnn_attribution import attribute_pair, evidence_sets
+
+        session = _get_or_build_session(run_id)
+        graph_maps = session.graph_maps
+
+        cell_idx = graph_maps["cell_to_idx"].get(str(target_cell_line))
+        if cell_idx is None:
+            raise ValueError(f"Cell line {target_cell_line!r} has no node in the graph.")
+        drug_idx = graph_maps["drug_to_idx"].get(str(drug_id))
+        if drug_idx is None:
+            raise ValueError(f"Drug {drug_id!r} has no node in the graph.")
+
+        node_ids = graph_maps["protein_node_ids"]
+        scores = attribute_pair(
+            session.model, graph_maps["x_dict"], graph_maps["edge_index_dict"], cell_idx, drug_idx
+        )
+        driver_proteins, target_proteins = evidence_sets(
+            graph_maps["edge_index_dict"], cell_idx, drug_idx, node_ids
+        )
+        return annotate_genes(
+            scores.tolist(),
+            node_ids,
+            session.symbol_map,
+            top_k,
+            driver_proteins=driver_proteins,
+            target_proteins=target_proteins,
+        )
+
     def run(
         self,
         log: Callable[[str], None],
@@ -414,6 +543,10 @@ class HeteroGNNBackend(ModelBackend):
         on_progress: Callable[[int, int], None],
         on_training_history: Callable[[list[dict]], None],
     ) -> None:
+        # The previous run's explainer session is now stale, and holding two
+        # graphs resident at once is exactly what the teardown below avoids.
+        _evict_session()
+
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         log(f"[setup] device: {device}")
         history: list[dict] = []

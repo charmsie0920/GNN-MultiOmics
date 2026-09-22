@@ -23,3 +23,6 @@ class RunStatusResponse(BaseModel):
     current_epoch: int = 0
     max_epochs: int = 0
     estimated_remaining_seconds: float | None = None
+    # Declared by the run's backend; the UI hides its interpretation panels
+    # entirely rather than showing tables that can never fill.
+    supports_interpretation: bool = False
