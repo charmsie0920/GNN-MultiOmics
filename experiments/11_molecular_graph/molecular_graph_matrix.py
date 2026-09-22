@@ -103,7 +103,7 @@ class CrossAttentionGraphRegressor(nn.Module):
     rather than re-encoding a molecule per pair; see `src/models/drug_gcn.py`.
     """
 
-    def __init__(self, modalities: list[str], batched: BatchedMolGraphs):
+    def __init__(self, modalities: list[str], batched: BatchedMolGraphs, n_tokens: int = 1):
         super().__init__()
         self.fusion = MultiOmicsCrossAttentionFusion(
             d_model=D_MODEL,
@@ -111,6 +111,7 @@ class CrossAttentionGraphRegressor(nn.Module):
             out_dim=FUSION_OUT_DIM,
             dropout=FUSION_DROPOUT,
             modalities=modalities,
+            n_tokens=n_tokens,
         )
         self.drug_encoder = MolecularGraphEncoder(batched)
 
@@ -187,10 +188,11 @@ def train(model, loader, omics_val, codes_val, y_val, keys, device) -> tuple[nn.
     return model, best_epoch
 
 
-def run_one(modalities: list[str], graphs: dict, threshold: float, device) -> dict:
+def run_one(modalities: list[str], graphs: dict, threshold: float, device,
+            n_tokens: int = 1) -> dict:
     label = "+".join(modalities)
     print("\n" + "#" * 82)
-    print(f"# CrossAttn | omics={label} | drug=molecular_graph")
+    print(f"# CrossAttn | omics={label} | drug=molecular_graph | n_tokens={n_tokens}")
     print("#" * 82)
 
     torch.manual_seed(TORCH_SEED)
@@ -215,7 +217,7 @@ def run_one(modalities: list[str], graphs: dict, threshold: float, device) -> di
     ]
     loader = DataLoader(TensorDataset(*tensors), batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
 
-    model = CrossAttentionGraphRegressor(modalities, batched).to(device)
+    model = CrossAttentionGraphRegressor(modalities, batched, n_tokens=n_tokens).to(device)
     n_params = sum(p.numel() for p in model.parameters())
 
     t1 = time.perf_counter()
@@ -226,7 +228,7 @@ def run_one(modalities: list[str], graphs: dict, threshold: float, device) -> di
     test = evaluate(y[test_idx], predict(model, omics_te, codes[test_idx], keys, device), threshold)
     floor = mean_only_floor(y[train_idx], y[test_idx])
 
-    print_metric_block(f"CrossAttn | {label} | molecular_graph", val, test, floor)
+    print_metric_block(f"CrossAttn | {label} | molecular_graph | n_tokens={n_tokens}", val, test, floor)
     print(f"n_pairs={len(y)}  n_drugs={batched.n_graphs}  n_pairs_attn={len(model.fusion.pairs)}  "
           f"params={n_params:,}  best_epoch={best_epoch}  prep={t_prep:.1f}s  fit={t_fit:.1f}s")
     print(f"Peak RSS: {peak_rss_gb():.2f} GB")
@@ -236,6 +238,7 @@ def run_one(modalities: list[str], graphs: dict, threshold: float, device) -> di
         "omics": label,
         "n_modalities": len(modalities),
         "drug_rep": "molecular_graph",
+        "n_tokens": n_tokens,
         "n_pairs": len(y),
         "n_attention_pairs": len(model.fusion.pairs),
         "mean_only_rmse": floor,
@@ -261,6 +264,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "to reproduce the E10 configuration. Defaults to all 4 multi-modality subsets."
         ),
     )
+    parser.add_argument(
+        "--n-tokens", nargs="+", type=int, default=[1],
+        help=(
+            "Attention token counts to sweep. 1 (default) is the degenerate "
+            "single-token block every recorded result used, where softmax is "
+            "1.0 by construction; >1 makes the attention distribution real."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -280,7 +291,11 @@ def main(argv: list[str] | None = None) -> None:
     assert_fingerprint_population_parity(graphs)
     threshold = compute_shared_threshold()
 
-    results = [run_one(modalities, graphs, threshold, device) for modalities in subsets]
+    results = [
+        run_one(modalities, graphs, threshold, device, n_tokens)
+        for modalities in subsets
+        for n_tokens in args.n_tokens
+    ]
 
     df = pd.DataFrame(results)
     RESULTS_CSV.parent.mkdir(parents=True, exist_ok=True)
@@ -289,7 +304,7 @@ def main(argv: list[str] | None = None) -> None:
     print("\n" + "=" * 100)
     print(f"MOLECULAR GRAPH MATRIX COMPLETE — {len(df)} runs in {time.perf_counter() - t_start:.1f}s")
     print("=" * 100)
-    summary = df[["omics", "drug_rep", "n_pairs", "test_rmse", "test_pcc", "test_r2", "test_auc"]]
+    summary = df[["omics", "drug_rep", "n_tokens", "n_pairs", "test_rmse", "test_pcc", "test_r2", "test_auc"]]
     print(summary.sort_values("test_rmse").to_string(index=False))
     print(f"\nSaved -> {RESULTS_CSV}")
 
