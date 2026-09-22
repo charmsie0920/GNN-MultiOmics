@@ -247,7 +247,9 @@ def run_one(modalities: list[str], graphs: dict, threshold: float, device) -> di
     }
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """`argv` is explicit so a notebook can call `main([...])` without argparse
+    picking up the kernel's own `-f kernel.json` argument."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--omics",
@@ -259,11 +261,11 @@ def parse_args() -> argparse.Namespace:
             "to reproduce the E10 configuration. Defaults to all 4 multi-modality subsets."
         ),
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
     if args.omics is not None and len(args.omics) < 2:
         raise SystemExit("--omics needs >=2 modalities: cross-attention attends between modalities.")
     subsets = [list(dict.fromkeys(args.omics))] if args.omics else multi_modality_subsets()
