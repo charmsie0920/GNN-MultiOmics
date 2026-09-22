@@ -41,7 +41,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from PySide6.QtCore import QPointF, Qt
-from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPalette, QPen
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -717,6 +717,17 @@ class FinalResultsPage(QWidget):
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setCursor(Qt.CursorShape.PointingHandCursor)
         table.cellClicked.connect(self._on_row_clicked)
+        # The default highlight is near-black, which swallows the dark
+        # confidence label and bar fill painted by the cell widgets. A light
+        # tint keeps every cell's own colours readable on the selected row.
+        palette = table.palette()
+        palette.setColor(QPalette.ColorRole.Highlight, QColor(SURFACE_HIGH))
+        palette.setColor(QPalette.ColorRole.HighlightedText, QColor(TEXT))
+        table.setPalette(palette)
+        table.setStyleSheet(
+            table.styleSheet()
+            + f"QTableWidget::item:selected {{ background: {SURFACE_HIGH}; color: {TEXT}; }}"
+        )
         table.setColumnWidth(0, 140)
         table.setColumnWidth(1, 150)
         table.setColumnWidth(2, 170)
