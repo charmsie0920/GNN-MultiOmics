@@ -28,9 +28,18 @@ from __future__ import annotations
 import csv
 from typing import Dict, List, NamedTuple, Sequence, Tuple
 
+import numpy as np
+import pandas as pd
 import torch
 
-from src.data.experiment_utils import DRUG_SMILES_PATH
+from src.data.experiment_utils import (
+    COL_CELL_LINE,
+    COL_DRUG,
+    COL_TARGET,
+    DRUG_SMILES_PATH,
+    DTYPE,
+    cell_row_indices,
+)
 
 # --- atom feature vocabulary --------------------------------------------------
 # Fixed vocabularies (rather than ones inferred from whichever drugs happen to
@@ -168,6 +177,136 @@ def build_drug_graphs() -> Dict[str, MolGraph]:
     return graphs
 
 
+# --- population parity with the fingerprint arm -------------------------------
+def assert_fingerprint_population_parity(graphs: Dict[str, MolGraph]) -> None:
+    """Fail loudly if the molecular graph and fingerprint arms cover different drugs.
+
+    The whole point of the molecular graph arm is a controlled comparison
+    against the fingerprint arm (E10 in docs/results.md) with only the drug
+    encoder changed. That holds only if both arms are fit and scored on the
+    same rows, which in turn requires the same resolvable drug set. RDKit can
+    in principle resolve a SMILES that `build_morgan_fingerprints` keeps but
+    this module drops (a molecule that parses to zero atoms), so this is
+    checked rather than assumed.
+    """
+    from src.data.experiment_utils import build_morgan_fingerprints
+
+    fingerprint_ids = set(build_morgan_fingerprints())
+    graph_ids = set(graphs)
+    if graph_ids != fingerprint_ids:
+        graph_only = sorted(graph_ids - fingerprint_ids)
+        fingerprint_only = sorted(fingerprint_ids - graph_ids)
+        raise AssertionError(
+            "Molecular graph and fingerprint arms cover different drugs, so their "
+            "results would not be comparable.\n"
+            f"  graph-only ({len(graph_only)}): {graph_only[:10]}\n"
+            f"  fingerprint-only ({len(fingerprint_only)}): {fingerprint_only[:10]}"
+        )
+    print(f"[molgraphs] population parity OK: {len(graph_ids)} drugs, identical to fingerprint arm")
+
+
+# --- batched graph over the whole drug vocabulary ------------------------------
+class BatchedMolGraphs(NamedTuple):
+    """All drugs' molecular graphs concatenated into one disjoint graph.
+
+    `x` is (total_atoms, ATOM_FEATURE_DIM), `edge_index` is (2, total_edges)
+    with per-drug atom offsets already applied, and `batch` is
+    (total_atoms,) mapping each atom to its drug's code, which is what
+    `global_mean_pool` needs to pool back to one vector per drug.
+
+    There are only ~498 distinct drugs but ~111,799 pairs, so the model
+    encodes this batch **once per forward pass** and indexes the resulting
+    (n_drugs, out_dim) table by drug code, instead of re-encoding the same
+    molecule once per pair. That keeps the existing dense `TensorDataset`
+    loader intact -- the drug column becomes an int64 code rather than a
+    2048-bit row -- and avoids PyG's variable-size batching entirely.
+    """
+
+    x: torch.Tensor
+    edge_index: torch.Tensor
+    batch: torch.Tensor
+    n_graphs: int
+
+
+def collate_drug_graphs(
+    graphs: Dict[str, MolGraph], drug_order: Sequence[str]
+) -> BatchedMolGraphs:
+    """Concatenate `graphs` into one disjoint graph, ordered by `drug_order`.
+
+    `drug_order` must be the same drug-code ordering the pair tensors use, so
+    that `batch == code` holds and the pooled table can be indexed directly.
+    """
+    xs: List[torch.Tensor] = []
+    edge_indices: List[torch.Tensor] = []
+    batches: List[torch.Tensor] = []
+
+    atom_offset = 0
+    for code, drug_id in enumerate(drug_order):
+        graph = graphs[drug_id]
+        n_atoms = graph.x.shape[0]
+        xs.append(graph.x)
+        edge_indices.append(graph.edge_index + atom_offset)
+        batches.append(torch.full((n_atoms,), code, dtype=torch.long))
+        atom_offset += n_atoms
+
+    batched = BatchedMolGraphs(
+        x=torch.cat(xs, dim=0),
+        edge_index=torch.cat(edge_indices, dim=1),
+        batch=torch.cat(batches, dim=0),
+        n_graphs=len(drug_order),
+    )
+    print(
+        f"[molgraphs] batched {batched.n_graphs} drugs -> "
+        f"x={tuple(batched.x.shape)}, edge_index={tuple(batched.edge_index.shape)}"
+    )
+    return batched
+
+
+# --- pair tensors (molecular graph drug arm) -----------------------------------
+def build_graph_pair_tensors(
+    omics: Dict[str, np.ndarray],
+    cell_ids: pd.Index,
+    y: pd.DataFrame,
+    graphs: Dict[str, MolGraph],
+) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray, np.ndarray, BatchedMolGraphs, pd.DataFrame]:
+    """Molecular-graph counterpart of `experiment_utils.build_pair_tensors`.
+
+    Differs in exactly one respect: the drug block is an int64 *code* per pair
+    rather than a dense feature row, with the structure itself carried once in
+    the returned `BatchedMolGraphs`. Pairs whose drug has no resolvable graph
+    are dropped, matching the fingerprint arm's rule.
+
+    Returns (gathered_omics, drug_codes, target, groups, batched_graphs, y_used).
+    """
+    n_before = len(y)
+    y_used = y[y[COL_DRUG].isin(graphs.keys())].reset_index(drop=True)
+    print(
+        f"[drug_features] graph mode: {n_before - len(y_used)} pairs dropped "
+        f"(drug has no resolvable molecular graph) -> {len(y_used)} pairs remain"
+    )
+
+    # `sort=True` makes the code assignment deterministic (alphabetical by
+    # drug_id) rather than dependent on row order. The code is only a lookup
+    # key into the batched graph table -- it never reaches the model as a
+    # feature, so the drug is represented by its structure alone.
+    drug_codes, drug_levels = pd.factorize(y_used[COL_DRUG], sort=True)
+    batched = collate_drug_graphs(graphs, list(drug_levels))
+
+    rows = cell_row_indices(cell_ids, y_used)
+    gathered = {key: arr[rows] for key, arr in omics.items()}
+    target = y_used[COL_TARGET].to_numpy(dtype=DTYPE)
+    groups = y_used[COL_CELL_LINE].to_numpy()
+
+    omics_bytes = sum(a.nbytes for a in gathered.values())
+    print(
+        f"[design]  {len(y_used)} pairs  |  omics: "
+        f"{' + '.join(f'{k}({v.shape[1]})' for k, v in gathered.items())}"
+        f"  |  drug/graph: {batched.n_graphs} molecules  =  "
+        f"{(omics_bytes + batched.x.nbytes) / 1024**2:.1f} MB"
+    )
+    return gathered, drug_codes.astype(np.int64), target, groups, batched, y_used
+
+
 if __name__ == "__main__":
     from rdkit import Chem
 
@@ -196,5 +335,30 @@ if __name__ == "__main__":
         assert graph.edge_index.dtype == torch.long
         if n_edges:  # every edge must index a real atom
             assert int(graph.edge_index.max()) < n_atoms
+
+    # Collation: the batched graph must stay block-diagonal -- every edge has
+    # to stay inside its own molecule, or message passing would leak structure
+    # between unrelated drugs.
+    graphs = {
+        name: mol_to_graph(Chem.MolFromSmiles(smiles))
+        for name, (smiles, _, _) in SAMPLES.items()
+    }
+    order = list(SAMPLES)
+    batched = collate_drug_graphs(graphs, order)
+
+    total_atoms = sum(graphs[d].x.shape[0] for d in order)
+    total_edges = sum(graphs[d].edge_index.shape[1] for d in order)
+    assert batched.x.shape == (total_atoms, ATOM_FEATURE_DIM)
+    assert batched.edge_index.shape == (2, total_edges)
+    assert batched.batch.shape == (total_atoms,)
+    assert batched.n_graphs == len(order)
+    # Atoms appear in drug-code order, so `batch` is non-decreasing and covers
+    # every code exactly as many times as that molecule has atoms.
+    assert torch.equal(batched.batch, batched.batch.sort().values)
+    assert batched.batch.bincount().tolist() == [graphs[d].x.shape[0] for d in order]
+    # No edge may cross a molecule boundary.
+    assert torch.equal(
+        batched.batch[batched.edge_index[0]], batched.batch[batched.edge_index[1]]
+    )
 
     print("\nAll molecular-graph shape checks passed.")
