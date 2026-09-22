@@ -37,6 +37,7 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from src.data.target_scaling import PerDrugTargetScaler  # noqa: E402
 from src.data.drug_graphs import (  # noqa: E402
     BatchedMolGraphs,
     assert_fingerprint_population_parity,
@@ -137,7 +138,10 @@ class CrossAttentionGraphRegressor(nn.Module):
 
 
 @torch.no_grad()
-def predict(model, omics: dict[str, np.ndarray], codes: np.ndarray, keys: list[str], device) -> np.ndarray:
+def predict(model, omics: dict[str, np.ndarray], codes: np.ndarray, keys: list[str], device,
+            scaler: PerDrugTargetScaler | None = None) -> np.ndarray:
+    """Always returns ln(IC50)-space predictions, inverting the per-drug
+    standardization when one is in use, so every caller scores in the same units."""
     model.eval()
     drug_table = model.drug_encoder()  # constant across batches at inference
     preds = []
@@ -146,10 +150,14 @@ def predict(model, omics: dict[str, np.ndarray], codes: np.ndarray, keys: list[s
         ob = {k: torch.from_numpy(omics[k][start:end]).to(device) for k in keys}
         cb = torch.from_numpy(codes[start:end]).to(device)
         preds.append(model(ob, cb, drug_table).cpu().numpy())
-    return np.concatenate(preds)
+    preds = np.concatenate(preds)
+    return scaler.inverse_transform(preds, codes) if scaler is not None else preds
 
 
-def train(model, loader, omics_val, codes_val, y_val, keys, device) -> tuple[nn.Module, int]:
+def train(model, loader, omics_val, codes_val, y_val, keys, device,
+          scaler: PerDrugTargetScaler | None = None) -> tuple[nn.Module, int]:
+    """`y_val` is in ln(IC50) units even when training on standardized targets,
+    so early stopping and the LR schedule track the metric actually reported."""
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -168,7 +176,8 @@ def train(model, loader, omics_val, codes_val, y_val, keys, device) -> tuple[nn.
             loss.backward()
             optimizer.step()
 
-        val_rmse = float(np.sqrt(np.mean((y_val - predict(model, omics_val, codes_val, keys, device)) ** 2)))
+        val_pred = predict(model, omics_val, codes_val, keys, device, scaler)
+        val_rmse = float(np.sqrt(np.mean((y_val - val_pred) ** 2)))
         scheduler.step(val_rmse)
 
         if val_rmse < best_rmse - 1e-4:
@@ -189,10 +198,11 @@ def train(model, loader, omics_val, codes_val, y_val, keys, device) -> tuple[nn.
 
 
 def run_one(modalities: list[str], graphs: dict, threshold: float, device,
-            n_tokens: int = 1) -> dict:
+            n_tokens: int = 1, standardize_targets: bool = False) -> dict:
     label = "+".join(modalities)
     print("\n" + "#" * 82)
-    print(f"# CrossAttn | omics={label} | drug=molecular_graph | n_tokens={n_tokens}")
+    print(f"# CrossAttn | omics={label} | drug=molecular_graph | n_tokens={n_tokens}"
+          f"{' | per-drug targets' if standardize_targets else ''}")
     print("#" * 82)
 
     torch.manual_seed(TORCH_SEED)
@@ -211,9 +221,20 @@ def run_one(modalities: list[str], graphs: dict, threshold: float, device,
     omics_va = {k: v[val_idx] for k, v in gathered.items()}
     omics_te = {k: v[test_idx] for k, v in gathered.items()}
 
+    # Fitted on training rows only -- `y` itself is never rescaled, so every
+    # metric below stays in ln(IC50) units and comparable to docs/results.md.
+    scaler = (
+        PerDrugTargetScaler().fit(y[train_idx], codes[train_idx])
+        if standardize_targets else None
+    )
+    y_fit = (
+        scaler.transform(y[train_idx], codes[train_idx])
+        if scaler is not None else y[train_idx]
+    )
+
     tensors = [torch.from_numpy(omics_tr[k]) for k in keys] + [
         torch.from_numpy(codes[train_idx]),
-        torch.from_numpy(y[train_idx]),
+        torch.from_numpy(y_fit),
     ]
     loader = DataLoader(TensorDataset(*tensors), batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
 
@@ -221,14 +242,16 @@ def run_one(modalities: list[str], graphs: dict, threshold: float, device,
     n_params = sum(p.numel() for p in model.parameters())
 
     t1 = time.perf_counter()
-    model, best_epoch = train(model, loader, omics_va, codes[val_idx], y[val_idx], keys, device)
+    model, best_epoch = train(model, loader, omics_va, codes[val_idx], y[val_idx], keys, device, scaler)
     t_fit = time.perf_counter() - t1
 
-    val = evaluate(y[val_idx], predict(model, omics_va, codes[val_idx], keys, device), threshold)
-    test = evaluate(y[test_idx], predict(model, omics_te, codes[test_idx], keys, device), threshold)
+    val = evaluate(y[val_idx], predict(model, omics_va, codes[val_idx], keys, device, scaler), threshold)
+    test = evaluate(y[test_idx], predict(model, omics_te, codes[test_idx], keys, device, scaler), threshold)
     floor = mean_only_floor(y[train_idx], y[test_idx])
 
-    print_metric_block(f"CrossAttn | {label} | molecular_graph | n_tokens={n_tokens}", val, test, floor)
+    print_metric_block(
+        f"CrossAttn | {label} | molecular_graph | n_tokens={n_tokens}"
+        f"{' | per-drug targets' if standardize_targets else ''}", val, test, floor)
     print(f"n_pairs={len(y)}  n_drugs={batched.n_graphs}  n_pairs_attn={len(model.fusion.pairs)}  "
           f"params={n_params:,}  best_epoch={best_epoch}  prep={t_prep:.1f}s  fit={t_fit:.1f}s")
     print(f"Peak RSS: {peak_rss_gb():.2f} GB")
@@ -239,6 +262,7 @@ def run_one(modalities: list[str], graphs: dict, threshold: float, device,
         "n_modalities": len(modalities),
         "drug_rep": "molecular_graph",
         "n_tokens": n_tokens,
+        "standardize_targets": standardize_targets,
         "n_pairs": len(y),
         "n_attention_pairs": len(model.fusion.pairs),
         "mean_only_rmse": floor,
@@ -272,6 +296,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "1.0 by construction; >1 makes the attention distribution real."
         ),
     )
+    parser.add_argument(
+        "--standardize-targets", action="store_true",
+        help=(
+            "Standardize ln(IC50) within each drug using training-set statistics. "
+            "Metrics are still reported in ln(IC50) units."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -292,7 +323,7 @@ def main(argv: list[str] | None = None) -> None:
     threshold = compute_shared_threshold()
 
     results = [
-        run_one(modalities, graphs, threshold, device, n_tokens)
+        run_one(modalities, graphs, threshold, device, n_tokens, args.standardize_targets)
         for modalities in subsets
         for n_tokens in args.n_tokens
     ]
@@ -304,7 +335,7 @@ def main(argv: list[str] | None = None) -> None:
     print("\n" + "=" * 100)
     print(f"MOLECULAR GRAPH MATRIX COMPLETE — {len(df)} runs in {time.perf_counter() - t_start:.1f}s")
     print("=" * 100)
-    summary = df[["omics", "drug_rep", "n_tokens", "n_pairs", "test_rmse", "test_pcc", "test_r2", "test_auc"]]
+    summary = df[["omics", "drug_rep", "n_tokens", "standardize_targets", "n_pairs", "test_rmse", "test_pcc", "test_r2", "test_auc"]]
     print(summary.sort_values("test_rmse").to_string(index=False))
     print(f"\nSaved -> {RESULTS_CSV}")
 
