@@ -6,6 +6,11 @@ data/raw/*
 
 # Ignore generated intermediate/processed data (aligned CSVs, wide matrices)
 data/processed/*
+# ...except the protein-id -> gene-symbol lookup. It is small (~450 KB), stable,
+# and required at runtime by the interpretation panels, so it ships with the
+# repo like src/graph/hetero_graph.pt does rather than forcing every clone to
+# re-download STRING's 19 MB alias file to rebuild it.
+!data/processed/protein_symbol_map.csv
 
 # --- Python Junk ---
 __pycache__/

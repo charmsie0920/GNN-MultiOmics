@@ -23,8 +23,8 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch import nn
 
+from backend.model_backends._common import enable_mc_dropout, rank_predictions
 from backend.model_backends.base import ModelBackend
 from backend.model_backends.registry import register
 
@@ -34,64 +34,6 @@ _SCRIPT_PATH = _REPO_ROOT / "experiments" / "01_cross_attention_fusion" / "cross
 # MC-dropout forward passes per (cell-line, drug) pair used to derive the
 # confidence score — see _predict_drug_panel below.
 _MC_SAMPLES = 30
-
-# Fixed IC50 (uM) cutoffs for the sensitivity ranking, standard
-# pharmacological convention for how potent/sensitive a response is:
-# sub-micromolar is considered a strong (HIGH SENSITIVITY) response, single-
-# to-low-double-digit micromolar is MEDIUM, anything above is LOW. Unlike a
-# percentile/tertile split, these don't shift based on what else happens to
-# be in the candidate drug list for a given run.
-_HIGH_SENSITIVITY_MAX_UM = 1.0
-_MEDIUM_SENSITIVITY_MAX_UM = 10.0
-
-
-def _sensitivity_ranking(ic50_um: float) -> str:
-    if ic50_um < _HIGH_SENSITIVITY_MAX_UM:
-        return "HIGH SENSITIVITY"
-    if ic50_um < _MEDIUM_SENSITIVITY_MAX_UM:
-        return "MEDIUM"
-    return "LOW"
-
-
-def _rank_predictions(raw: list[dict], val_rmse: float, drug_info: dict[str, dict]) -> list[dict]:
-    """Turn raw per-drug {drug_id, ln_ic50_mean, ln_ic50_std} into display-ready results.
-
-    - predicted_ic50_um: back-transform from ln(IC50 uM), the model's native scale.
-    - confidence_percent: compares each drug's MC-dropout std against `val_rmse`
-      -- the model's own measured error on held-out validation data -- via
-      `100 * exp(-std / val_rmse)`. This is an *absolute* scale (comparable
-      across separate runs), unlike a min-max normalization over the current
-      run's candidate set, which always forces some drug to exactly 0% and
-      another to exactly 100% regardless of whether the underlying spread is
-      actually large or small.
-    - ranking: fixed IC50 (uM) thresholds, see `_sensitivity_ranking`.
-    - drug_name/putative_target/pathway_name: looked up from `drug_info`
-      (built in `_prepare_and_train`, keyed by the same raw `drug_id` string).
-    """
-    if not raw:
-        return []
-
-    ic50_um = np.array([np.exp(r["ln_ic50_mean"]) for r in raw])
-    stds = np.array([r["ln_ic50_std"] for r in raw])
-
-    # Guard against a degenerate (near-zero) val_rmse blowing up the ratio.
-    scale = max(val_rmse, 1e-6)
-    confidence = 100.0 * np.exp(-stds / scale)
-
-    results = []
-    for i in range(len(raw)):
-        info = drug_info.get(raw[i]["drug_id"], {})
-        results.append(
-            {
-                "drug_name": info.get("drug_name") or raw[i]["drug_id"],
-                "putative_target": info.get("putative_target", ""),
-                "pathway_name": info.get("pathway_name", ""),
-                "predicted_ic50_um": float(ic50_um[i]),
-                "ranking": _sensitivity_ranking(float(ic50_um[i])),
-                "confidence_percent": float(confidence[i]),
-            }
-        )
-    return results
 
 
 def _load_module() -> types.ModuleType:
@@ -165,7 +107,7 @@ def _prepare_and_train(module: types.ModuleType) -> dict:
 
     # Deterministic (no MC-dropout) prediction on the held-out validation
     # set, purely to get a real, model-specific error scale (val_rmse) for
-    # calibrating the confidence score against -- see _rank_predictions.
+    # calibrating the confidence score against -- see `rank_predictions`.
     val_pred = module.predict(model, omics_val, drug_onehot[val_idx], keys, device, module.BATCH_SIZE)
     val_rmse = float(np.sqrt(np.mean((val_pred - y[val_idx]) ** 2)))
 
@@ -181,23 +123,6 @@ def _prepare_and_train(module: types.ModuleType) -> dict:
         "val_rmse": val_rmse,
         "device": device,
     }
-
-
-def _enable_mc_dropout(model: nn.Module) -> None:
-    """Put `model` in true eval mode, then re-enable train-mode only on
-    Dropout layers, so BatchNorm keeps using its running stats (safe for
-    any batch size) while dropout still injects stochasticity for MC
-    sampling.
-
-    Must call `nn.Module.eval(model)` (the unbound class method), not
-    `model.eval()` -- this function is installed *as* `model.eval` itself
-    (see `_predict_drug_panel`), so calling the bound method here would
-    recurse into this same function forever.
-    """
-    nn.Module.eval(model)
-    for submodule in model.modules():
-        if isinstance(submodule, nn.Dropout):
-            submodule.train()
 
 
 @torch.no_grad()
@@ -227,7 +152,7 @@ def _predict_drug_panel(module: types.ModuleType, artifacts: dict, target_cell_l
     # without touching the script is to replace what `model.eval()` itself
     # does for the duration of this sampling loop.
     original_eval = model.eval
-    model.eval = lambda: _enable_mc_dropout(model)
+    model.eval = lambda: enable_mc_dropout(model)
     try:
         samples = np.empty((mc_samples, n_drugs), dtype=np.float64)
         for i in range(mc_samples):
@@ -309,7 +234,7 @@ class CrossAttentionBackend(ModelBackend):
             )
             log(f"Running inference for target cell line: {target_cell_line}")
             raw_predictions = _predict_drug_panel(module, artifacts, target_cell_line, mc_samples=_MC_SAMPLES)
-            on_results(_rank_predictions(raw_predictions, artifacts["val_rmse"], artifacts["drug_info"]))
+            on_results(rank_predictions(raw_predictions, artifacts["val_rmse"], artifacts["drug_info"]))
         finally:
             # The backend process stays alive across runs (each run just
             # loads a fresh copy of the script), so the trained model,

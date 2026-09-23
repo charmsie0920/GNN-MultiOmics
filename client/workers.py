@@ -9,6 +9,8 @@ from PySide6.QtCore import QThread, Signal
 from client.api_client import (
     ApiError,
     get_drug_ranking,
+    get_enrichment,
+    get_gene_attribution,
     get_run_status,
     get_training_history,
     start_run,
@@ -97,6 +99,56 @@ class TrainingHistoryWorker(QThread):
             self.failed.emit(str(exc))
         else:
             self.succeeded.emit(history)
+
+
+class GeneAttributionWorker(QThread):
+    """Fetches one drug's gene attribution off the UI thread."""
+
+    succeeded = Signal(dict)
+    failed = Signal(str)
+    # Emitted when the run's backend declares no interpretation support, so the
+    # page can hide the panels rather than show a permanent error.
+    unsupported = Signal()
+
+    def __init__(self, run_id: str, drug_id: str, parent=None) -> None:
+        super().__init__(parent)
+        self._run_id = run_id
+        self._drug_id = drug_id
+
+    def run(self) -> None:  # noqa: N802
+        try:
+            attribution = get_gene_attribution(self._run_id, self._drug_id)
+        except ApiError as exc:
+            self.failed.emit(str(exc))
+            if exc.status_code == 501:
+                self.unsupported.emit()
+        else:
+            self.succeeded.emit(attribution)
+
+
+class EnrichmentWorker(QThread):
+    """Fetches pathway enrichment for one drug off the UI thread."""
+
+    succeeded = Signal(dict)
+    failed = Signal(str)
+    # Emitted when the run's backend declares no interpretation support, so the
+    # page can hide the panels rather than show a permanent error.
+    unsupported = Signal()
+
+    def __init__(self, run_id: str, drug_id: str, parent=None) -> None:
+        super().__init__(parent)
+        self._run_id = run_id
+        self._drug_id = drug_id
+
+    def run(self) -> None:  # noqa: N802
+        try:
+            enrichment = get_enrichment(self._run_id, self._drug_id)
+        except ApiError as exc:
+            self.failed.emit(str(exc))
+            if exc.status_code == 501:
+                self.unsupported.emit()
+        else:
+            self.succeeded.emit(enrichment)
 
 
 class RunStatusPoller(QThread):

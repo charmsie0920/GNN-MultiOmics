@@ -14,7 +14,16 @@ BASE_URL = "http://127.0.0.1:8000"
 
 
 class ApiError(Exception):
-    """Raised when a backend request fails, with a user-facing message."""
+    """Raised when a backend request fails, with a user-facing message.
+
+    `status_code` is None for transport failures (the backend was unreachable)
+    and the HTTP status otherwise, so a caller can distinguish a capability the
+    backend does not have from one that is momentarily broken.
+    """
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def upload_dataset_csv(file_path: str) -> dict:
@@ -110,6 +119,44 @@ def get_training_history(run_id: str) -> list[dict]:
     return _unwrap(response)
 
 
+def get_gene_attribution(run_id: str, drug_id: str, top_k: int = 50) -> dict:
+    """Fetch the per-gene attribution for one drug of a completed run.
+
+    Raises:
+        ApiError: On a network failure or a non-2xx response (including a
+            backend that does not support interpretation, which answers 501).
+    """
+    try:
+        response = requests.get(
+            f"{BASE_URL}/api/v1/results/gene-attribution/{run_id}",
+            params={"drug_id": drug_id, "top_k": top_k},
+            timeout=60,
+        )
+    except requests.RequestException as exc:
+        raise ApiError(f"Could not reach the backend: {exc}") from exc
+    return _unwrap(response)
+
+
+def get_enrichment(run_id: str, drug_id: str, top_k: int = 50) -> dict:
+    """Fetch pathway enrichment over one drug's top attributed genes.
+
+    Uses a longer timeout than the other calls: an uncached gene set is a live
+    round trip to Enrichr across three libraries.
+
+    Raises:
+        ApiError: On a network failure or a non-2xx response.
+    """
+    try:
+        response = requests.get(
+            f"{BASE_URL}/api/v1/results/enrichment/{run_id}",
+            params={"drug_id": drug_id, "top_k": top_k},
+            timeout=120,
+        )
+    except requests.RequestException as exc:
+        raise ApiError(f"Could not reach the backend: {exc}") from exc
+    return _unwrap(response)
+
+
 def _unwrap(response: requests.Response) -> dict:
     if not response.ok:
         detail = response.text
@@ -117,5 +164,5 @@ def _unwrap(response: requests.Response) -> dict:
             detail = response.json().get("detail", detail)
         except ValueError:
             pass
-        raise ApiError(str(detail))
+        raise ApiError(str(detail), status_code=response.status_code)
     return response.json()
