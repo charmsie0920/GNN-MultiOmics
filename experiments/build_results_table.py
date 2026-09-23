@@ -16,22 +16,46 @@ from pathlib import Path
 
 import pandas as pd
 
-SOURCES = [
+# The original matrix. Ranked on its own so the E01-E59 identifiers these
+# docs already cross-reference stay stable as later experiments are added.
+LEGACY_SOURCES = [
     ("experiments/06_full_matrix/rf_matrix_results.csv", "06_rf_ablation_results.md"),
     ("experiments/06_full_matrix/mlp_matrix_results.csv", "06_mlp_ablation_results.md"),
     ("experiments/06_full_matrix/cross_attention_matrix_results.csv", "06_cross_attention_ablation_results.md"),
     ("experiments/07_gnn_ablation/gnn_results.csv", "07_gnn_ablation_results.md"),
     ("experiments/07_gnn_ablation/hetero_ic50_gnn_results.csv", "hetero_gnn_test_bugfixes.md"),
 ]
+# Appended after the legacy block, so these take identifiers from E60 onward.
+LATER_SOURCES = [
+    ("experiments/11_molecular_graph/molecular_graph_matrix_results.csv", "11_molecular_graph_results.md"),
+    ("experiments/12_full_architecture/full_architecture_results.csv", "12_full_architecture_results.md"),
+]
+SEED_VARIANCE_CSV = Path("experiments/13_seed_variance/seed_variance_summary.csv")
+
+# Drug-identity arms are retained as a reference section, never ranked as
+# headline results: one-hot cannot generalize to unseen compounds (R^2 0.024 in
+# 10_leave_drugs_out_results.md), so it is not a representation this project
+# builds on. See the "Drug-identity reference arms" section below.
+REFERENCE_DRUG_REPS = {"onehot", "onehot_restricted"}
+
+# Below this, a difference between single runs is not distinguishable from
+# run-to-run variance -- see 13_seed_variance_results.md.
+NOISE_THRESHOLD = 0.03
+# Predicting each drug's training mean, with no omics input at all, on the
+# 111,799-pair population (computed in 11_molecular_graph_results.md).
+PER_DRUG_MEAN_RMSE = 1.4889
 ENSEMBLE_CSV = Path("experiments/08_ensemble_refinement/ensemble_results.csv")
 OUTPUT = Path("docs/results.md")
 
 METRICS = ["test_rmse", "test_mae", "test_r2", "test_pcc", "test_scc", "test_auc", "test_f1"]
 
 
-def load_all() -> pd.DataFrame:
+def _load(sources) -> pd.DataFrame:
     frames = []
-    for path, doc in SOURCES:
+    for path, doc in sources:
+        if not Path(path).exists():
+            print(f"[skip] {path} not found")
+            continue
         df = pd.read_csv(path)
         df["doc"] = doc
         if "mutation_edges" in df.columns:
@@ -41,11 +65,19 @@ def load_all() -> pd.DataFrame:
         else:
             df["notes"] = ""
         frames.append(df)
-    combined = pd.concat(frames, ignore_index=True)
-    combined = combined.sort_values("test_rmse").reset_index(drop=True)
-    combined.insert(0, "rank", combined.index + 1)
-    combined.insert(1, "exp_id", [f"E{i:02d}" for i in combined["rank"]])
-    return combined
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True).sort_values("test_rmse").reset_index(drop=True)
+
+
+def load_all() -> pd.DataFrame:
+    """Legacy runs keep E01-E59; later experiments are appended from E60."""
+    legacy = _load(LEGACY_SOURCES)
+    later = _load(LATER_SOURCES)
+    legacy["exp_id"] = [f"E{i:02d}" for i in range(1, len(legacy) + 1)]
+    if not later.empty:
+        later["exp_id"] = [f"E{i:02d}" for i in range(len(legacy) + 1, len(legacy) + len(later) + 1)]
+    return pd.concat([legacy, later], ignore_index=True)
 
 
 def fmt_row(r: pd.Series) -> str:
@@ -72,15 +104,28 @@ def fmt_row(r: pd.Series) -> str:
 
 def main() -> None:
     df = load_all()
+    is_reference = df["drug_rep"].isin(REFERENCE_DRUG_REPS)
+    primary = df[~is_reference].sort_values("test_rmse").reset_index(drop=True)
+    reference = df[is_reference].sort_values("test_rmse").reset_index(drop=True)
 
     header = (
         "| # | Model | Omics | Drug rep | Graph | Pairs | RMSE | MAE | R² | PCC | SCC | AUC | F1 | Params | Fit (s) | Details |\n"
         "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
     )
-    rows = "\n".join(fmt_row(r) for _, r in df.iterrows())
+    rows = "\n".join(fmt_row(r) for _, r in primary.iterrows())
+    reference_rows = "\n".join(fmt_row(r) for _, r in reference.iterrows())
 
-    best = df.iloc[0]
-    per_family = df.loc[df.groupby("model")["test_rmse"].idxmin()].sort_values("test_rmse")
+    seeds = pd.read_csv(SEED_VARIANCE_CSV) if SEED_VARIANCE_CSV.exists() else pd.DataFrame()
+    seed_rows = "\n".join(
+        # label contains " | " separators, which would break the table columns
+        f"| {str(r['label']).replace(' | ', ', ')} | {int(r['n_seeds'])} | {r['recorded_rmse']:.4f} | "
+        f"{r['rmse_mean']:.4f} | {r['rmse_std']:.4f} | {r['rmse_min']:.4f} | {r['rmse_max']:.4f} |"
+        for _, r in seeds.iterrows()
+    )
+
+    best = primary.iloc[0]
+    near_best = primary[primary["test_rmse"] < best["test_rmse"] + NOISE_THRESHOLD]
+    per_family = primary.loc[primary.groupby("model")["test_rmse"].idxmin()].sort_values("test_rmse")
     family_rows = "\n".join(
         f"| {r['model']} | {r['omics']} | {r['drug_rep']} | {r['test_rmse']:.4f} | "
         f"{r['test_pcc']:.4f} | {r['test_r2']:.4f} |"
@@ -100,12 +145,42 @@ def main() -> None:
 Auto-generated by [`experiments/build_results_table.py`](../experiments/build_results_table.py)
 from the per-family result CSVs. **Do not hand-edit** — re-run the script instead.
 
-**{len(df)} runs**, all on an identical `GroupShuffleSplit`-by-cell-line
-70/15/15 partition (`random_state=42`), 532 tri-omics-complete cell lines.
-Lower RMSE/MAE is better; higher R²/PCC/SCC/AUC/F1 is better.
+**{len(df)} runs** ({len(primary)} ranked below, {len(reference)} drug-identity
+reference arms in a separate section), all on an identical
+`GroupShuffleSplit`-by-cell-line 70/15/15 partition (`random_state=42`),
+532 tri-omics-complete cell lines. Lower RMSE/MAE is better; higher
+R²/PCC/SCC/AUC/F1 is better.
 
-Mean-only floor (predict the training mean): **2.7097** on the 134,764-pair
-population, **2.7690** on the 111,799-pair fingerprint-resolvable population.
+## Read this before comparing any two rows
+
+Every row is a **single run**, and repeated runs of the same configuration vary
+by **±0.013–0.029 RMSE** (a 0.075 range across five seeds; see
+[13_seed_variance_results](./13_seed_variance_results.md)). **Differences below
+~{NOISE_THRESHOLD:.2f} RMSE are not distinguishable from run-to-run variance.**
+{len(near_best)} of the {len(primary)} ranked runs sit within that margin of the
+top row, so the ordering among them is not a ranking.
+
+Two findings originally drawn from single runs did not survive repetition —
+molecular graphs beating fingerprints, and proteomics-alone being best. Both
+reversed:
+
+| Configuration | n seeds | Recorded | Mean | Std | Min | Max |
+|---|---|---|---|---|---|---|
+{seed_rows}
+
+## Baselines
+
+| Baseline (no model) | Test RMSE |
+|---|---|
+| Global training mean, 134,764-pair population | 2.7097 |
+| Global training mean, 111,799-pair population | 2.7690 |
+| **Per-drug training mean** (no omics at all), 111,799 pairs | **{PER_DRUG_MEAN_RMSE:.4f}** |
+
+The per-drug mean is the baseline that matters: **drug identity alone accounts
+for 71% of the reducible error.** Measured against it, the best model here
+explains roughly a quarter of the remaining, omics-dependent variance. Measured
+against the global mean instead, the same model shows R² ≈ 0.78 — which mostly
+reflects knowing which compound was screened, not the multi-omics profile.
 
 ## Best per model family
 
@@ -113,7 +188,13 @@ population, **2.7690** on the 111,799-pair fingerprint-resolvable population.
 |---|---|---|---|---|---|
 {family_rows}
 
-**Overall best: {best['exp_id']} — {best['model']}, {best['omics']}, {best['drug_rep']} — RMSE {best['test_rmse']:.4f}.**
+**Lowest single-run RMSE: {best['exp_id']} — {best['model']}, {best['omics']},
+{best['drug_rep']} — {best['test_rmse']:.4f}.** This is *not* "the best model":
+re-run across five seeds, this configuration averages **1.3273 ± 0.0286**, the
+worst of the three configurations tested, and its recorded value is the
+favourable end of its own distribution. See
+[13_seed_variance_results](./13_seed_variance_results.md) before quoting any
+single number from this table.
 
 ## Ensemble refinement (XGBoost, applied post-hoc)
 
@@ -131,7 +212,22 @@ cell-line leakage).
 {header}
 {rows}
 
-## Reading the drug-representation arms
+## Drug-identity reference arms (not ranked)
+
+These runs represent a drug by its **identity**, not its structure. They are
+kept for reference and for the population control they provide, but they are
+deliberately excluded from the ranking above: a one-hot drug vector carries no
+information about a compound the model has not seen, so these numbers cannot
+support the use case the project targets. On unseen compounds one-hot collapses
+to R² 0.024 while fingerprints hold at 0.422
+([leave_drugs_out_results](./10_leave_drugs_out_results.md)).
+
+They also score well here for a reason that flatters them: drug identity alone
+accounts for 71% of the reducible error under this split, and a one-hot vector
+hands that to the model directly.
+
+{header}
+{reference_rows}
 
 - **`onehot`** — 295-dim drug identity, all 134,764 pairs. Matches the
   historical baselines.
@@ -139,7 +235,6 @@ cell-line leakage).
   whose drug has a resolvable SMILES. The **population control**: comparing
   this against `fingerprint` isolates the representation effect, since only
   498 of 621 GDSC drug IDs resolved to a structure.
-- **`fingerprint`** — 2048-bit Morgan fingerprint, 111,799 pairs.
 
 Comparing `onehot` directly against `fingerprint` conflates representation with
 population and overstates the fingerprint effect; use `onehot_restricted` as the

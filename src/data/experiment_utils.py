@@ -257,6 +257,17 @@ def build_drug_features(
 
 
 # --- pair-matrix construction (flat models: RF / MLP) --------------------------
+def cell_row_indices(cell_ids: pd.Index, y_used: pd.DataFrame) -> np.ndarray:
+    """Map each pair's cell line to its row in the omics matrices.
+
+    Shared by `build_pair_matrix`, `build_pair_tensors`, and the molecular
+    graph arm in `drug_graphs.py`, all of which gather the same cell-line rows
+    and differ only in how they represent the drug.
+    """
+    row_of = pd.Series(np.arange(len(cell_ids)), index=cell_ids)
+    return row_of.loc[y_used[COL_CELL_LINE]].to_numpy()
+
+
 def build_pair_matrix(
     X_cell: np.ndarray,
     cell_ids: pd.Index,
@@ -275,8 +286,7 @@ def build_pair_matrix(
         y, drug_mode, restrict_to_fingerprintable
     )
 
-    row_of = pd.Series(np.arange(len(cell_ids)), index=cell_ids)
-    rows = row_of.loc[y_used[COL_CELL_LINE]].to_numpy()
+    rows = cell_row_indices(cell_ids, y_used)
 
     n_pairs, n_omics = len(y_used), X_cell.shape[1]
     X = np.empty((n_pairs, n_omics + n_drug_features), dtype=DTYPE)
@@ -313,8 +323,7 @@ def build_pair_tensors(
         y, drug_mode, restrict_to_fingerprintable
     )
 
-    row_of = pd.Series(np.arange(len(cell_ids)), index=cell_ids)
-    rows = row_of.loc[y_used[COL_CELL_LINE]].to_numpy()
+    rows = cell_row_indices(cell_ids, y_used)
 
     gathered = {key: arr[rows] for key, arr in omics.items()}
     target = y_used[COL_TARGET].to_numpy(dtype=DTYPE)

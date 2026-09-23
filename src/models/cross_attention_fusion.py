@@ -6,12 +6,26 @@ computes directional multi-head cross-attention across all 6 ordered
 modality pairs and fuses them into a single cell-line embedding suitable for
 binding into PyTorch Geometric node features.
 
-Note on attention weights: because each modality is a single pooled vector
-per sample (not a sequence of tokens), each cross-attention call has exactly
-one query and one key, so softmax reduces to a weight of 1.0 by construction.
-The learning capacity of this block therefore comes from the Q/K/V
-projections and the residual FFN, not from a non-trivial attention
-distribution.
+Note on attention weights: with `n_tokens=1` (the default, and what every
+result in docs/results.md was produced with) each modality is a single pooled
+vector per sample rather than a sequence, so each cross-attention call has
+exactly one query and one key and softmax reduces to a weight of 1.0 by
+construction. The learning capacity of that configuration comes from the
+Q/K/V projections and the residual FFN, not from a non-trivial attention
+distribution -- so "cross-attention fusion" is, at `n_tokens=1`, a claim the
+architecture does not actually support.
+
+`n_tokens > 1` fixes that by splitting each modality's `d_model` vector into
+`n_tokens` contiguous chunks of `d_model // n_tokens` before attending, giving
+softmax something to distribute over. The chunks are meaningful rather than
+arbitrary: the PCA components feeding this module are ordered by explained
+variance, so the first chunk holds the dominant directions and later chunks
+progressively finer structure -- attention can then learn to weight coarse
+against fine signal, per modality pair.
+
+`n_tokens=1` is kept as the default so existing callers and every recorded
+result stay bit-identical; the token count is an ablation axis, not a
+migration.
 """
 
 from __future__ import annotations
@@ -25,20 +39,50 @@ from src.data.omics_preprocessing import MODALITIES
 
 
 class PairwiseCrossAttention(nn.Module):
-    """Single directional multi-head cross-attention block with residual + LayerNorm."""
+    """Single directional multi-head cross-attention block with residual + LayerNorm.
 
-    def __init__(self, d_model: int = 128, num_heads: int = 4, dropout: float = 0.1):
+    Each modality vector is viewed as `n_tokens` chunks of `d_model //
+    n_tokens` and attended token-to-token. At `n_tokens=1` this is the
+    original single-token block, where softmax is 1.0 by construction; above
+    1, the attention distribution is genuinely learned.
+    """
+
+    def __init__(
+        self,
+        d_model: int = 128,
+        num_heads: int = 4,
+        dropout: float = 0.1,
+        n_tokens: int = 1,
+    ):
         super().__init__()
-        self.mha = nn.MultiheadAttention(embed_dim=d_model, num_heads=num_heads, dropout=dropout, batch_first=True)
-        self.norm = nn.LayerNorm(d_model)
+        d_token, remainder = divmod(d_model, n_tokens)
+        if n_tokens < 1 or remainder:
+            raise ValueError(
+                f"n_tokens must be >=1 and divide d_model ({d_model}), got {n_tokens}"
+            )
+        if d_token % num_heads:
+            raise ValueError(
+                f"num_heads ({num_heads}) must divide the per-token width "
+                f"d_model // n_tokens = {d_token}"
+            )
+        self.n_tokens = n_tokens
+        self.d_token = d_token
+        self.mha = nn.MultiheadAttention(embed_dim=d_token, num_heads=num_heads, dropout=dropout, batch_first=True)
+        self.norm = nn.LayerNorm(d_token)
+        # Off during training: `need_weights=True` costs an extra materialized
+        # (B, n_tokens, n_tokens) tensor per block per step.
+        self.record_attention = False
+        self.last_attention: Optional[torch.Tensor] = None
 
     def forward(self, query_modality: torch.Tensor, key_value_modality: torch.Tensor) -> torch.Tensor:
         """query_modality, key_value_modality: (B, d_model) -> (B, d_model)."""
-        q = query_modality.unsqueeze(1)
-        kv = key_value_modality.unsqueeze(1)
-        attn_out, _ = self.mha(q, kv, kv)
-        attn_out = attn_out.squeeze(1)
-        return self.norm(query_modality + attn_out)
+        batch = query_modality.shape[0]
+        q = query_modality.view(batch, self.n_tokens, self.d_token)
+        kv = key_value_modality.view(batch, self.n_tokens, self.d_token)
+        attn_out, weights = self.mha(q, kv, kv, need_weights=self.record_attention)
+        if self.record_attention:
+            self.last_attention = weights.detach()
+        return self.norm(q + attn_out).reshape(batch, -1)
 
 
 class MultiOmicsCrossAttentionFusion(nn.Module):
@@ -59,8 +103,10 @@ class MultiOmicsCrossAttentionFusion(nn.Module):
         out_dim: int = 256,
         dropout: float = 0.2,
         modalities: Optional[Sequence[str]] = None,
+        n_tokens: int = 1,
     ):
         super().__init__()
+        self.n_tokens = n_tokens
         self.modalities = list(modalities) if modalities is not None else list(MODALITIES)
         if len(self.modalities) < 2:
             raise ValueError(
@@ -72,7 +118,10 @@ class MultiOmicsCrossAttentionFusion(nn.Module):
         ]
 
         self.cross_attn = nn.ModuleDict(
-            {f"{i}->{j}": PairwiseCrossAttention(d_model, num_heads, dropout) for i, j in self.pairs}
+            {
+                f"{i}->{j}": PairwiseCrossAttention(d_model, num_heads, dropout, n_tokens)
+                for i, j in self.pairs
+            }
         )
         self.ffn = nn.Sequential(
             nn.Linear(d_model, d_model * 4),
@@ -89,6 +138,26 @@ class MultiOmicsCrossAttentionFusion(nn.Module):
             nn.Dropout(dropout),
             nn.LayerNorm(out_dim),
         )
+
+    def set_record_attention(self, enabled: bool = True) -> None:
+        """Toggle attention-weight capture on every pairwise block.
+
+        Left off during training; turn it on for an evaluation pass to inspect
+        what the fusion actually learned. At `n_tokens=1` the captured weights
+        are all exactly 1.0 -- which is the point being demonstrated.
+        """
+        for block in self.cross_attn.values():
+            block.record_attention = enabled
+            if not enabled:
+                block.last_attention = None
+
+    def attention_weights(self) -> Dict[str, torch.Tensor]:
+        """Per-pair attention from the last forward, as {'GE->Proteomics': (B, T, T)}."""
+        return {
+            name: block.last_attention
+            for name, block in self.cross_attn.items()
+            if block.last_attention is not None
+        }
 
     def forward(self, omics: Dict[str, torch.Tensor]) -> torch.Tensor:
         """omics: {modality: (B, d_model)} for each modality in `self.modalities` -> (B, out_dim)."""
