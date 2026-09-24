@@ -57,6 +57,7 @@ from styles.theme import (
     TEXT_MUTED,
 )
 from widgets.cards import SurfaceCard, UploadCard
+from widgets.help import HELP
 from widgets.icons import icon_text
 from widgets.navigation import (
     build_header_bar,
@@ -204,6 +205,7 @@ class DatasetInitializationPage(QWidget):
     def _build_upload_card(self) -> UploadCard:
         """Build the dataset upload dropzone card."""
         card = UploadCard()
+        card.setToolTip(HELP["upload"])
         layout = QVBoxLayout(card)
         layout.setContentsMargins(32, 32, 32, 32)
         layout.setSpacing(14)

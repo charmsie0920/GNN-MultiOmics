@@ -80,7 +80,9 @@ from styles.theme import (
     WINDOW_BACKGROUND,
     label_style,
 )
+from widgets.help import HELP, make_info_icon, set_header_help
 from widgets.icons import icon_text
+from widgets.tooltip import hide_tooltip, show_tooltip
 from widgets.navigation import (
     build_header_bar,
     build_sidebar,
@@ -289,6 +291,9 @@ class PredictionScatterWidget(QWidget):
     since predictions span several orders of magnitude (see `_format_ic50`).
     Each point is colored along a low-to-high confidence gradient so the
     color itself carries information rather than being purely decorative.
+    Hovering a point highlights it -- the rest dim, and guide lines run to
+    both axes -- and names its drug in a tooltip, since the dots are
+    otherwise anonymous.
     """
 
     # Low-confidence points read as amber/uncertain, high-confidence points
@@ -296,14 +301,68 @@ class PredictionScatterWidget(QWidget):
     _LOW_CONFIDENCE_COLOR = QColor(133, 77, 24)
     _HIGH_CONFIDENCE_COLOR = QColor(27, 94, 54)
 
+    # How close (px) the cursor must be to a dot's centre to pick it.
+    _HOVER_RADIUS = 8.0
+    _DOT_RADIUS = 3.6
+    _HOVERED_DOT_RADIUS = 5.5
+    # Alpha of the other dots while one is hovered, so the picked one stands out.
+    _DIMMED_ALPHA = 60
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setMinimumHeight(185)
-        self._points: list[tuple[float, float]] = []
+        # Hover follows the cursor directly rather than waiting for Qt's
+        # tooltip delay: pointing at a dot is deliberate, so respond at once.
+        self.setMouseTracking(True)
+        # (ic50, confidence, drug name)
+        self._points: list[tuple[float, float, str]] = []
+        # Pixel centre of each dot as last painted, parallel to `_points`, so
+        # hover hit-testing matches exactly what's on screen.
+        self._hit_points: list[QPointF] = []
+        self._hovered_index: int | None = None
 
-    def set_points(self, points: list[tuple[float, float]]) -> None:
+    def set_points(self, points: list[tuple[float, float, str]]) -> None:
         self._points = points
+        self._hit_points = []
+        self._set_hovered(None)
         self.update()
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        self._set_hovered(self._dot_at(event.position()))
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        self._set_hovered(None)
+        super().leaveEvent(event)
+
+    def _dot_at(self, position: QPointF) -> int | None:
+        """Index of the dot nearest `position`, if one is within `_HOVER_RADIUS`."""
+        nearest_index, nearest_distance = None, self._HOVER_RADIUS
+        for index, centre in enumerate(self._hit_points):
+            distance = math.hypot(centre.x() - position.x(), centre.y() - position.y())
+            if distance <= nearest_distance:
+                nearest_index, nearest_distance = index, distance
+        return nearest_index
+
+    def _set_hovered(self, index: int | None) -> None:
+        """Highlight dot `index` (None = none) and show or hide its tooltip."""
+        if index == self._hovered_index:
+            return
+        self._hovered_index = index
+        self.update()
+
+        if index is None:
+            self.unsetCursor()
+            hide_tooltip(self)
+            return
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        ic50, confidence, name = self._points[index]
+        centre = self._hit_points[index]
+        # Anchored just above the dot, so the tooltip never covers it.
+        anchor = self.mapToGlobal(QPointF(centre.x(), centre.y() - self._HOVERED_DOT_RADIUS).toPoint())
+        show_tooltip(
+            f"IC50 {_format_ic50(ic50)} µM · {confidence:.0f}% confidence", anchor, self, title=name, above=True
+        )
 
     @classmethod
     def _confidence_color(cls, confidence_percent: float) -> QColor:
@@ -335,17 +394,27 @@ class PredictionScatterWidget(QWidget):
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Waiting for results...")
             return
 
-        ic50_values = [ic50 for ic50, _confidence in self._points]
+        ic50_values = [ic50 for ic50, _confidence, _name in self._points]
         log_ic50 = [math.log10(max(ic50, 1e-6)) for ic50 in ic50_values]
         lo, hi = min(log_ic50), max(log_ic50)
         span = (hi - lo) or 1.0
 
+        hovered = self._hovered_index
         painter.setPen(Qt.PenStyle.NoPen)
-        for (_ic50, confidence), log_value in zip(self._points, log_ic50):
+        self._hit_points = []
+        for index, ((_ic50, confidence, _name), log_value) in enumerate(zip(self._points, log_ic50)):
             px = margin_left + int(((log_value - lo) / span) * width)
             py = margin_top + int((1.0 - (confidence / 100.0)) * height)
-            painter.setBrush(self._confidence_color(confidence))
-            painter.drawEllipse(QPointF(px, py), 3.6, 3.6)
+            color = self._confidence_color(confidence)
+            if hovered is not None and index != hovered:
+                color.setAlpha(self._DIMMED_ALPHA)
+            painter.setBrush(color)
+            centre = QPointF(px, py)
+            painter.drawEllipse(centre, self._DOT_RADIUS, self._DOT_RADIUS)
+            self._hit_points.append(centre)
+
+        if hovered is not None and hovered < len(self._hit_points):
+            self._paint_hovered_dot(painter, hovered, margin_left, margin_top + height)
 
         # Y-axis (confidence %) ticks.
         painter.setPen(QColor(TEXT_MUTED))
@@ -358,6 +427,30 @@ class PredictionScatterWidget(QWidget):
         hi_text = _format_ic50(max(ic50_values))
         hi_text_width = painter.fontMetrics().horizontalAdvance(hi_text)
         painter.drawText(margin_left + width - hi_text_width, margin_top + height + 14, hi_text)
+
+    def _paint_hovered_dot(self, painter: QPainter, index: int, axis_x: int, axis_y: int) -> None:
+        """Dashed guides from the hovered dot to both axes, then the dot itself
+        enlarged, ringed in white and haloed in its own color."""
+        centre = self._hit_points[index]
+        color = self._confidence_color(self._points[index][1])
+        color.setAlpha(255)
+
+        guide_pen = QPen(QColor(TEXT_MUTED), 1)
+        guide_pen.setStyle(Qt.PenStyle.DashLine)
+        painter.setPen(guide_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawLine(QPointF(axis_x, centre.y()), centre)
+        painter.drawLine(centre, QPointF(centre.x(), axis_y))
+
+        halo = QColor(color)
+        halo.setAlpha(55)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(halo)
+        painter.drawEllipse(centre, self._HOVERED_DOT_RADIUS + 5, self._HOVERED_DOT_RADIUS + 5)
+
+        painter.setPen(QPen(QColor(SURFACE), 2))
+        painter.setBrush(color)
+        painter.drawEllipse(centre, self._HOVERED_DOT_RADIUS, self._HOVERED_DOT_RADIUS)
 
 
 class FinalResultsPage(QWidget):
@@ -405,6 +498,7 @@ class FinalResultsPage(QWidget):
         self._drug_rank_slot: QVBoxLayout | None = None
         self._sample_subtitle_label: QLabel | None = None
         self._training_curve_widget: TrainingCurveWidget | None = None
+        self._performance_info_icon: QLabel | None = None
         self._scatter_widget: PredictionScatterWidget | None = None
         self._all_rows: list[DrugResult] = []
         self._search_input: QLineEdit | None = None
@@ -443,7 +537,7 @@ class FinalResultsPage(QWidget):
         self._all_rows = rows
         self._populate_drug_details(rows[0] if rows else None)
         if self._scatter_widget is not None:
-            self._scatter_widget.set_points([(row.ic50, row.confidence) for row in rows])
+            self._scatter_widget.set_points([(row.ic50, row.confidence, row.name) for row in rows])
         self._apply_filters()
 
     def _on_results_failed(self, message: str) -> None:
@@ -455,6 +549,11 @@ class FinalResultsPage(QWidget):
         # can't be fetched; it just keeps showing its "waiting" state.
         if self._training_curve_widget is not None:
             self._training_curve_widget.set_history(history)
+            if self._performance_info_icon is not None:
+                mode = self._training_curve_widget._mode()
+                self._performance_info_icon.setToolTip(
+                    HELP["perf_curve"] if mode == "curve" else HELP["perf_checkpoint"]
+                )
 
     # -- export -------------------------------------------------------------
 
@@ -666,11 +765,9 @@ class FinalResultsPage(QWidget):
         header_row.setContentsMargins(16, 12, 16, 12)
         header_title = QLabel("Predicted Drug Results Panel")
         header_title.setStyleSheet(f"background: transparent; border: none; {CARD_TITLE_STYLE}")
-        info_icon = QLabel(icon_text("info"))
-        info_icon.setStyleSheet(f"background: transparent; border: none; font-size: 18px; color: {TEXT_MUTED};")
         header_row.addWidget(header_title)
         header_row.addStretch(1)
-        header_row.addWidget(info_icon)
+        header_row.addWidget(make_info_icon("results_panel"))
         layout.addWidget(header)
 
         controls = QFrame()
@@ -709,6 +806,7 @@ class FinalResultsPage(QWidget):
 
         table = QTableWidget(0, 4)
         table.setHorizontalHeaderLabels(["Drug Name", "Predicted IC50 (uM)", "Sensitivity Ranking", "Confidence"])
+        set_header_help(table, {1: "col_ic50", 2: "col_rank", 3: "col_confidence"})
         style_data_table(table, header_background=WINDOW_BACKGROUND)
         # `style_data_table` makes tables non-selectable, which is right for the
         # read-only ones. This one picks the drug the interpretation panels
@@ -1032,12 +1130,16 @@ class FinalResultsPage(QWidget):
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(16, 12, 16, 12)
         header_layout.setSpacing(2)
+        title_row = QHBoxLayout()
         title = QLabel("Top Contributing Genes")
         title.setStyleSheet(CARD_TITLE_STYLE)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        title_row.addWidget(make_info_icon("gene_panel"))
         subtitle = QLabel("Select a drug")
         subtitle.setStyleSheet(label_style(f"font-size: 12px; color: {TEXT_MUTED};"))
         self._gene_panel_subtitle = subtitle
-        header_layout.addWidget(title)
+        header_layout.addLayout(title_row)
         header_layout.addWidget(subtitle)
         layout.addWidget(header)
 
@@ -1045,6 +1147,7 @@ class FinalResultsPage(QWidget):
         recovery_strip.setStyleSheet(
             f"background: {SURFACE}; border-bottom: 1px solid {SURFACE_CONTAINER};"
         )
+        recovery_strip.setToolTip(HELP["target_recovery"])
         recovery_layout = QVBoxLayout(recovery_strip)
         recovery_layout.setContentsMargins(16, 10, 16, 10)
         self._recovery_slot = recovery_layout
@@ -1052,6 +1155,7 @@ class FinalResultsPage(QWidget):
 
         table = QTableWidget(0, 4)
         table.setHorizontalHeaderLabels(["Gene", "Contribution", "Direction", "Evidence"])
+        set_header_help(table, {1: "col_contribution", 3: "col_evidence"})
         style_data_table(table, header_background=WINDOW_BACKGROUND)
         table.setColumnWidth(0, 90)
         table.setColumnWidth(1, 120)
@@ -1084,10 +1188,12 @@ class FinalResultsPage(QWidget):
         header_layout.addWidget(title)
         header_layout.addStretch(1)
         header_layout.addWidget(status)
+        header_layout.addWidget(make_info_icon("enrichment_panel"))
         layout.addWidget(header)
 
         table = QTableWidget(0, 4)
         table.setHorizontalHeaderLabels(["Pathway / Term", "Library", "Adj. p-value", "Overlap"])
+        set_header_help(table, {2: "col_adj_p", 3: "col_overlap"})
         style_data_table(table, header_background=WINDOW_BACKGROUND)
         table.setColumnWidth(0, 340)
         table.setColumnWidth(1, 170)
@@ -1134,24 +1240,34 @@ class FinalResultsPage(QWidget):
         training -- a validation predicted-vs-actual scatter. See
         `TrainingCurveWidget`."""
         self._training_curve_widget = TrainingCurveWidget()
-        return self._build_chart_panel("Model Performance", self._training_curve_widget)
+        # The help text depends on which mode the chart ends up in, so it's
+        # re-keyed once the history arrives (`_on_training_history_succeeded`).
+        card, self._performance_info_icon = self._build_chart_panel(
+            "Model Performance", self._training_curve_widget, "perf_checkpoint"
+        )
+        return card
 
     def _build_scatter_panel(self) -> QFrame:
         """Build the "Predicted IC50 vs. Confidence" chart card."""
         self._scatter_widget = PredictionScatterWidget()
-        return self._build_chart_panel("Predicted IC50 vs. Confidence", self._scatter_widget)
+        card, _info_icon = self._build_chart_panel(
+            "Predicted IC50 vs. Confidence", self._scatter_widget, "ic50_vs_confidence"
+        )
+        return card
 
     @staticmethod
-    def _build_chart_panel(title_text: str, chart_widget: QWidget) -> QFrame:
-        """Build a small card containing a caption and a dashed-border chart frame.
+    def _build_chart_panel(title_text: str, chart_widget: QWidget, help_key: str) -> tuple[QFrame, QLabel]:
+        """Build a small card containing a caption, its "ⓘ" help icon, and a dashed-border chart frame.
 
         Args:
             title_text: Caption shown above the chart.
             chart_widget: The chart widget to embed (already sized via its
                 own `minimumHeight`).
+            help_key: Key into `widgets.help.HELP` for the caption's help icon.
 
         Returns:
-            A styled `QFrame` card.
+            The styled `QFrame` card, and its help icon so callers can swap
+            the tooltip later.
         """
         card = QFrame()
         card.setStyleSheet(CARD_CONTAINER_STYLE)
@@ -1159,9 +1275,14 @@ class FinalResultsPage(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
+        title_row = QHBoxLayout()
         title = QLabel(title_text)
         title.setStyleSheet(LABEL_CAPS_STYLE)
-        layout.addWidget(title)
+        info_icon = make_info_icon(help_key)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        title_row.addWidget(info_icon)
+        layout.addLayout(title_row)
 
         chart_frame = QFrame()
         chart_frame.setStyleSheet(f"background: {WINDOW_BACKGROUND}; border: 1px dashed {BORDER}; border-radius: 8px;")
@@ -1169,7 +1290,7 @@ class FinalResultsPage(QWidget):
         chart_layout.setContentsMargins(8, 8, 8, 8)
         chart_layout.addWidget(chart_widget)
         layout.addWidget(chart_frame, 1)
-        return card
+        return card, info_icon
 
     def _build_drug_details_panel(self) -> QFrame:
         """Build the top-ranked drug's detail card (name, predicted IC50, ranking, confidence).
@@ -1274,9 +1395,9 @@ class FinalResultsPage(QWidget):
 
         chips = QHBoxLayout()
         chips.setSpacing(8)
-        chips.addWidget(self._chip("Transcriptomics", primary=True))
-        chips.addWidget(self._chip("Genomics (Mut/CNV)"))
-        chips.addWidget(self._chip("Proteomics"))
+        chips.addWidget(self._chip("Transcriptomics", primary=True, help_key="omics_transcriptomics"))
+        chips.addWidget(self._chip("Genomics (Mut/CNV)", help_key="omics_genomics"))
+        chips.addWidget(self._chip("Proteomics", help_key="omics_proteomics"))
         chips.addStretch(1)
         layout.addLayout(chips)
 
@@ -1308,13 +1429,14 @@ class FinalResultsPage(QWidget):
         return card
 
     @staticmethod
-    def _chip(text: str, primary: bool = False) -> QLabel:
-        """Build a small rounded label chip (used for mutation tags).
+    def _chip(text: str, primary: bool = False, help_key: str | None = None) -> QLabel:
+        """Build a small rounded label chip (used for omics modality tags).
 
         Args:
             text: Chip label.
             primary: Whether to render as a filled (primary) chip versus an
                 outlined (secondary) chip.
+            help_key: Optional key into `widgets.help.HELP` shown on hover.
 
         Returns:
             A styled `QLabel`.
@@ -1327,4 +1449,6 @@ class FinalResultsPage(QWidget):
         chip.setStyleSheet(
             "padding: 3px 8px; border-radius: 3px; font-family: Consolas, monospace; font-size: 12px;" + variant_style
         )
+        if help_key is not None:
+            chip.setToolTip(HELP[help_key])
         return chip

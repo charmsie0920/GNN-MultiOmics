@@ -43,6 +43,7 @@ from pages.model_execution_log_page import ModelExecutionLogPage
 # flow until it's wired to real data.
 # from pages.model_visualization_page import ModelVisualizationPage
 from styles.theme import apply_theme
+from widgets.tooltip import install_tooltips
 
 
 def main() -> int:
@@ -57,6 +58,7 @@ def main() -> int:
     """
     app = QApplication(sys.argv)
     apply_theme(app)
+    install_tooltips(app)
 
     window = QMainWindow()
     window.setWindowTitle("MSC16 - Dataset Initialization")

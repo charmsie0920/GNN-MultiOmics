@@ -13,7 +13,7 @@ and the global stylesheet (`APP_STYLESHEET`) on the `QApplication` instance.
 from __future__ import annotations
 
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QProxyStyle, QStyle, QStyleFactory
 
 # --- Core palette -----------------------------------------------------------
 # Neutral, near-monochrome palette shared by every page. Keep additions here
@@ -35,6 +35,11 @@ PRIMARY_SOFT = "#2f3131"
 ACCENT = "#5f5e5e"
 SUCCESS = "#1a7f37"
 SUCCESS_SOFT = "#156429"
+# Tooltips are the one dark surface in the UI, so they stand apart from the
+# light cards they float over (see `widgets.tooltip`).
+TOOLTIP_BACKGROUND = "#1f2224"
+TOOLTIP_TEXT = "#f4f5f5"
+TOOLTIP_TEXT_MUTED = "#b4b8b9"
 
 # --- Layout scale ------------------------------------------------------------
 # Shared sizing so every page's chrome (sidebar/header) lines up pixel-for-pixel.
@@ -380,7 +385,38 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
 QMessageBox {{
     background: {SURFACE};
 }}
+
+/*
+ * Fallback for any native Qt tooltip not routed through the custom one in
+ * `widgets.tooltip`. Qt's tooltip is a QLabel subclass, so without this it
+ * inherits the transparent QWidget/QLabel rules above and has no background.
+ * Kept last so it wins over the QLabel rule at equal specificity.
+ */
+QToolTip {{
+    background: {SURFACE};
+    color: {TEXT};
+    border: 1px solid {BORDER};
+    padding: 4px 8px;
+    font-size: 12px;
+}}
 """
+
+# Hover time before a tooltip appears. Qt's default (~700 ms) feels sluggish.
+# Once one tooltip is showing, Qt shows the next almost instantly anyway.
+TOOLTIP_WAKE_UP_DELAY_MS = 250
+
+
+class _AppStyle(QProxyStyle):
+    """Fusion with a shorter tooltip wake-up delay.
+
+    The global stylesheet wraps this style and passes through every hint it
+    doesn't handle itself, so this override survives `setStyleSheet`.
+    """
+
+    def styleHint(self, hint, option=None, widget=None, returnData=None):  # noqa: N802
+        if hint == QStyle.StyleHint.SH_ToolTip_WakeUpDelay:
+            return TOOLTIP_WAKE_UP_DELAY_MS
+        return super().styleHint(hint, option, widget, returnData)
 
 
 def apply_theme(app: QApplication) -> None:
@@ -393,6 +429,6 @@ def apply_theme(app: QApplication) -> None:
     Args:
         app: The application instance to theme.
     """
-    app.setStyle("Fusion")
+    app.setStyle(_AppStyle(QStyleFactory.create("Fusion")))
     app.setFont(QFont("Segoe UI", 10))
     app.setStyleSheet(APP_STYLESHEET)
