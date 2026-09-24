@@ -9,7 +9,10 @@ its live progress and log output:
 
     1. `DatasetInitializationPage` — upload a dataset, configure a run.
     2. `ModelExecutionLogPage` — live pipeline status + log tail.
-    3. `FinalResultsPage` — predicted drug rankings and patient profile.
+    3. `FinalResultsPage` — predicted drug rankings, and the genes/pathways
+       behind whichever drug is picked.
+    4. `ModelAnalyticsPage` — KPIs and charts for the same run, reached from
+       the results page's sidebar.
 
 `ModelVisualizationPage` (a decorative placeholder — fake canvas + hardcoded
 run stats) is currently hidden from the navigation flow; see the `!Hidden`
@@ -36,6 +39,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget
 
 from pages.dataset_initialization_page import DatasetInitializationPage
 from pages.final_results_page import FinalResultsPage
+from pages.model_analytics_page import ModelAnalyticsPage
 from pages.model_execution_log_page import ModelExecutionLogPage
 
 # !Hidden: ModelVisualizationPage is a decorative placeholder (fake canvas +
@@ -95,10 +99,26 @@ def main() -> int:
     #     stack.setCurrentWidget(visualization_page)
 
     def show_final_results_page() -> None:
+        # Also primes the analytics page, so its charts are ready by the time
+        # the user opens it from the sidebar.
         if current_run["run_id"] is not None:
             final_results_page.load_results(current_run["run_id"])
+            analytics_page.load_results(current_run["run_id"])
         if current_run["target_cell_line"] is not None:
             final_results_page.set_sample_id(current_run["target_cell_line"])
+            analytics_page.set_sample_id(current_run["target_cell_line"])
+        stack.setCurrentWidget(final_results_page)
+
+    # Switching between results and analytics only changes the view; neither
+    # reloads, since both already hold the current run's data.
+    def show_results_view() -> None:
+        stack.setCurrentWidget(final_results_page)
+
+    def show_analytics_page() -> None:
+        stack.setCurrentWidget(analytics_page)
+
+    def show_drug_in_results(drug_id: str) -> None:
+        final_results_page.show_drug(drug_id)
         stack.setCurrentWidget(final_results_page)
 
     upload_page = DatasetInitializationPage(on_initialize_upload=show_log_page)
@@ -117,6 +137,13 @@ def main() -> int:
     final_results_page = FinalResultsPage(
         on_upload_clicked=show_upload_page,
         on_model_running_clicked=show_log_page_only,
+        on_analytics_clicked=show_analytics_page,
+    )
+    analytics_page = ModelAnalyticsPage(
+        on_upload_clicked=show_upload_page,
+        on_model_running_clicked=show_log_page_only,
+        on_results_clicked=show_results_view,
+        on_drug_clicked=show_drug_in_results,
     )
 
     stack.addWidget(upload_page)
@@ -124,6 +151,7 @@ def main() -> int:
     # !Hidden: visualization_page is unreferenced (see the import above).
     # stack.addWidget(visualization_page)
     stack.addWidget(final_results_page)
+    stack.addWidget(analytics_page)
     stack.setCurrentWidget(upload_page)
 
     window.setCentralWidget(stack)

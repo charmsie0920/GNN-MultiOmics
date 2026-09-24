@@ -40,6 +40,29 @@ SUCCESS_SOFT = "#156429"
 TOOLTIP_BACKGROUND = "#1f2224"
 TOOLTIP_TEXT = "#f4f5f5"
 TOOLTIP_TEXT_MUTED = "#b4b8b9"
+# The results page's selected-drug header and the matching marker on the
+# picked table row: a mid grey that stands out from the white cards. Its text
+# colours are the two below -- if you lighten the surface much further, darken
+# those (or switch them to TEXT/TEXT_MUTED) to keep the text readable.
+SELECTED_DRUG_SURFACE = "#03396c"
+SELECTED_DRUG_TEXT = "#ffffff"
+SELECTED_DRUG_TEXT_MUTED = "#bcd0e4"
+# Light washes of that navy, for the pane below the header and the picked
+# table row, so they read as the same family as the header:
+#   TINT        -- table header rows inside the pane, the picked results row
+#   TINT_STRONG -- the "Top genes | Pathways" toggle track
+SELECTED_DRUG_TINT = "#e8eff6"
+SELECTED_DRUG_TINT_STRONG = "#d4e1ee"
+# Accent bar on the left edge of the results page's sample profile strip,
+# and its width in px.
+SAMPLE_PROFILE_ACCENT = "#005b96"
+SAMPLE_PROFILE_ACCENT_WIDTH = 10
+# Diverging gene-contribution bars (results page, "Top genes"): the two sides
+# of zero. Checked with the dataviz palette validator's method: colour-blind
+# separation dE 19.7 (target >= 8), normal-vision dE 30.1 (>= 15), both
+# >= 5:1 contrast on white. Re-check if you change either.
+CONTRIBUTION_SENSITISING = "#005b96"  # negative score: pushes toward sensitivity (bar goes left)
+CONTRIBUTION_RESISTANCE = "#c2410c"   # positive score: pushes toward resistance (bar goes right)
 
 # --- Layout scale ------------------------------------------------------------
 # Shared sizing so every page's chrome (sidebar/header) lines up pixel-for-pixel.
@@ -94,6 +117,41 @@ CARD_TITLE_STYLE = label_style(f"font-size: {FONT_CARD_TITLE}px; font-weight: 60
 LABEL_CAPS_STYLE = label_style(f"font-size: {FONT_LABEL_CAPS}px; font-weight: 700; letter-spacing: 0.05em; color: {TEXT_MUTED};")
 CARD_CONTAINER_STYLE = f"background: {SURFACE}; border: 1px solid {BORDER}; border-radius: {CARD_RADIUS}px;"
 
+
+CARD_SECTION_OBJECT_NAME = "CardSection"
+
+
+def style_card_section(
+    widget, background: str, *, top: bool = False, divider: str | None = SURFACE_CONTAINER
+) -> None:
+    """Style a full-width strip inside a card: a header, toolbar, etc.
+
+    Two cascade problems, fixed together:
+
+    - In: `CARD_CONTAINER_STYLE` has no selector, so its border and 12px
+      radius cascade into every widget inside the card, rounding the corners
+      of strips in the middle of the card. The strip resets both explicitly,
+      rounding only its top corners when it's the card's first child (`top`)
+      so it follows the card's outline.
+    - Out: the strip's own rules are scoped to the strip by object name, so
+      its `border: none` doesn't in turn strip the borders off inputs inside
+      it (the search box and dropdowns).
+
+    Args:
+        widget: The strip (usually a `QFrame`).
+        background: The strip's fill.
+        top: Whether the strip sits at the very top of its card.
+        divider: Colour of a hairline under the strip, or None for none.
+    """
+    rules = f"background: {background}; border: none; border-radius: 0px;"
+    if top:
+        inner_radius = CARD_RADIUS - 1  # just inside the card's 1px border
+        rules += f" border-top-left-radius: {inner_radius}px; border-top-right-radius: {inner_radius}px;"
+    if divider is not None:
+        rules += f" border-bottom: 1px solid {divider};"
+    widget.setObjectName(CARD_SECTION_OBJECT_NAME)
+    widget.setStyleSheet(f"#{CARD_SECTION_OBJECT_NAME} {{ {rules} }}")
+
 # Small, uppercase, fixed-height action buttons (e.g. "Pause Execution",
 # "Halt Execution", "Download Data", "Export Clinical Report", "Finish").
 # Sharing one height/padding/radius across pages keeps these visually
@@ -144,8 +202,19 @@ def table_stylesheet(header_background: str = WINDOW_BACKGROUND) -> str:
     Returns:
         A QSS string suitable for `QTableWidget.setStyleSheet()`.
     """
+    # The header view, its corner and the scroll bars are reset explicitly:
+    # otherwise they inherit the hosting card's selector-less border and 12px
+    # radius (see `card_section_style`), which rounds the header row's ends.
+    # Tables sit at the bottom of their cards, so only the bottom corners
+    # follow the card's outline.
+    inner_radius = CARD_RADIUS - 1
     return (
-        f"QTableWidget {{ border: none; background: {SURFACE}; font-size: {FONT_CODE}px; }}"
+        f"QTableWidget {{ border: none; background: {SURFACE}; font-size: {FONT_CODE}px;"
+        f" border-radius: 0px; border-bottom-left-radius: {inner_radius}px;"
+        f" border-bottom-right-radius: {inner_radius}px; }}"
+        f"QHeaderView {{ background: {header_background}; border: none; border-radius: 0px; }}"
+        f"QTableCornerButton::section {{ background: {header_background}; border: none; }}"
+        "QScrollBar { border: none; border-radius: 0px; }"
         f"QHeaderView::section {{ background: {header_background}; color: {TEXT_MUTED}; padding: 12px 16px;"
         f" border: none; border-bottom: 1px solid {DIVIDER}; font-size: {FONT_LABEL_CAPS}px; font-weight: 700;"
         " letter-spacing: 0.05em; }"

@@ -1,33 +1,31 @@
 """Final Results page.
 
 The last stop in the workflow: shows the model's predicted drug rankings for
-the selected target cell line, alongside supporting visualizations (training
-curve, predicted IC50 vs. confidence) and detail panels (top drug details,
-sample profile).
+the selected target cell line, and explains whichever drug the user picks.
 
 Main UI components:
-    - Shared sidebar (`widgets.navigation.build_sidebar`) — this page has no
-      "Model Visualization"/"Model Logs" nav section, matching the upload
-      page's sidebar, since results is a terminal step in the workflow.
+    - Shared sidebar (`widgets.navigation.build_sidebar`) with "Drug Results"
+      (this page) and "Model Analytics" links. The charts live on
+      `ModelAnalyticsPage`, keeping this page focused on the drugs.
     - Shared header bar (`widgets.navigation.build_header_bar`) with
       "Results" marked as the active workflow tab.
+    - A sample profile strip: the cell line and omics modalities everything
+      below is about.
     - A "Predicted Drug Results Panel" table, styled with the same shared
       table helpers (`widgets.tables`) as the model execution log page's
-      pipeline table, so the two read as one design system. Populated from
-      real backend inference via `load_results(run_id)`.
-    - Two custom-painted charts fed from real run data: `TrainingCurveWidget`
-      (train_loss/val_rmse per epoch, from `on_training_history`) and
-      `PredictionScatterWidget` (predicted IC50 vs. confidence, one point
-      per ranked drug, from the same rows as the results table). The
-      network proximity box on the sample profile card is still a
-      placeholder — out of scope for now.
-    - Drug detail and sample profile summary cards, populated from the same
-      real results.
+      pipeline table. Populated from real backend inference via
+      `load_results(run_id)`.
+    - A selected-drug pane beside the table: a dark header with the picked
+      drug's prediction and annotation, and "Top genes" / "Pathways" views
+      explaining that prediction. The table row and the pane are tied
+      together visually (matching black marker + a crossfade on change)
+      rather than with explanatory text.
 
 Interactions with other pages:
     - `on_upload_clicked` navigates back to `DatasetInitializationPage`.
     - `on_model_running_clicked` navigates to `ModelExecutionLogPage`.
-    Both callbacks are supplied and wired by `UILauncher.py`, which also
+    - `on_analytics_clicked` navigates to `ModelAnalyticsPage`.
+    All callbacks are supplied and wired by `UILauncher.py`, which also
     calls `load_results(run_id)` / `set_sample_id(target_cell_line)` before
     switching to this page.
 """
@@ -40,29 +38,37 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
-from PySide6.QtCore import QPointF, Qt
-from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPalette, QPen
+from PySide6.QtCore import QPointF, QPropertyAnimation, QRect, QRectF, Qt
+from PySide6.QtGui import QColor, QFont, QPainter, QPalette
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QComboBox,
     QFileDialog,
     QFrame,
+    QGraphicsOpacityEffect,
     QGridLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QStackedWidget,
+    QStyle,
+    QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from client.workers import EnrichmentWorker, GeneAttributionWorker, ResultsWorker, TrainingHistoryWorker
+from client.workers import EnrichmentWorker, GeneAttributionWorker, ResultsWorker
 from styles.theme import (
     BORDER,
     CARD_CONTAINER_STYLE,
+    CONTRIBUTION_RESISTANCE,
+    CONTRIBUTION_SENSITISING,
     CARD_TITLE_STYLE,
     LABEL_CAPS_STYLE,
     PAGE_MARGIN,
@@ -75,14 +81,22 @@ from styles.theme import (
     SURFACE,
     SURFACE_CONTAINER,
     SURFACE_HIGH,
+    SAMPLE_PROFILE_ACCENT,
+    SAMPLE_PROFILE_ACCENT_WIDTH,
+    SELECTED_DRUG_SURFACE,
+    SELECTED_DRUG_TEXT,
+    SELECTED_DRUG_TEXT_MUTED,
+    SELECTED_DRUG_TINT,
+    SELECTED_DRUG_TINT_STRONG,
     TEXT,
     TEXT_MUTED,
     WINDOW_BACKGROUND,
+    style_card_section,
     label_style,
 )
+from widgets.formatting import format_ic50
 from widgets.help import HELP, make_info_icon, set_header_help
 from widgets.icons import icon_text
-from widgets.tooltip import hide_tooltip, show_tooltip
 from widgets.navigation import (
     build_header_bar,
     build_sidebar,
@@ -94,21 +108,45 @@ from widgets.tables import build_mini_progress_bar, build_status_badge, style_da
 
 # Sensitivity ranking label -> status badge tone (see widgets.tables.build_status_badge).
 _RANK_TO_BADGE_TONE = {"HIGH SENSITIVITY": "positive", "MEDIUM": "neutral", "LOW": "muted"}
+# Shorter badge text for the table column, so "HIGH" lines up with "MEDIUM"
+# and "LOW" in a narrow column. The pane keeps the full label.
+_RANK_TABLE_LABELS = {"HIGH SENSITIVITY": "HIGH"}
 
+# Ranking filter dropdown label -> the ranking it keeps (None = every drug).
+_RANK_FILTER_OPTIONS: dict[str, str | None] = {
+    "All rankings": None,
+    "High": "HIGH SENSITIVITY",
+    "Medium": "MEDIUM",
+    "Low": "LOW",
+}
 
-def _format_ic50(value: float) -> str:
-    """Format a predicted IC50 (uM) with precision that scales to its magnitude.
+# Widths (px) of the ranking filter and sort dropdowns beside the search box,
+# each sized so its longest option just fits. Tweak here if the labels change.
+_RANK_FILTER_WIDTH = 118
+_SORT_WIDTH = 140
 
-    A flat `.1f` rounds any sub-0.05 uM prediction (a real, very sensitive
-    result -- GDSC ln_ic50 values span roughly -10 to 10, i.e. ~5e-5 to
-    ~22000 uM) down to a misleading "0.0". Below 1 uM, show 3 significant
-    figures instead so small-but-real values stay visible.
-    """
-    if value == 0:
-        return "0.0"
-    if abs(value) >= 1:
-        return f"{value:.1f}"
-    return f"{value:.3g}"
+# Enrichr library id -> short label, so the column fits the narrow detail pane.
+_LIBRARY_SHORT_NAMES = {
+    "GO_Biological_Process_2023": "GO BP",
+    "KEGG_2021_Human": "KEGG",
+    "Reactome_2022": "Reactome",
+}
+
+# Segmented "Top genes | Pathways" toggle in the selected-drug pane.
+_SEGMENT_BUTTON_STYLE = f"""
+    QPushButton {{
+        background: transparent; border: 1px solid transparent; border-radius: 6px;
+        padding: 6px 14px; color: {TEXT_MUTED};
+        font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    }}
+    QPushButton:checked {{
+        background: {SURFACE}; color: {SELECTED_DRUG_SURFACE}; border: 1px solid {SELECTED_DRUG_SURFACE};
+    }}
+    QPushButton:hover:!checked {{ color: {SELECTED_DRUG_SURFACE}; }}
+"""
+
+# Muted text on the selected-drug pane's grey header.
+_ON_DARK_MUTED = SELECTED_DRUG_TEXT_MUTED
 
 
 @dataclass(frozen=True)
@@ -122,345 +160,117 @@ class DrugResult:
     ic50: float
     rank: str
     confidence: float
+    # GDSC annotation; free text, often a mechanism rather than a gene, and
+    # sometimes empty.
+    target: str = ""
+    pathway: str = ""
 
 
-class TrainingCurveWidget(QWidget):
-    """Custom-painted chart fed from `on_training_history` (backend/model_backends/hetero_gnn.py).
+class _SelectedRowMarkerDelegate(QStyledItemDelegate):
+    """Drug-name column: the selected row gets a bold name and a black bar on its left.
 
-    Renders one of two things depending on how the run produced its model,
-    both real per-run data, never mocked:
-
-    - Training curve: when the backend actually trained, the real per-epoch
-      train loss / val RMSE (see `_paint_training_curve`). Each series is
-      normalized to its own 0-1 range (their absolute scales aren't
-      comparable -- loss and RMSE are different units), so the numeric value
-      range for each is spelled out in its legend label instead of a shared
-      y-axis, alongside epoch ticks on the x-axis.
-    - Validation scatter: when the backend loaded a pretrained checkpoint
-      instead (no epochs to plot), a sample of held-out predicted-vs-actual
-      ln(IC50) pairs from that same run's validation pass (see
-      `_paint_validation_scatter`) -- a real calibration check in place of a
-      curve that doesn't exist for this run.
-
-    `set_history` picks the mode from which fields are present on the first
-    point (see `TrainingHistoryPoint`).
+    The bar is the same dark grey as the selected-drug pane's header beside
+    the table, so the picked row and the pane read as one pair without any
+    text saying so.
     """
 
-    # Warm/cool complementary pair so the two series stay visually distinct
-    # even though they share the same normalized 0-1 vertical space.
-    _TRAIN_LOSS_COLOR = "#8a3419"
-    _VAL_RMSE_COLOR = "#1c4a7a"
-    _SCATTER_POINT_COLOR = "#1c4a7a"
+    _BAR_WIDTH = 4
 
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setMinimumHeight(185)
-        self._history: list[dict] = []
+    def initStyleOption(self, option, index) -> None:  # noqa: N802
+        super().initStyleOption(option, index)
+        if option.state & QStyle.StateFlag.State_Selected:
+            option.font.setBold(True)
 
-    def set_history(self, history: list[dict]) -> None:
-        self._history = history
-        self.update()
-
-    def _mode(self) -> str:
-        if not self._history:
-            return "empty"
-        first = self._history[0]
-        if first.get("epoch") is not None:
-            return "curve"
-        if first.get("actual_ln_ic50") is not None:
-            return "scatter"
-        return "empty"
-
-    def paintEvent(self, event) -> None:  # noqa: N802
-        """Paint a dashed gridline background plus whichever mode `_mode` selects."""
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor(WINDOW_BACKGROUND))
-
-        margin_left, margin_right = 10, 10
-        margin_top, margin_bottom = 22, 18
-        width = max(1, self.width() - margin_left - margin_right)
-        height = max(1, self.height() - margin_top - margin_bottom)
-
-        grid_pen = QPen(QColor(SURFACE_CONTAINER))
-        grid_pen.setStyle(Qt.PenStyle.DashLine)
-        painter.setPen(grid_pen)
-        for ratio in (0.25, 0.5, 0.75):
-            y = margin_top + int(height * ratio)
-            painter.drawLine(margin_left, y, margin_left + width, y)
-
-        mode = self._mode()
-        if mode == "scatter":
-            self._paint_validation_scatter(painter, margin_left, margin_top, width, height)
-            return
-
-        if mode != "curve" or len(self._history) < 2:
-            painter.setPen(QColor(TEXT_MUTED))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Waiting for training history...")
-            return
-
-        self._paint_training_curve(painter, margin_left, margin_top, width, height)
-
-    def _paint_validation_scatter(self, painter: QPainter, margin_left: int, margin_top: int, width: int, height: int) -> None:
-        """Predicted vs. actual ln(IC50) on the held-out validation set, with a diagonal reference line."""
-        actual = [point["actual_ln_ic50"] for point in self._history]
-        predicted = [point["predicted_ln_ic50"] for point in self._history]
-        lo = min(min(actual), min(predicted))
-        hi = max(max(actual), max(predicted))
-        span = (hi - lo) or 1.0
-
-        def map_xy(x_value: float, y_value: float) -> QPointF:
-            px = (x_value - lo) / span
-            py = 1.0 - (y_value - lo) / span
-            return QPointF(margin_left + px * width, margin_top + py * height)
-
-        diagonal_pen = QPen(QColor(TEXT_MUTED))
-        diagonal_pen.setStyle(Qt.PenStyle.DashLine)
-        painter.setPen(diagonal_pen)
-        painter.drawLine(map_xy(lo, lo), map_xy(hi, hi))
-
-        painter.setPen(QPen(QColor(self._SCATTER_POINT_COLOR), 1))
-        painter.setBrush(QBrush(QColor(self._SCATTER_POINT_COLOR)))
-        for x_value, y_value in zip(actual, predicted):
-            painter.drawEllipse(map_xy(x_value, y_value), 2.5, 2.5)
-
-        painter.setPen(QColor(TEXT_MUTED))
-        painter.drawText(
-            margin_left, 14, f"Loaded from checkpoint -- validation set"
-        )
-        painter.drawText(margin_left, margin_top + height + 14, f"{lo:.2f}")
-        hi_text = f"{hi:.2f}"
-        hi_text_width = painter.fontMetrics().horizontalAdvance(hi_text)
-        painter.drawText(margin_left + width - hi_text_width, margin_top + height + 14, hi_text)
-
-    def _paint_training_curve(self, painter: QPainter, margin_left: int, margin_top: int, width: int, height: int) -> None:
-        """The real train_loss/val_rmse-per-epoch line chart."""
-        epochs = [point["epoch"] for point in self._history]
-        e_lo, e_hi = min(epochs), max(epochs)
-        e_span = (e_hi - e_lo) or 1
-
-        def normalize(values: list[float]) -> list[float]:
-            lo, hi = min(values), max(values)
-            span = (hi - lo) or 1.0
-            return [(v - lo) / span for v in values]
-
-        def map_xy(epoch: int, normalized_value: float) -> QPointF:
-            px = (epoch - e_lo) / e_span
-            py = 1.0 - normalized_value
-            return QPointF(margin_left + (px * width), margin_top + (py * height))
-
-        def draw_series(values: list[float], color: str) -> None:
-            path = QPainterPath()
-            path.moveTo(map_xy(epochs[0], values[0]))
-            for epoch, value in zip(epochs[1:], values[1:]):
-                path.lineTo(map_xy(epoch, value))
-            pen = QPen(QColor(color))
-            pen.setWidth(2)
-            painter.setPen(pen)
-            painter.drawPath(path)
-
-        train_loss_values = [point["train_loss"] for point in self._history]
-        val_rmse_values = [point["val_rmse"] for point in self._history]
-        draw_series(normalize(train_loss_values), self._TRAIN_LOSS_COLOR)
-        draw_series(normalize(val_rmse_values), self._VAL_RMSE_COLOR)
-
-        # Legend with each series' real value range (its absolute numbers,
-        # since the lines themselves are drawn normalized).
-        painter.setPen(QColor(self._TRAIN_LOSS_COLOR))
-        loss_label = f"● Train Loss {min(train_loss_values):.3f}–{max(train_loss_values):.3f}"
-        painter.drawText(margin_left, 14, loss_label)
-        loss_label_width = painter.fontMetrics().horizontalAdvance(loss_label)
-        painter.setPen(QColor(self._VAL_RMSE_COLOR))
-        rmse_label = f"● Val RMSE {min(val_rmse_values):.3f}–{max(val_rmse_values):.3f}"
-        painter.drawText(margin_left + loss_label_width + 14, 14, rmse_label)
-
-        # Epoch ticks along the x-axis.
-        painter.setPen(QColor(TEXT_MUTED))
-        painter.drawText(margin_left, margin_top + height + 14, f"Epoch {e_lo}")
-        hi_text = f"Epoch {e_hi}"
-        hi_text_width = painter.fontMetrics().horizontalAdvance(hi_text)
-        painter.drawText(margin_left + width - hi_text_width, margin_top + height + 14, hi_text)
+    def paint(self, painter, option, index) -> None:
+        super().paint(painter, option, index)
+        if option.state & QStyle.StateFlag.State_Selected:
+            rect = option.rect
+            painter.fillRect(
+                QRect(rect.left(), rect.top(), self._BAR_WIDTH, rect.height()), QColor(SELECTED_DRUG_SURFACE)
+            )
 
 
-class PredictionScatterWidget(QWidget):
-    """Custom-painted scatter chart: predicted IC50 vs. confidence, one point per ranked drug.
+class _ContributionBar(QWidget):
+    """One gene's signed contribution as a diverging bar around a zero line.
 
-    Fed from the same ranked predictions already loaded into the results
-    table (`FinalResultsPage._on_results_succeeded`) -- real per-drug output
-    from this run, not mocked data. IC50 (uM) is plotted on a log scale
-    since predictions span several orders of magnitude (see `_format_ic50`).
-    Each point is colored along a low-to-high confidence gradient so the
-    color itself carries information rather than being purely decorative.
-    Hovering a point highlights it -- the rest dim, and guide lines run to
-    both axes -- and names its drug in a tooltip, since the dots are
-    otherwise anonymous.
+    Negative scores (pushing the prediction toward sensitivity) extend left,
+    positive ones (toward resistance) extend right, each in its own colour,
+    with the exact value printed above the zero line. Direction is readable
+    at a glance down the column, not just from a +/- sign.
+
+    Length is `sqrt(|score| / max_abs)` of the half-width. Contributions span
+    orders of magnitude -- a drug's own target routinely scores ~100x the rest,
+    as the target edge is the drug node's only link into the graph -- so a
+    linear scale leaves one full bar over a column of invisible slivers. The
+    earlier log scale over-corrected: 0.8 and 0.01 drew at 100% and 60%,
+    hiding real differences. Square root keeps the ranking and the gaps
+    visible (0.01 vs 0.8 -> 11% vs 100%) while small genes stay drawable.
     """
 
-    # Low-confidence points read as amber/uncertain, high-confidence points
-    # as green/trustworthy -- interpolated per point in `_confidence_color`.
-    _LOW_CONFIDENCE_COLOR = QColor(133, 77, 24)
-    _HIGH_CONFIDENCE_COLOR = QColor(27, 94, 54)
+    _BAR_HEIGHT = 8
+    _BAR_RADIUS = 4
+    _MIN_BAR = 2.0  # px, so a tiny non-zero contribution never vanishes
+    _SIDE_MARGIN = 10
 
-    # How close (px) the cursor must be to a dot's centre to pick it.
-    _HOVER_RADIUS = 8.0
-    _DOT_RADIUS = 3.6
-    _HOVERED_DOT_RADIUS = 5.5
-    # Alpha of the other dots while one is hovered, so the picked one stands out.
-    _DIMMED_ALPHA = 60
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setMinimumHeight(185)
-        # Hover follows the cursor directly rather than waiting for Qt's
-        # tooltip delay: pointing at a dot is deliberate, so respond at once.
-        self.setMouseTracking(True)
-        # (ic50, confidence, drug name)
-        self._points: list[tuple[float, float, str]] = []
-        # Pixel centre of each dot as last painted, parallel to `_points`, so
-        # hover hit-testing matches exactly what's on screen.
-        self._hit_points: list[QPointF] = []
-        self._hovered_index: int | None = None
-
-    def set_points(self, points: list[tuple[float, float, str]]) -> None:
-        self._points = points
-        self._hit_points = []
-        self._set_hovered(None)
-        self.update()
-
-    def mouseMoveEvent(self, event) -> None:  # noqa: N802
-        self._set_hovered(self._dot_at(event.position()))
-        super().mouseMoveEvent(event)
-
-    def leaveEvent(self, event) -> None:  # noqa: N802
-        self._set_hovered(None)
-        super().leaveEvent(event)
-
-    def _dot_at(self, position: QPointF) -> int | None:
-        """Index of the dot nearest `position`, if one is within `_HOVER_RADIUS`."""
-        nearest_index, nearest_distance = None, self._HOVER_RADIUS
-        for index, centre in enumerate(self._hit_points):
-            distance = math.hypot(centre.x() - position.x(), centre.y() - position.y())
-            if distance <= nearest_distance:
-                nearest_index, nearest_distance = index, distance
-        return nearest_index
-
-    def _set_hovered(self, index: int | None) -> None:
-        """Highlight dot `index` (None = none) and show or hide its tooltip."""
-        if index == self._hovered_index:
-            return
-        self._hovered_index = index
-        self.update()
-
-        if index is None:
-            self.unsetCursor()
-            hide_tooltip(self)
-            return
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        ic50, confidence, name = self._points[index]
-        centre = self._hit_points[index]
-        # Anchored just above the dot, so the tooltip never covers it.
-        anchor = self.mapToGlobal(QPointF(centre.x(), centre.y() - self._HOVERED_DOT_RADIUS).toPoint())
-        show_tooltip(
-            f"IC50 {_format_ic50(ic50)} µM · {confidence:.0f}% confidence", anchor, self, title=name, above=True
-        )
-
-    @classmethod
-    def _confidence_color(cls, confidence_percent: float) -> QColor:
-        t = max(0.0, min(1.0, confidence_percent / 100.0))
-        low, high = cls._LOW_CONFIDENCE_COLOR, cls._HIGH_CONFIDENCE_COLOR
-        return QColor(
-            int(low.red() + (high.red() - low.red()) * t),
-            int(low.green() + (high.green() - low.green()) * t),
-            int(low.blue() + (high.blue() - low.blue()) * t),
-            190,
-        )
+    def __init__(self, score: float, max_abs: float) -> None:
+        super().__init__()
+        self._score = score
+        self._fraction = math.sqrt(abs(score) / max_abs) if max_abs > 0 else 0.0
+        direction = "toward sensitivity" if score < 0 else "toward resistance"
+        self.setToolTip(f"{score:+.4g} · {direction}")
 
     def paintEvent(self, event) -> None:  # noqa: N802
-        """Paint a bordered plot area with one point per ranked drug prediction."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor(WINDOW_BACKGROUND))
+        centre_x = self.width() / 2
+        half_width = max(1.0, centre_x - self._SIDE_MARGIN)
+        bar_top = self.height() / 2 + 3
 
-        margin_left, margin_right = 10, 10
-        margin_top, margin_bottom = 10, 18
-        width = max(1, self.width() - margin_left - margin_right)
-        height = max(1, self.height() - margin_top - margin_bottom)
+        # Exact value in text ink, centred over the zero line.
+        font = QFont(painter.font())
+        font.setFamily("Consolas")
+        font.setPixelSize(12)
+        painter.setFont(font)
+        painter.setPen(QColor(TEXT))
+        text = f"{self._score:+.3g}"
+        text_width = painter.fontMetrics().horizontalAdvance(text)
+        painter.drawText(QPointF(centre_x - text_width / 2, bar_top - 6), text)
 
-        painter.setPen(QPen(QColor(SURFACE_CONTAINER), 1))
-        painter.drawRect(margin_left, margin_top, width, height)
-
-        if not self._points:
-            painter.setPen(QColor(TEXT_MUTED))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Waiting for results...")
-            return
-
-        ic50_values = [ic50 for ic50, _confidence, _name in self._points]
-        log_ic50 = [math.log10(max(ic50, 1e-6)) for ic50 in ic50_values]
-        lo, hi = min(log_ic50), max(log_ic50)
-        span = (hi - lo) or 1.0
-
-        hovered = self._hovered_index
+        # Faint full-width track: the scale the bar is measured against.
+        track = QRectF(self._SIDE_MARGIN, bar_top, 2 * half_width, self._BAR_HEIGHT)
         painter.setPen(Qt.PenStyle.NoPen)
-        self._hit_points = []
-        for index, ((_ic50, confidence, _name), log_value) in enumerate(zip(self._points, log_ic50)):
-            px = margin_left + int(((log_value - lo) / span) * width)
-            py = margin_top + int((1.0 - (confidence / 100.0)) * height)
-            color = self._confidence_color(confidence)
-            if hovered is not None and index != hovered:
-                color.setAlpha(self._DIMMED_ALPHA)
-            painter.setBrush(color)
-            centre = QPointF(px, py)
-            painter.drawEllipse(centre, self._DOT_RADIUS, self._DOT_RADIUS)
-            self._hit_points.append(centre)
+        painter.setBrush(QColor(SURFACE_CONTAINER))
+        painter.drawRoundedRect(track, self._BAR_RADIUS, self._BAR_RADIUS)
 
-        if hovered is not None and hovered < len(self._hit_points):
-            self._paint_hovered_dot(painter, hovered, margin_left, margin_top + height)
+        if self._score != 0:
+            length = max(self._MIN_BAR, self._fraction * half_width)
+            if self._score < 0:
+                bar = QRectF(centre_x - length, bar_top, length, self._BAR_HEIGHT)
+                square_end = QRectF(centre_x - min(length, self._BAR_RADIUS), bar_top, min(length, self._BAR_RADIUS), self._BAR_HEIGHT)
+                color = CONTRIBUTION_SENSITISING
+            else:
+                bar = QRectF(centre_x, bar_top, length, self._BAR_HEIGHT)
+                square_end = QRectF(centre_x, bar_top, min(length, self._BAR_RADIUS), self._BAR_HEIGHT)
+                color = CONTRIBUTION_RESISTANCE
+            # Rounded at the outer (data) end, square where it meets zero.
+            painter.setBrush(QColor(color))
+            painter.drawRoundedRect(bar, self._BAR_RADIUS, self._BAR_RADIUS)
+            painter.drawRect(square_end)
 
-        # Y-axis (confidence %) ticks.
+        # Zero line, drawn last so it sits on top of both bars.
         painter.setPen(QColor(TEXT_MUTED))
-        painter.drawText(margin_left + 4, margin_top + 12, "100%")
-        painter.drawText(margin_left + 4, margin_top + height - 4, "0%")
-
-        # X-axis (predicted IC50, uM) ticks -- real min/max of this run's points.
-        lo_text = _format_ic50(min(ic50_values))
-        painter.drawText(margin_left, margin_top + height + 14, lo_text)
-        hi_text = _format_ic50(max(ic50_values))
-        hi_text_width = painter.fontMetrics().horizontalAdvance(hi_text)
-        painter.drawText(margin_left + width - hi_text_width, margin_top + height + 14, hi_text)
-
-    def _paint_hovered_dot(self, painter: QPainter, index: int, axis_x: int, axis_y: int) -> None:
-        """Dashed guides from the hovered dot to both axes, then the dot itself
-        enlarged, ringed in white and haloed in its own color."""
-        centre = self._hit_points[index]
-        color = self._confidence_color(self._points[index][1])
-        color.setAlpha(255)
-
-        guide_pen = QPen(QColor(TEXT_MUTED), 1)
-        guide_pen.setStyle(Qt.PenStyle.DashLine)
-        painter.setPen(guide_pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawLine(QPointF(axis_x, centre.y()), centre)
-        painter.drawLine(centre, QPointF(centre.x(), axis_y))
-
-        halo = QColor(color)
-        halo.setAlpha(55)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(halo)
-        painter.drawEllipse(centre, self._HOVERED_DOT_RADIUS + 5, self._HOVERED_DOT_RADIUS + 5)
-
-        painter.setPen(QPen(QColor(SURFACE), 2))
-        painter.setBrush(color)
-        painter.drawEllipse(centre, self._HOVERED_DOT_RADIUS, self._HOVERED_DOT_RADIUS)
+        painter.drawLine(QPointF(centre_x, bar_top - 3), QPointF(centre_x, bar_top + self._BAR_HEIGHT + 3))
 
 
 class FinalResultsPage(QWidget):
-    """Displays the model's final predicted drug rankings and patient profile."""
+    """Displays the model's predicted drug rankings and explains the picked drug."""
 
     def __init__(
         self,
         parent: QWidget | None = None,
         on_upload_clicked: Callable[[], None] | None = None,
         on_model_running_clicked: Callable[[], None] | None = None,
+        on_analytics_clicked: Callable[[], None] | None = None,
     ) -> None:
         """Build the page.
 
@@ -471,56 +281,59 @@ class FinalResultsPage(QWidget):
             on_model_running_clicked: Invoked when the header's "Model
                 Running" tab is clicked; should navigate to the model
                 execution log page.
+            on_analytics_clicked: Invoked when the sidebar's "Model
+                Analytics" link is clicked; should navigate to the charts page.
         """
         super().__init__(parent)
         self.setObjectName("FinalResultsPage")
         self._on_upload_clicked = on_upload_clicked
         self._on_model_running_clicked = on_model_running_clicked
+        self._on_analytics_clicked = on_analytics_clicked
 
         self._results_worker: ResultsWorker | None = None
-        self._training_history_worker: TrainingHistoryWorker | None = None
         # Held on self because an unreferenced QThread is collected mid-flight.
         self._gene_worker: GeneAttributionWorker | None = None
         self._enrichment_worker: EnrichmentWorker | None = None
         self._run_id: str | None = None
         self._selected_drug_id: str | None = None
         self._visible_rows: list[DrugResult] = []
-        self._gene_table: QTableWidget | None = None
-        self._enrichment_table: QTableWidget | None = None
-        self._gene_panel_subtitle: QLabel | None = None
-        self._enrichment_status_label: QLabel | None = None
-        self._recovery_slot: QVBoxLayout | None = None
-        self._bio_host: QWidget | None = None
+        self._all_rows: list[DrugResult] = []
+
         self._table: QTableWidget | None = None
+        self._search_input: QLineEdit | None = None
+        self._rank_filter_combo: QComboBox | None = None
+        self._sort_combo: QComboBox | None = None
+        self._sample_id_label: QLabel | None = None
+
+        # Selected-drug pane.
+        self._pane: QFrame | None = None
+        self._pane_fade: QPropertyAnimation | None = None
+        self._top_match_chip: QLabel | None = None
         self._drug_name_label: QLabel | None = None
         self._drug_ic50_value: QLabel | None = None
         self._drug_confidence_value: QLabel | None = None
         self._drug_rank_slot: QVBoxLayout | None = None
-        self._sample_subtitle_label: QLabel | None = None
-        self._training_curve_widget: TrainingCurveWidget | None = None
-        self._performance_info_icon: QLabel | None = None
-        self._scatter_widget: PredictionScatterWidget | None = None
-        self._all_rows: list[DrugResult] = []
-        self._search_input: QLineEdit | None = None
-        self._rank_filter_combo: QComboBox | None = None
-        self._sort_combo: QComboBox | None = None
+        self._drug_target_label: QLabel | None = None
+        self._drug_pathway_label: QLabel | None = None
+        self._drug_position_label: QLabel | None = None
+        self._interpretation_host: QWidget | None = None
+        self._pathways_button: QPushButton | None = None
+        self._gene_table: QTableWidget | None = None
+        self._enrichment_table: QTableWidget | None = None
+        self._recovery_slot: QVBoxLayout | None = None
 
         self._build_ui()
 
     # -- live results -----------------------------------------------------
 
     def load_results(self, run_id: str) -> None:
-        """Fetch and display the ranked drug predictions and training curve for `run_id`."""
+        """Fetch and display the ranked drug predictions for `run_id`."""
         self._run_id = run_id
         self._selected_drug_id = None
         self._results_worker = ResultsWorker(run_id, parent=self)
         self._results_worker.succeeded.connect(self._on_results_succeeded)
         self._results_worker.failed.connect(self._on_results_failed)
         self._results_worker.start()
-
-        self._training_history_worker = TrainingHistoryWorker(run_id, parent=self)
-        self._training_history_worker.succeeded.connect(self._on_training_history_succeeded)
-        self._training_history_worker.start()
 
     def _on_results_succeeded(self, raw_results: list[dict]) -> None:
         rows = [
@@ -530,30 +343,17 @@ class FinalResultsPage(QWidget):
                 ic50=item["predicted_ic50_um"],
                 rank=item["ranking"],
                 confidence=item["confidence_percent"],
+                target=item.get("putative_target") or "",
+                pathway=item.get("pathway_name") or "",
             )
             for item in raw_results
         ]
         rows.sort(key=lambda row: row.ic50)
         self._all_rows = rows
-        self._populate_drug_details(rows[0] if rows else None)
-        if self._scatter_widget is not None:
-            self._scatter_widget.set_points([(row.ic50, row.confidence, row.name) for row in rows])
         self._apply_filters()
 
     def _on_results_failed(self, message: str) -> None:
         QMessageBox.critical(self, "Could Not Load Results", message)
-
-    def _on_training_history_succeeded(self, history: list[dict]) -> None:
-        # No failure handler wired -- the training curve is a supplementary
-        # panel, not worth interrupting the user with an error dialog if it
-        # can't be fetched; it just keeps showing its "waiting" state.
-        if self._training_curve_widget is not None:
-            self._training_curve_widget.set_history(history)
-            if self._performance_info_icon is not None:
-                mode = self._training_curve_widget._mode()
-                self._performance_info_icon.setToolTip(
-                    HELP["perf_curve"] if mode == "curve" else HELP["perf_checkpoint"]
-                )
 
     # -- export -------------------------------------------------------------
 
@@ -601,7 +401,7 @@ class FinalResultsPage(QWidget):
         ]
         for index, row in enumerate(self._all_rows, start=1):
             lines.append(f"{index}. {row.name}")
-            lines.append(f"   Predicted IC50: {_format_ic50(row.ic50)} uM")
+            lines.append(f"   Predicted IC50: {format_ic50(row.ic50)} uM")
             lines.append(f"   Sensitivity Ranking: {row.rank}")
             lines.append(f"   Confidence: {row.confidence:.1f}%")
             lines.append("")
@@ -614,6 +414,8 @@ class FinalResultsPage(QWidget):
             return
 
         QMessageBox.information(self, "Export Complete", f"Saved to {path}")
+
+    # -- layout -------------------------------------------------------------
 
     def _build_ui(self) -> None:
         """Lay out the sidebar, header, and scrollable body content."""
@@ -642,6 +444,7 @@ class FinalResultsPage(QWidget):
         body_layout.setSpacing(SECTION_SPACING)
 
         body_layout.addLayout(self._build_page_header())
+        body_layout.addWidget(self._build_sample_strip())
         body_layout.addLayout(self._build_panels_grid())
         body_layout.addStretch(1)
 
@@ -650,9 +453,13 @@ class FinalResultsPage(QWidget):
         root.addWidget(shell, 1)
 
     def _build_sidebar(self) -> QFrame:
-        """Build the shared sidebar (no model nav section on this page)."""
+        """Build the shared sidebar, with this page and the analytics page as nav links."""
+        nav_widgets = [
+            make_sidebar_nav_button("Drug Results", "insights", active=True),
+            make_sidebar_nav_button("Model Analytics", "analytics", callback=self._on_analytics_clicked),
+        ]
         footer_widgets = [make_sidebar_nav_button("Support", "help_outline")]
-        return build_sidebar(footer_widgets=footer_widgets, cta_widget=make_primary_cta_button())
+        return build_sidebar(nav_widgets, footer_widgets, cta_widget=make_primary_cta_button())
 
     def _build_header(self) -> QFrame:
         """Build the shared header bar with "Results" as the active tab."""
@@ -669,7 +476,7 @@ class FinalResultsPage(QWidget):
         title_col = QVBoxLayout()
         title = QLabel("Results")
         title.setStyleSheet(PAGE_TITLE_STYLE)
-        subtitle = QLabel("Predicted Drug Results and Patient Molecular Profile")
+        subtitle = QLabel("Predicted drug response for your cell line")
         subtitle.setStyleSheet(PAGE_SUBTITLE_STYLE)
         title_col.addWidget(title)
         title_col.addWidget(subtitle)
@@ -689,61 +496,91 @@ class FinalResultsPage(QWidget):
         title_row.addLayout(actions)
         return title_row
 
-    def _build_panels_grid(self) -> QGridLayout:
-        """Build the two-column grid of result panels.
+    def _build_sample_strip(self) -> QFrame:
+        """Build the sample profile strip: the cell line and omics every result is about.
 
-        Left column: predicted drug results table plus the IC50/scatter
-        charts. Right column: top-drug detail card and molecular profile
-        summary. Column widths are weighted 2:1 to give the data-dense left
-        column more room.
+        A full-width strip above the results rather than a side card, since
+        it's the context for everything on the page. Replaces the old
+        "Molecular Profile" card, which fabricated a patient ID and gene
+        mutations that don't exist anywhere in this cell-line-based pipeline.
+        """
+        strip = QFrame()
+        strip.setObjectName("SampleStrip")
+        strip.setStyleSheet(
+            f"QFrame#SampleStrip {{ background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 10px; }}"
+        )
+        row = QHBoxLayout(strip)
+        row.setContentsMargins(0, 0, 20, 0)
+        row.setSpacing(20)
+
+        accent = QFrame()
+        accent.setFixedWidth(SAMPLE_PROFILE_ACCENT_WIDTH)
+        accent.setStyleSheet(
+            f"background: {SAMPLE_PROFILE_ACCENT}; border: none;"
+            " border-top-left-radius: 9px; border-bottom-left-radius: 9px;"
+        )
+        row.addWidget(accent)
+
+        sample_col = QVBoxLayout()
+        sample_col.setContentsMargins(0, 14, 0, 14)
+        sample_col.setSpacing(2)
+        sample_title = QLabel("SAMPLE PROFILE")
+        sample_title.setStyleSheet(
+            label_style(f"font-size: 12px; font-weight: 700; letter-spacing: 0.05em; color: {TEXT};")
+        )
+        sample_id = QLabel("—")
+        sample_id.setStyleSheet(
+            label_style(
+                f"font-family: Consolas, monospace; font-size: 22px; font-weight: 700; color: {TEXT};"
+            )
+        )
+        self._sample_id_label = sample_id
+        sample_col.addWidget(sample_title)
+        sample_col.addWidget(sample_id)
+        row.addLayout(sample_col)
+
+        divider = QFrame()
+        divider.setFixedWidth(1)
+        divider.setStyleSheet(f"background: {SURFACE_CONTAINER}; border: none;")
+        row.addWidget(divider)
+
+        omics_col = QVBoxLayout()
+        omics_col.setContentsMargins(0, 14, 0, 14)
+        omics_col.setSpacing(6)
+        omics_title = QLabel("OMICS MODALITIES USED")
+        omics_title.setStyleSheet(LABEL_CAPS_STYLE)
+        chips = QHBoxLayout()
+        chips.setSpacing(8)
+        chips.addWidget(self._chip("Transcriptomics", primary=True, help_key="omics_transcriptomics"))
+        chips.addWidget(self._chip("Genomics (Mut/CNV)", help_key="omics_genomics"))
+        chips.addWidget(self._chip("Proteomics", help_key="omics_proteomics"))
+        chips.addStretch(1)
+        omics_col.addWidget(omics_title)
+        omics_col.addLayout(chips)
+        row.addLayout(omics_col, 1)
+
+        # !Hidden: Network Proximity is an empty placeholder box, out of
+        # scope for now — see _build_network_proximity_placeholder below.
+        # row.addWidget(self._build_network_proximity_placeholder())
+
+        return strip
+
+    def _build_panels_grid(self) -> QGridLayout:
+        """Build the results table and, beside it, the selected-drug pane.
+
+        Equal widths: the pane now carries the gene and pathway tables, so it
+        needs as much room as the drug list.
         """
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(SECTION_SPACING)
-        grid.setVerticalSpacing(SECTION_SPACING)
-
-        left_col = QVBoxLayout()
-        left_col.setSpacing(SECTION_SPACING)
-        left_col.addWidget(self._build_predicted_results_panel())
-
-        visuals = QGridLayout()
-        visuals.setContentsMargins(0, 0, 0, 0)
-        visuals.setHorizontalSpacing(SECTION_SPACING)
-        visuals.addWidget(self._build_ic50_panel(), 0, 0)
-        visuals.addWidget(self._build_scatter_panel(), 0, 1)
-        left_col.addLayout(visuals)
-
-        right_col = QVBoxLayout()
-        right_col.setSpacing(SECTION_SPACING)
-        right_col.addWidget(self._build_drug_details_panel())
-        right_col.addWidget(self._build_sample_profile_panel())
-        right_col.addStretch(1)
-
-        left_host = QWidget()
-        left_host.setLayout(left_col)
-        right_host = QWidget()
-        right_host.setLayout(right_col)
-
-        grid.addWidget(left_host, 0, 0)
-        grid.addWidget(right_host, 0, 1)
-        grid.setColumnStretch(0, 2)
+        grid.addWidget(self._build_predicted_results_panel(), 0, 0)
+        grid.addWidget(self._build_selected_drug_pane(), 0, 1)
+        grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
-
-        # Biological interpretation of whichever drug is selected above. Spans
-        # both columns: the pathway terms are long, and the body already sits
-        # in a scroll area so the extra height costs nothing.
-        bio = QGridLayout()
-        bio.setContentsMargins(0, 0, 0, 0)
-        bio.setHorizontalSpacing(SECTION_SPACING)
-        bio.addWidget(self._build_gene_panel(), 0, 0)
-        bio.addWidget(self._build_enrichment_panel(), 0, 1)
-        bio.setColumnStretch(0, 1)
-        bio.setColumnStretch(1, 2)
-        bio_host = QWidget()
-        bio_host.setLayout(bio)
-        self._bio_host = bio_host
-        grid.addWidget(bio_host, 1, 0, 1, 2)
         return grid
+
+    # -- predicted results table ---------------------------------------------
 
     def _build_predicted_results_panel(self) -> QFrame:
         """Build the "Predicted Drug Results Panel" card and its table.
@@ -760,7 +597,7 @@ class FinalResultsPage(QWidget):
         layout.setSpacing(0)
 
         header = QFrame()
-        header.setStyleSheet(f"background: {WINDOW_BACKGROUND}; border-bottom: 1px solid {SURFACE_CONTAINER};")
+        style_card_section(header, WINDOW_BACKGROUND, top=True)
         header_row = QHBoxLayout(header)
         header_row.setContentsMargins(16, 12, 16, 12)
         header_title = QLabel("Predicted Drug Results Panel")
@@ -771,7 +608,7 @@ class FinalResultsPage(QWidget):
         layout.addWidget(header)
 
         controls = QFrame()
-        controls.setStyleSheet(f"background: {SURFACE}; border-bottom: 1px solid {SURFACE_CONTAINER};")
+        style_card_section(controls, SURFACE)
         controls_row = QHBoxLayout(controls)
         controls_row.setContentsMargins(16, 10, 16, 10)
         controls_row.setSpacing(8)
@@ -781,21 +618,17 @@ class FinalResultsPage(QWidget):
         search_input.textChanged.connect(self._apply_filters)
         self._search_input = search_input
 
+        # Short option labels keep both dropdowns narrow enough to sit beside
+        # the search box now the table shares the page width with the pane.
         rank_filter_combo = QComboBox()
-        rank_filter_combo.addItems(["All Rankings", "HIGH SENSITIVITY", "MEDIUM", "LOW"])
+        rank_filter_combo.addItems(list(_RANK_FILTER_OPTIONS))
+        rank_filter_combo.setFixedWidth(_RANK_FILTER_WIDTH)
         rank_filter_combo.currentTextChanged.connect(self._apply_filters)
         self._rank_filter_combo = rank_filter_combo
 
         sort_combo = QComboBox()
-        sort_combo.addItems(
-            [
-                "IC50 (Low → High)",
-                "IC50 (High → Low)",
-                "Confidence (High → Low)",
-                "Confidence (Low → High)",
-                "Drug Name (A → Z)",
-            ]
-        )
+        sort_combo.addItems(list(self._SORT_OPTIONS))
+        sort_combo.setFixedWidth(_SORT_WIDTH)
         sort_combo.currentTextChanged.connect(self._apply_filters)
         self._sort_combo = sort_combo
 
@@ -805,31 +638,32 @@ class FinalResultsPage(QWidget):
         layout.addWidget(controls)
 
         table = QTableWidget(0, 4)
-        table.setHorizontalHeaderLabels(["Drug Name", "Predicted IC50 (uM)", "Sensitivity Ranking", "Confidence"])
+        table.setHorizontalHeaderLabels(["Drug Name", "IC50 (µM)", "Sensitivity", "Confidence"])
         set_header_help(table, {1: "col_ic50", 2: "col_rank", 3: "col_confidence"})
         style_data_table(table, header_background=WINDOW_BACKGROUND)
         # `style_data_table` makes tables non-selectable, which is right for the
-        # read-only ones. This one picks the drug the interpretation panels
-        # explain, so selection is re-enabled to give that click feedback.
+        # read-only ones. This one picks the drug the pane explains, so
+        # selection is re-enabled to give that click feedback.
         table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setCursor(Qt.CursorShape.PointingHandCursor)
         table.cellClicked.connect(self._on_row_clicked)
+        table.setItemDelegateForColumn(0, _SelectedRowMarkerDelegate(table))
         # The default highlight is near-black, which swallows the dark
         # confidence label and bar fill painted by the cell widgets. A light
         # tint keeps every cell's own colours readable on the selected row.
         palette = table.palette()
-        palette.setColor(QPalette.ColorRole.Highlight, QColor(SURFACE_HIGH))
+        palette.setColor(QPalette.ColorRole.Highlight, QColor(SELECTED_DRUG_TINT))
         palette.setColor(QPalette.ColorRole.HighlightedText, QColor(TEXT))
         table.setPalette(palette)
         table.setStyleSheet(
             table.styleSheet()
-            + f"QTableWidget::item:selected {{ background: {SURFACE_HIGH}; color: {TEXT}; }}"
+            + f"QTableWidget::item:selected {{ background: {SELECTED_DRUG_TINT}; color: {TEXT}; }}"
         )
-        table.setColumnWidth(0, 140)
-        table.setColumnWidth(1, 150)
-        table.setColumnWidth(2, 170)
-        table.setMinimumHeight(360)
+        table.setColumnWidth(0, 150)
+        table.setColumnWidth(1, 96)
+        table.setColumnWidth(2, 108)
+        table.setMinimumHeight(480)
         self._table = table
         self._populate_table([])
 
@@ -865,41 +699,40 @@ class FinalResultsPage(QWidget):
             name_item.setForeground(QColor(TEXT))
             table.setItem(row_index, 0, name_item)
 
-            ic50_item = QTableWidgetItem(_format_ic50(row.ic50))
+            ic50_item = QTableWidgetItem(format_ic50(row.ic50))
             ic50_item.setForeground(QColor(TEXT_MUTED))
             table.setItem(row_index, 1, ic50_item)
 
             tone = _RANK_TO_BADGE_TONE.get(row.rank, "neutral")
-            table.setCellWidget(row_index, 2, build_status_badge(row.rank, tone))
+            table.setCellWidget(row_index, 2, build_status_badge(_RANK_TABLE_LABELS.get(row.rank, row.rank), tone))
             table.setCellWidget(row_index, 3, self._build_confidence_cell(row.confidence))
 
     # Sort dropdown label -> (sort key, reverse). Keeps `_apply_filters`
     # itself free of a long if/elif chain.
     _SORT_OPTIONS: dict[str, tuple[Callable[["DrugResult"], object], bool]] = {
-        "IC50 (Low → High)": (lambda row: row.ic50, False),
-        "IC50 (High → Low)": (lambda row: row.ic50, True),
-        "Confidence (High → Low)": (lambda row: row.confidence, True),
-        "Confidence (Low → High)": (lambda row: row.confidence, False),
-        "Drug Name (A → Z)": (lambda row: row.name.lower(), False),
+        "Lowest IC50": (lambda row: row.ic50, False),
+        "Highest IC50": (lambda row: row.ic50, True),
+        "Most confident": (lambda row: row.confidence, True),
+        "Least confident": (lambda row: row.confidence, False),
+        "Name (A–Z)": (lambda row: row.name.lower(), False),
     }
 
     def _apply_filters(self) -> None:
         """Re-derive the table's rows from `self._all_rows` per the current
-        search/filter/sort controls, leaving `self._all_rows` itself (and
-        anything else driven from it, like the top-drug and scatter panels)
+        search/filter/sort controls, leaving `self._all_rows` itself
         untouched.
         """
         if self._search_input is None or self._rank_filter_combo is None or self._sort_combo is None:
             return
 
         search_text = self._search_input.text().strip().lower()
-        rank_filter = self._rank_filter_combo.currentText()
+        rank_filter = _RANK_FILTER_OPTIONS.get(self._rank_filter_combo.currentText())
 
         filtered = [
             row
             for row in self._all_rows
             if (not search_text or search_text in row.name.lower())
-            and (rank_filter == "All Rankings" or row.rank == rank_filter)
+            and (rank_filter is None or row.rank == rank_filter)
         ]
 
         sort_key, reverse = self._SORT_OPTIONS.get(self._sort_combo.currentText(), (lambda row: row.ic50, False))
@@ -909,301 +742,52 @@ class FinalResultsPage(QWidget):
         self._visible_rows = filtered
         self._populate_table(filtered, empty_message=empty_message)
 
-        # Explain the top row by default, so the interpretation panels are
-        # populated on arrival rather than waiting for a click. Re-selects only
-        # when the previous choice has been filtered away.
+        # Explain the top row by default, so the pane is populated on arrival
+        # rather than waiting for a click. Re-selects only when the previous
+        # choice has been filtered away.
         if filtered and not any(row.drug_id == self._selected_drug_id for row in filtered):
             self._select_drug(filtered[0])
+        self._sync_table_selection()
 
-    # -- biological interpretation -----------------------------------------
+    def _sync_table_selection(self) -> None:
+        """Mark the selected drug's row in the table, wherever sorting put it."""
+        table = self._table
+        if table is None:
+            return
+        for row_index, row in enumerate(self._visible_rows):
+            if row.drug_id == self._selected_drug_id:
+                table.selectRow(row_index)
+                return
+        table.clearSelection()
 
-    def set_supports_interpretation(self, supported: bool) -> None:
-        """Show or hide the interpretation panels for the current run's backend.
+    def show_drug(self, drug_id: str) -> None:
+        """Select the drug with `drug_id` and scroll its row into view.
 
-        Not every model can attribute a prediction to genes -- one trained on
-        PCA-projected omics has no per-gene identity left -- so the backend
-        declares the capability and the panels disappear entirely rather than
-        sitting permanently empty.
+        Used when a drug is picked elsewhere (the analytics page's scatter).
+        Clears the search/filter first if they would hide it.
         """
-        if self._bio_host is not None:
-            self._bio_host.setVisible(supported)
+        row = next((candidate for candidate in self._all_rows if candidate.drug_id == drug_id), None)
+        if row is None or self._search_input is None or self._rank_filter_combo is None:
+            return
+        if not any(candidate.drug_id == drug_id for candidate in self._visible_rows):
+            for control in (self._search_input, self._rank_filter_combo):
+                control.blockSignals(True)
+            self._search_input.clear()
+            self._rank_filter_combo.setCurrentIndex(0)
+            for control in (self._search_input, self._rank_filter_combo):
+                control.blockSignals(False)
+            self._apply_filters()
+        if row.drug_id != self._selected_drug_id:
+            self._select_drug(row)
+        table = self._table
+        if table is not None and table.currentRow() >= 0:
+            table.scrollToItem(table.item(table.currentRow(), 0), QTableWidget.ScrollHint.PositionAtCenter)
 
     def _on_row_clicked(self, row_index: int, _column: int) -> None:
         if 0 <= row_index < len(self._visible_rows):
-            self._select_drug(self._visible_rows[row_index])
-
-    def _select_drug(self, row: DrugResult) -> None:
-        """Fetch gene attribution and enrichment for one drug of the current run."""
-        if self._run_id is None:
-            return
-        self._selected_drug_id = row.drug_id
-
-        if self._gene_panel_subtitle is not None:
-            self._gene_panel_subtitle.setText(f"Driving {row.name}")
-        self._populate_gene_table([], empty_message="Attributing...")
-        self._populate_enrichment_table([], empty_message="Querying Enrichr...")
-        if self._enrichment_status_label is not None:
-            self._enrichment_status_label.setText("Loading...")
-
-        self._gene_worker = GeneAttributionWorker(self._run_id, row.drug_id, parent=self)
-        self._gene_worker.succeeded.connect(self._on_gene_attribution_succeeded)
-        self._gene_worker.failed.connect(self._on_gene_attribution_failed)
-        self._gene_worker.unsupported.connect(lambda: self.set_supports_interpretation(False))
-        self._gene_worker.start()
-
-        self._enrichment_worker = EnrichmentWorker(self._run_id, row.drug_id, parent=self)
-        self._enrichment_worker.succeeded.connect(self._on_enrichment_succeeded)
-        self._enrichment_worker.failed.connect(self._on_enrichment_failed)
-        self._enrichment_worker.start()
-
-    def _on_gene_attribution_succeeded(self, payload: dict) -> None:
-        self._populate_gene_table(payload.get("genes", []))
-        self._populate_recovery(payload.get("target_recovery", {}))
-
-    def _on_gene_attribution_failed(self, message: str) -> None:
-        # Supplementary panel: degrade in place rather than interrupting with a
-        # modal, the same policy the training-curve panel already follows.
-        self._populate_gene_table([], empty_message=message)
-
-    def _on_enrichment_succeeded(self, payload: dict) -> None:
-        terms = payload.get("terms", [])
-        status = payload.get("status", "")
-        message = payload.get("message", "")
-        self._populate_enrichment_table(
-            terms, empty_message=message or "No significantly enriched pathways."
-        )
-        if self._enrichment_status_label is not None:
-            self._enrichment_status_label.setText(
-                f"{len(terms)} enriched terms" if status == "ok" else (message or status)
-            )
-
-    def _on_enrichment_failed(self, message: str) -> None:
-        self._populate_enrichment_table([], empty_message=message)
-        if self._enrichment_status_label is not None:
-            self._enrichment_status_label.setText("Unavailable")
-
-    @staticmethod
-    def _importance_percent(score: float, max_abs: float) -> int:
-        """Bar fill for one gene's contribution, on a log scale.
-
-        Contributions span several orders of magnitude: a drug's own target
-        routinely scores ~100x everything else, because the target edge is the
-        drug node's only connection into the graph. Scaled linearly that leaves
-        one full bar above a column of invisible slivers, so magnitude is
-        compressed across five decades and the exact value shown as text.
-        """
-        if max_abs <= 0 or score == 0:
-            return 0
-        decades = 5.0
-        ratio = max(abs(score) / max_abs, 10.0 ** -decades)
-        return int(round(5 + 95 * max(0.0, 1.0 + math.log10(ratio) / decades)))
-
-    def _populate_gene_table(
-        self, genes: list[dict], empty_message: str = "Select a drug to see the genes behind it."
-    ) -> None:
-        table = self._gene_table
-        if table is None:
-            return
-        if not genes:
-            table.setRowCount(1)
-            item = QTableWidgetItem(empty_message)
-            item.setForeground(QColor(TEXT_MUTED))
-            table.setItem(0, 0, item)
-            table.setSpan(0, 0, 1, 4)
-            return
-
-        table.clearSpans()
-        table.setRowCount(len(genes))
-        max_abs = max(abs(float(gene["score"])) for gene in genes)
-        for row_index, gene in enumerate(genes):
-            score = float(gene["score"])
-
-            symbol_item = QTableWidgetItem(str(gene["gene_symbol"]))
-            symbol_item.setForeground(QColor(TEXT))
-            table.setItem(row_index, 0, symbol_item)
-
-            table.setCellWidget(row_index, 1, self._build_contribution_cell(score, max_abs))
-
-            direction_item = QTableWidgetItem("Sensitising" if score < 0 else "Resistance")
-            direction_item.setForeground(QColor(TEXT if score < 0 else TEXT_MUTED))
-            table.setItem(row_index, 2, direction_item)
-
-            if gene.get("is_drug_target"):
-                badge = build_status_badge("Drug target", "positive")
-            elif gene.get("is_driver_mutation"):
-                badge = build_status_badge("Driver mutation", "neutral")
-            else:
-                badge = build_status_badge("Network", "muted")
-            table.setCellWidget(row_index, 3, badge)
-
-    def _build_contribution_cell(self, score: float, max_abs: float) -> QWidget:
-        """Signed contribution as a numeric label over a log-scaled bar."""
-        wrapper = transparent_cell_widget()
-        layout = QVBoxLayout(wrapper)
-        layout.setContentsMargins(0, 8, 0, 8)
-        layout.setSpacing(4)
-
-        value = QLabel(f"{score:+.4g}")
-        value.setStyleSheet(
-            label_style(f"font-family: Consolas, monospace; font-size: 12px; color: {TEXT};")
-        )
-        layout.addWidget(value)
-        layout.addWidget(build_mini_progress_bar(self._importance_percent(score, max_abs)))
-        return wrapper
-
-    def _populate_recovery(self, recovery: dict) -> None:
-        """Show whether the drug's GDSC-annotated target came back in the top genes."""
-        slot = self._recovery_slot
-        if slot is None:
-            return
-        while slot.count():
-            item = slot.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-
-        if not recovery.get("checked"):
-            # `putative_target` is frequently a mechanism ("Microtubule
-            # destabiliser") rather than a gene, so there is nothing to check
-            # against -- say so instead of implying a failed recovery.
-            slot.addWidget(build_status_badge("No gene-level target annotated", "muted"))
-            return
-
-        recovered = recovery.get("recovered", [])
-        if recovered:
-            best = min(entry["rank"] for entry in recovered)
-            names = ", ".join(entry["gene_symbol"] for entry in recovered)
-            slot.addWidget(
-                build_status_badge(f"Known target recovered: {names} (rank {best})", "positive")
-            )
-        else:
-            targets = ", ".join(recovery.get("target_genes", []))
-            slot.addWidget(build_status_badge(f"Known target not in top genes ({targets})", "muted"))
-
-    def _populate_enrichment_table(
-        self, terms: list[dict], empty_message: str = "Select a drug to see enriched pathways."
-    ) -> None:
-        table = self._enrichment_table
-        if table is None:
-            return
-        if not terms:
-            table.setRowCount(1)
-            item = QTableWidgetItem(empty_message)
-            item.setForeground(QColor(TEXT_MUTED))
-            table.setItem(0, 0, item)
-            table.setSpan(0, 0, 1, 4)
-            return
-
-        table.clearSpans()
-        table.setRowCount(len(terms))
-        for row_index, term in enumerate(terms):
-            term_item = QTableWidgetItem(str(term["term"]))
-            term_item.setForeground(QColor(TEXT))
-            # The overlapping genes are the evidence behind the term; too many
-            # to show inline, but worth having on hover.
-            term_item.setToolTip(", ".join(term.get("genes", [])))
-            table.setItem(row_index, 0, term_item)
-
-            library_item = QTableWidgetItem(str(term["library"]).replace("_", " "))
-            library_item.setForeground(QColor(TEXT_MUTED))
-            table.setItem(row_index, 1, library_item)
-
-            p_item = QTableWidgetItem(f"{float(term['adjusted_p_value']):.2e}")
-            p_item.setForeground(QColor(TEXT_MUTED))
-            table.setItem(row_index, 2, p_item)
-
-            overlap_item = QTableWidgetItem(str(term["overlap"]))
-            overlap_item.setForeground(QColor(TEXT_MUTED))
-            table.setItem(row_index, 3, overlap_item)
-
-    def _build_gene_panel(self) -> QFrame:
-        card = QFrame()
-        card.setStyleSheet(CARD_CONTAINER_STYLE)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        header = QFrame()
-        header.setStyleSheet(
-            f"background: {WINDOW_BACKGROUND}; border-bottom: 1px solid {SURFACE_CONTAINER};"
-        )
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(16, 12, 16, 12)
-        header_layout.setSpacing(2)
-        title_row = QHBoxLayout()
-        title = QLabel("Top Contributing Genes")
-        title.setStyleSheet(CARD_TITLE_STYLE)
-        title_row.addWidget(title)
-        title_row.addStretch(1)
-        title_row.addWidget(make_info_icon("gene_panel"))
-        subtitle = QLabel("Select a drug")
-        subtitle.setStyleSheet(label_style(f"font-size: 12px; color: {TEXT_MUTED};"))
-        self._gene_panel_subtitle = subtitle
-        header_layout.addLayout(title_row)
-        header_layout.addWidget(subtitle)
-        layout.addWidget(header)
-
-        recovery_strip = QFrame()
-        recovery_strip.setStyleSheet(
-            f"background: {SURFACE}; border-bottom: 1px solid {SURFACE_CONTAINER};"
-        )
-        recovery_strip.setToolTip(HELP["target_recovery"])
-        recovery_layout = QVBoxLayout(recovery_strip)
-        recovery_layout.setContentsMargins(16, 10, 16, 10)
-        self._recovery_slot = recovery_layout
-        layout.addWidget(recovery_strip)
-
-        table = QTableWidget(0, 4)
-        table.setHorizontalHeaderLabels(["Gene", "Contribution", "Direction", "Evidence"])
-        set_header_help(table, {1: "col_contribution", 3: "col_evidence"})
-        style_data_table(table, header_background=WINDOW_BACKGROUND)
-        table.setColumnWidth(0, 90)
-        table.setColumnWidth(1, 120)
-        table.setColumnWidth(2, 100)
-        table.setMinimumHeight(360)
-        self._gene_table = table
-        layout.addWidget(table)
-
-        self._populate_gene_table([])
-        return card
-
-    def _build_enrichment_panel(self) -> QFrame:
-        card = QFrame()
-        card.setStyleSheet(CARD_CONTAINER_STYLE)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        header = QFrame()
-        header.setStyleSheet(
-            f"background: {WINDOW_BACKGROUND}; border-bottom: 1px solid {SURFACE_CONTAINER};"
-        )
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(16, 12, 16, 12)
-        title = QLabel("Pathway Enrichment")
-        title.setStyleSheet(CARD_TITLE_STYLE)
-        status = QLabel("")
-        status.setStyleSheet(label_style(f"font-size: 12px; color: {TEXT_MUTED};"))
-        self._enrichment_status_label = status
-        header_layout.addWidget(title)
-        header_layout.addStretch(1)
-        header_layout.addWidget(status)
-        header_layout.addWidget(make_info_icon("enrichment_panel"))
-        layout.addWidget(header)
-
-        table = QTableWidget(0, 4)
-        table.setHorizontalHeaderLabels(["Pathway / Term", "Library", "Adj. p-value", "Overlap"])
-        set_header_help(table, {2: "col_adj_p", 3: "col_overlap"})
-        style_data_table(table, header_background=WINDOW_BACKGROUND)
-        table.setColumnWidth(0, 340)
-        table.setColumnWidth(1, 170)
-        table.setColumnWidth(2, 100)
-        table.setMinimumHeight(412)
-        self._enrichment_table = table
-        layout.addWidget(table)
-
-        self._populate_enrichment_table([])
-        return card
+            row = self._visible_rows[row_index]
+            if row.drug_id != self._selected_drug_id:
+                self._select_drug(row)
 
     @staticmethod
     def _build_confidence_cell(confidence: float) -> QWidget:
@@ -1234,186 +818,462 @@ class FinalResultsPage(QWidget):
         layout.addWidget(build_mini_progress_bar(int(round(confidence))))
         return wrapper
 
-    def _build_ic50_panel(self) -> QFrame:
-        """Build the model performance chart card: a real per-epoch training
-        curve, or -- when the run loaded a pretrained checkpoint instead of
-        training -- a validation predicted-vs-actual scatter. See
-        `TrainingCurveWidget`."""
-        self._training_curve_widget = TrainingCurveWidget()
-        # The help text depends on which mode the chart ends up in, so it's
-        # re-keyed once the history arrives (`_on_training_history_succeeded`).
-        card, self._performance_info_icon = self._build_chart_panel(
-            "Model Performance", self._training_curve_widget, "perf_checkpoint"
-        )
-        return card
+    # -- selected-drug pane -----------------------------------------------------
 
-    def _build_scatter_panel(self) -> QFrame:
-        """Build the "Predicted IC50 vs. Confidence" chart card."""
-        self._scatter_widget = PredictionScatterWidget()
-        card, _info_icon = self._build_chart_panel(
-            "Predicted IC50 vs. Confidence", self._scatter_widget, "ic50_vs_confidence"
-        )
-        return card
+    def _build_selected_drug_pane(self) -> QFrame:
+        """Build the pane explaining the drug picked in the table.
+
+        A dark header (inverted from every other card, so it stands out)
+        carries the drug's prediction and annotation; below it, a segmented
+        toggle switches between the genes and the pathways behind that
+        prediction.
+        """
+        pane = QFrame()
+        pane.setStyleSheet(CARD_CONTAINER_STYLE)
+        layout = QVBoxLayout(pane)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._build_drug_header())
+
+        interpretation = QWidget()
+        interpretation_layout = QVBoxLayout(interpretation)
+        interpretation_layout.setContentsMargins(0, 0, 0, 0)
+        interpretation_layout.setSpacing(0)
+
+        toggle_bar = QFrame()
+        style_card_section(toggle_bar, SURFACE)
+        toggle_row = QHBoxLayout(toggle_bar)
+        toggle_row.setContentsMargins(16, 10, 16, 10)
+        segment = QFrame()
+        segment.setStyleSheet(f"background: {SELECTED_DRUG_TINT_STRONG}; border: none; border-radius: 8px;")
+        segment_row = QHBoxLayout(segment)
+        segment_row.setContentsMargins(3, 3, 3, 3)
+        segment_row.setSpacing(2)
+        genes_button = self._segment_button("Top genes", "gene_panel")
+        pathways_button = self._segment_button("Pathways", "enrichment_panel")
+        self._pathways_button = pathways_button
+        segment_row.addWidget(genes_button)
+        segment_row.addWidget(pathways_button)
+        toggle_row.addWidget(segment)
+        toggle_row.addStretch(1)
+        interpretation_layout.addWidget(toggle_bar)
+
+        stack = QStackedWidget()
+        stack.addWidget(self._build_genes_view())
+        stack.addWidget(self._build_pathways_view())
+        interpretation_layout.addWidget(stack, 1)
+
+        group = QButtonGroup(pane)
+        group.setExclusive(True)
+        group.addButton(genes_button, 0)
+        group.addButton(pathways_button, 1)
+        group.idClicked.connect(stack.setCurrentIndex)
+        genes_button.setChecked(True)
+
+        self._interpretation_host = interpretation
+        layout.addWidget(interpretation, 1)
+        self._pane = pane
+        return pane
 
     @staticmethod
-    def _build_chart_panel(title_text: str, chart_widget: QWidget, help_key: str) -> tuple[QFrame, QLabel]:
-        """Build a small card containing a caption, its "ⓘ" help icon, and a dashed-border chart frame.
+    def _segment_button(text: str, help_key: str) -> QPushButton:
+        button = QPushButton(text)
+        button.setCheckable(True)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setStyleSheet(_SEGMENT_BUTTON_STYLE)
+        button.setToolTip(HELP[help_key])
+        return button
 
-        Args:
-            title_text: Caption shown above the chart.
-            chart_widget: The chart widget to embed (already sized via its
-                own `minimumHeight`).
-            help_key: Key into `widgets.help.HELP` for the caption's help icon.
-
-        Returns:
-            The styled `QFrame` card, and its help icon so callers can swap
-            the tooltip later.
-        """
-        card = QFrame()
-        card.setStyleSheet(CARD_CONTAINER_STYLE)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 16, 16, 16)
+    def _build_drug_header(self) -> QFrame:
+        """The pane's dark header: the picked drug's name, prediction and annotation."""
+        header = QFrame()
+        style_card_section(header, SELECTED_DRUG_SURFACE, top=True, divider=None)
+        layout = QVBoxLayout(header)
+        layout.setContentsMargins(22, 18, 22, 18)
         layout.setSpacing(10)
 
-        title_row = QHBoxLayout()
-        title = QLabel(title_text)
-        title.setStyleSheet(LABEL_CAPS_STYLE)
-        info_icon = make_info_icon(help_key)
-        title_row.addWidget(title)
-        title_row.addStretch(1)
-        title_row.addWidget(info_icon)
-        layout.addLayout(title_row)
+        top_row = QHBoxLayout()
+        caption = QLabel("SELECTED DRUG")
+        caption.setStyleSheet(
+            label_style(f"font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: {_ON_DARK_MUTED};")
+        )
+        chip = QLabel("★  TOP PREDICTED MATCH")
+        chip.setStyleSheet(
+            f"background: {SURFACE}; color: {SELECTED_DRUG_SURFACE}; border: none; border-radius: 4px;"
+            " padding: 3px 8px;"
+            " font-size: 11px; font-weight: 700; letter-spacing: 0.05em;"
+        )
+        chip.setToolTip("Lowest predicted IC50 of all ranked drugs.")
+        chip.setVisible(False)
+        self._top_match_chip = chip
+        top_row.addWidget(caption)
+        top_row.addStretch(1)
+        top_row.addWidget(chip)
+        layout.addLayout(top_row)
 
-        chart_frame = QFrame()
-        chart_frame.setStyleSheet(f"background: {WINDOW_BACKGROUND}; border: 1px dashed {BORDER}; border-radius: 8px;")
-        chart_layout = QVBoxLayout(chart_frame)
-        chart_layout.setContentsMargins(8, 8, 8, 8)
-        chart_layout.addWidget(chart_widget)
-        layout.addWidget(chart_frame, 1)
-        return card, info_icon
+        name = QLabel("—")
+        name.setWordWrap(True)
+        name.setStyleSheet(label_style(f"font-size: 26px; font-weight: 600; color: {SELECTED_DRUG_TEXT};"))
+        self._drug_name_label = name
+        layout.addWidget(name)
 
-    def _build_drug_details_panel(self) -> QFrame:
-        """Build the top-ranked drug's detail card (name, predicted IC50, ranking, confidence).
-
-        Only shows values the model actually produces — no fabricated
-        chemistry (formula/weight/description); the repo has no drug
-        metadata source to back those with real data.
-        """
-        card = QFrame()
-        card.setStyleSheet(CARD_CONTAINER_STYLE)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
-
-        top = QHBoxLayout()
-        title_col = QVBoxLayout()
-        drug_name = QLabel("—")
-        drug_name.setStyleSheet(label_style(f"font-size: 24px; font-weight: 600; color: {TEXT};"))
-        self._drug_name_label = drug_name
-        subtitle = QLabel("Top Predicted Match")
-        subtitle.setStyleSheet(LABEL_CAPS_STYLE)
-        title_col.addWidget(drug_name)
-        title_col.addWidget(subtitle)
-        top.addLayout(title_col)
-        top.addStretch(1)
-        layout.addLayout(top)
-
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setStyleSheet(f"color: {BORDER};")
-        layout.addWidget(separator)
-
-        metadata = QGridLayout()
-        metadata.setHorizontalSpacing(16)
-        metadata.setVerticalSpacing(4)
-        ic50_label = QLabel("Predicted IC50 (uM)")
-        confidence_label = QLabel("Confidence")
+        metrics = QGridLayout()
+        metrics.setHorizontalSpacing(28)
+        metrics.setVerticalSpacing(2)
         ic50_value = QLabel("—")
         confidence_value = QLabel("—")
-        for label in (ic50_label, confidence_label):
-            label.setStyleSheet(LABEL_CAPS_STYLE)
-        for value in (ic50_value, confidence_value):
-            value.setStyleSheet(label_style(f"font-family: Consolas, monospace; font-size: 16px; color: {TEXT};"))
+        for column, (caption_text, value, help_key) in enumerate(
+            (("IC50 (µM)", ic50_value, "col_ic50"), ("CONFIDENCE", confidence_value, "col_confidence"))
+        ):
+            metric_caption = QLabel(caption_text)
+            metric_caption.setStyleSheet(
+                label_style(f"font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: {_ON_DARK_MUTED};")
+            )
+            metric_caption.setToolTip(HELP[help_key])
+            value.setStyleSheet(
+                label_style(
+                    f"font-family: Consolas, monospace; font-size: 18px; font-weight: 700; color: {SELECTED_DRUG_TEXT};"
+                )
+            )
+            metrics.addWidget(metric_caption, 0, column)
+            metrics.addWidget(value, 1, column)
+        ranking_caption = QLabel("RANKING")
+        ranking_caption.setStyleSheet(
+            label_style(f"font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: {_ON_DARK_MUTED};")
+        )
+        ranking_caption.setToolTip(HELP["col_rank"])
+        rank_slot = QVBoxLayout()
+        rank_slot.setContentsMargins(0, 2, 0, 0)
+        metrics.addWidget(ranking_caption, 0, 2)
+        metrics.addLayout(rank_slot, 1, 2)
+        metrics.setColumnStretch(3, 1)
         self._drug_ic50_value = ic50_value
         self._drug_confidence_value = confidence_value
-        metadata.addWidget(ic50_label, 0, 0)
-        metadata.addWidget(confidence_label, 0, 1)
-        metadata.addWidget(ic50_value, 1, 0)
-        metadata.addWidget(confidence_value, 1, 1)
-        layout.addLayout(metadata)
-
-        rank_slot = QVBoxLayout()
-        rank_slot.setContentsMargins(0, 4, 0, 0)
         self._drug_rank_slot = rank_slot
-        layout.addLayout(rank_slot)
+        layout.addLayout(metrics)
 
-        return card
+        annotation_style = label_style(f"font-size: 13px; color: {_ON_DARK_MUTED};")
+        target = QLabel()
+        pathway = QLabel()
+        position = QLabel("Pick a drug in the table")
+        for label in (target, pathway, position):
+            label.setWordWrap(True)
+            label.setStyleSheet(annotation_style)
+        target.setVisible(False)
+        pathway.setVisible(False)
+        self._drug_target_label = target
+        self._drug_pathway_label = pathway
+        self._drug_position_label = position
+        layout.addWidget(target)
+        layout.addWidget(pathway)
+        layout.addWidget(position)
+        return header
 
-    def _populate_drug_details(self, top_result: DrugResult | None) -> None:
-        """Fill the drug details card from the top-ranked real prediction."""
-        if top_result is None:
-            return
+    def _populate_drug_details(self, row: DrugResult) -> None:
+        """Fill the pane's dark header from the picked drug's real prediction."""
+        is_top_match = bool(self._all_rows) and row.drug_id == self._all_rows[0].drug_id
+        if self._top_match_chip is not None:
+            self._top_match_chip.setVisible(is_top_match)
         if self._drug_name_label is not None:
-            self._drug_name_label.setText(top_result.name)
+            self._drug_name_label.setText(row.name)
         if self._drug_ic50_value is not None:
-            self._drug_ic50_value.setText(_format_ic50(top_result.ic50))
+            self._drug_ic50_value.setText(format_ic50(row.ic50))
         if self._drug_confidence_value is not None:
-            self._drug_confidence_value.setText(f"{top_result.confidence:.1f}%")
+            self._drug_confidence_value.setText(f"{row.confidence:.1f}%")
         if self._drug_rank_slot is not None:
             while self._drug_rank_slot.count():
                 item = self._drug_rank_slot.takeAt(0)
                 widget = item.widget()
                 if widget is not None:
                     widget.deleteLater()
-            tone = _RANK_TO_BADGE_TONE.get(top_result.rank, "neutral")
-            self._drug_rank_slot.addWidget(build_status_badge(top_result.rank, tone))
+            tone = _RANK_TO_BADGE_TONE.get(row.rank, "neutral")
+            self._drug_rank_slot.addWidget(build_status_badge(row.rank, tone))
 
-    def _build_sample_profile_panel(self) -> QFrame:
-        """Build the sample profile card: target cell line + omics modalities used.
+        for label, prefix, value in (
+            (self._drug_target_label, "Target", row.target),
+            (self._drug_pathway_label, "Pathway", row.pathway),
+        ):
+            if label is not None:
+                label.setText(f"{prefix}  ·  {value}")
+                label.setVisible(bool(value))
+        if self._drug_position_label is not None:
+            position = next(
+                (index for index, candidate in enumerate(self._all_rows, start=1) if candidate.drug_id == row.drug_id),
+                None,
+            )
+            self._drug_position_label.setText(
+                f"#{position} of {len(self._all_rows)} by predicted IC50" if position is not None else ""
+            )
 
-        Replaces the old "Molecular Profile" card, which fabricated a
-        patient ID and gene mutations that don't exist anywhere in this
-        cell-line-based pipeline.
+    def _fade_in_pane(self) -> None:
+        """Briefly fade the pane in, so the eye follows a table click across to it.
+
+        The opacity effect is removed once the fade ends: a lingering graphics
+        effect would re-render the whole pane (tables included) offscreen on
+        every repaint.
         """
-        card = QFrame()
-        card.setStyleSheet(CARD_CONTAINER_STYLE)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        pane = self._pane
+        if pane is None:
+            return
+        if self._pane_fade is not None:
+            self._pane_fade.stop()
+        effect = QGraphicsOpacityEffect(pane)
+        pane.setGraphicsEffect(effect)
+        fade = QPropertyAnimation(effect, b"opacity", self)
+        fade.setDuration(180)
+        fade.setStartValue(0.35)
+        fade.setEndValue(1.0)
+        fade.finished.connect(lambda: pane.setGraphicsEffect(None))
+        fade.start()
+        self._pane_fade = fade
 
-        title = QLabel("Sample Profile")
-        title.setStyleSheet(CARD_TITLE_STYLE)
-        subtitle = QLabel("Cell Line: —")
-        subtitle.setStyleSheet(label_style(f"font-size: 14px; color: {TEXT_MUTED};"))
-        self._sample_subtitle_label = subtitle
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
+    # -- biological interpretation -----------------------------------------
 
-        modalities_title = QLabel("Omics Modalities Used")
-        modalities_title.setStyleSheet(LABEL_CAPS_STYLE)
-        layout.addWidget(modalities_title)
+    def set_supports_interpretation(self, supported: bool) -> None:
+        """Show or hide the genes/pathways views for the current run's backend.
 
-        chips = QHBoxLayout()
-        chips.setSpacing(8)
-        chips.addWidget(self._chip("Transcriptomics", primary=True, help_key="omics_transcriptomics"))
-        chips.addWidget(self._chip("Genomics (Mut/CNV)", help_key="omics_genomics"))
-        chips.addWidget(self._chip("Proteomics", help_key="omics_proteomics"))
-        chips.addStretch(1)
-        layout.addLayout(chips)
+        Not every model can attribute a prediction to genes -- one trained on
+        PCA-projected omics has no per-gene identity left -- so the backend
+        declares the capability and the views disappear entirely rather than
+        sitting permanently empty. The drug header stays either way.
+        """
+        if self._interpretation_host is not None:
+            self._interpretation_host.setVisible(supported)
 
-        # !Hidden: Network Proximity is an empty placeholder box, out of
-        # scope for now — see _build_network_proximity_placeholder below.
-        # network_title = QLabel("Network Proximity")
-        # network_title.setStyleSheet(LABEL_CAPS_STYLE)
-        # layout.addWidget(network_title)
-        # layout.addWidget(self._build_network_proximity_placeholder())
+    def _select_drug(self, row: DrugResult) -> None:
+        """Show `row` in the pane and fetch its gene attribution and enrichment."""
+        self._selected_drug_id = row.drug_id
+        self._populate_drug_details(row)
+        self._fade_in_pane()
+        self._sync_table_selection()
+        if self._run_id is None:
+            return
 
-        return card
+        self._populate_gene_table([], empty_message="Attributing...")
+        self._populate_recovery({"checked": None})
+        self._populate_enrichment_table([], empty_message="Querying Enrichr...")
+        if self._pathways_button is not None:
+            self._pathways_button.setText("Pathways")
+
+        self._gene_worker = GeneAttributionWorker(self._run_id, row.drug_id, parent=self)
+        self._gene_worker.succeeded.connect(self._on_gene_attribution_succeeded)
+        self._gene_worker.failed.connect(self._on_gene_attribution_failed)
+        self._gene_worker.unsupported.connect(lambda: self.set_supports_interpretation(False))
+        self._gene_worker.start()
+
+        self._enrichment_worker = EnrichmentWorker(self._run_id, row.drug_id, parent=self)
+        self._enrichment_worker.succeeded.connect(self._on_enrichment_succeeded)
+        self._enrichment_worker.failed.connect(self._on_enrichment_failed)
+        self._enrichment_worker.start()
+
+    def _on_gene_attribution_succeeded(self, payload: dict) -> None:
+        self._populate_gene_table(payload.get("genes", []))
+        self._populate_recovery(payload.get("target_recovery", {}))
+
+    def _on_gene_attribution_failed(self, message: str) -> None:
+        # Supplementary view: degrade in place rather than interrupting with a
+        # modal.
+        self._populate_gene_table([], empty_message=message)
+
+    def _on_enrichment_succeeded(self, payload: dict) -> None:
+        terms = payload.get("terms", [])
+        message = payload.get("message", "")
+        self._populate_enrichment_table(
+            terms, empty_message=message or "No significantly enriched pathways."
+        )
+        if self._pathways_button is not None:
+            self._pathways_button.setText(f"Pathways · {len(terms)}" if terms else "Pathways")
+
+    def _on_enrichment_failed(self, message: str) -> None:
+        self._populate_enrichment_table([], empty_message=message)
+        if self._pathways_button is not None:
+            self._pathways_button.setText("Pathways")
+
+    def _build_genes_view(self) -> QWidget:
+        view = QWidget()
+        layout = QVBoxLayout(view)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        recovery_strip = QFrame()
+        style_card_section(recovery_strip, SURFACE)
+        recovery_strip.setToolTip(HELP["target_recovery"])
+        recovery_layout = QVBoxLayout(recovery_strip)
+        recovery_layout.setContentsMargins(16, 10, 16, 10)
+        self._recovery_slot = recovery_layout
+        layout.addWidget(recovery_strip)
+
+        # No separate Direction column: the contribution bar's side (left =
+        # sensitising, right = resistance) and its signed value already carry it.
+        table = QTableWidget(0, 3)
+        table.setHorizontalHeaderLabels(["Gene", "Contribution", "Evidence"])
+        set_header_help(table, {1: "col_contribution", 2: "col_evidence"})
+        style_data_table(table, header_background=SELECTED_DRUG_TINT)
+        # Span the pane's full width at any window size: Gene and Evidence are
+        # fixed to fit their content (a symbol; the widest badge, "Driver
+        # mutation"), and the contribution bar gets all the rest.
+        header = table.horizontalHeader()
+        header.setStretchLastSection(False)
+        for column, (mode, width) in enumerate(
+            (
+                (QHeaderView.ResizeMode.Fixed, 84),
+                (QHeaderView.ResizeMode.Stretch, None),
+                (QHeaderView.ResizeMode.Fixed, 140),
+            )
+        ):
+            header.setSectionResizeMode(column, mode)
+            if width is not None:
+                table.setColumnWidth(column, width)
+        table.setMinimumHeight(300)
+        self._gene_table = table
+        layout.addWidget(table, 1)
+
+        self._populate_gene_table([])
+        self._populate_recovery({"checked": None})
+        return view
+
+    def _build_pathways_view(self) -> QWidget:
+        table = QTableWidget(0, 4)
+        table.setHorizontalHeaderLabels(["Pathway / Term", "Library", "Adj. p", "Overlap"])
+        set_header_help(table, {2: "col_adj_p", 3: "col_overlap"})
+        style_data_table(table, header_background=SELECTED_DRUG_TINT)
+        # Long term names take whatever width is left and elide; the full name
+        # is in each row's tooltip.
+        header = table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        table.setColumnWidth(1, 88)
+        table.setColumnWidth(2, 84)
+        table.setColumnWidth(3, 80)
+        table.setMinimumHeight(300)
+        self._enrichment_table = table
+        self._populate_enrichment_table([])
+        return table
+
+    def _populate_gene_table(
+        self, genes: list[dict], empty_message: str = "Pick a drug to see the genes behind it."
+    ) -> None:
+        table = self._gene_table
+        if table is None:
+            return
+        if not genes:
+            table.setRowCount(1)
+            item = QTableWidgetItem(empty_message)
+            item.setForeground(QColor(TEXT_MUTED))
+            table.setItem(0, 0, item)
+            table.setSpan(0, 0, 1, 3)
+            return
+
+        table.clearSpans()
+        table.setRowCount(len(genes))
+        max_abs = max(abs(float(gene["score"])) for gene in genes)
+        for row_index, gene in enumerate(genes):
+            score = float(gene["score"])
+
+            symbol_item = QTableWidgetItem(str(gene["gene_symbol"]))
+            symbol_item.setForeground(QColor(TEXT))
+            table.setItem(row_index, 0, symbol_item)
+
+            table.setCellWidget(row_index, 1, self._build_contribution_cell(score, max_abs))
+
+            if gene.get("is_drug_target"):
+                badge = build_status_badge("Drug target", "positive")
+            elif gene.get("is_driver_mutation"):
+                badge = build_status_badge("Driver mutation", "neutral")
+            else:
+                badge = build_status_badge("Network", "muted")
+            table.setCellWidget(row_index, 2, badge)
+
+    @staticmethod
+    def _build_contribution_cell(score: float, max_abs: float) -> QWidget:
+        """Signed contribution as a diverging bar (see `_ContributionBar`)."""
+        wrapper = transparent_cell_widget()
+        layout = QVBoxLayout(wrapper)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(_ContributionBar(score, max_abs))
+        return wrapper
+
+    def _populate_recovery(self, recovery: dict) -> None:
+        """Show whether the drug's GDSC-annotated target came back in the top genes.
+
+        `{"checked": None}` means "not known yet" (no drug picked, or still
+        attributing) and shows nothing.
+        """
+        slot = self._recovery_slot
+        if slot is None:
+            return
+        while slot.count():
+            item = slot.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        if recovery.get("checked") is None:
+            slot.addWidget(build_status_badge("Checking known target...", "muted"))
+            return
+        if not recovery.get("checked"):
+            # `putative_target` is frequently a mechanism ("Microtubule
+            # destabiliser") rather than a gene, so there is nothing to check
+            # against -- say so instead of implying a failed recovery.
+            slot.addWidget(build_status_badge("No gene-level target annotated", "muted"))
+            return
+
+        recovered = recovery.get("recovered", [])
+        if recovered:
+            best = min(entry["rank"] for entry in recovered)
+            names = ", ".join(entry["gene_symbol"] for entry in recovered)
+            slot.addWidget(
+                build_status_badge(f"Known target recovered: {names} (rank {best})", "positive")
+            )
+        else:
+            targets = ", ".join(recovery.get("target_genes", []))
+            slot.addWidget(build_status_badge(f"Known target not in top genes ({targets})", "muted"))
+
+    def _populate_enrichment_table(
+        self, terms: list[dict], empty_message: str = "Pick a drug to see enriched pathways."
+    ) -> None:
+        table = self._enrichment_table
+        if table is None:
+            return
+        if not terms:
+            table.setRowCount(1)
+            item = QTableWidgetItem(empty_message)
+            item.setForeground(QColor(TEXT_MUTED))
+            table.setItem(0, 0, item)
+            table.setSpan(0, 0, 1, 4)
+            return
+
+        table.clearSpans()
+        table.setRowCount(len(terms))
+        for row_index, term in enumerate(terms):
+            term_item = QTableWidgetItem(str(term["term"]))
+            term_item.setForeground(QColor(TEXT))
+            # The name is elided in the narrow pane, and the overlapping genes
+            # are the evidence behind the term: both are worth having on hover.
+            genes = ", ".join(term.get("genes", []))
+            term_item.setToolTip(f"{term['term']}\n{genes}" if genes else str(term["term"]))
+            table.setItem(row_index, 0, term_item)
+
+            library = str(term["library"])
+            library_item = QTableWidgetItem(_LIBRARY_SHORT_NAMES.get(library, library.split("_")[0]))
+            library_item.setForeground(QColor(TEXT_MUTED))
+            library_item.setToolTip(library.replace("_", " "))
+            table.setItem(row_index, 1, library_item)
+
+            p_item = QTableWidgetItem(f"{float(term['adjusted_p_value']):.1e}")
+            p_item.setForeground(QColor(TEXT_MUTED))
+            table.setItem(row_index, 2, p_item)
+
+            overlap_item = QTableWidgetItem(str(term["overlap"]))
+            overlap_item.setForeground(QColor(TEXT_MUTED))
+            table.setItem(row_index, 3, overlap_item)
+
+    # -- sample profile ---------------------------------------------------------
 
     def set_sample_id(self, sanger_model_id: str) -> None:
-        """Update the Sample Profile card's cell-line identifier."""
-        if self._sample_subtitle_label is not None:
-            self._sample_subtitle_label.setText(f"Cell Line: {sanger_model_id}")
+        """Update the sample strip's cell-line identifier."""
+        if self._sample_id_label is not None:
+            self._sample_id_label.setText(sanger_model_id)
 
     @staticmethod
     def _build_network_proximity_placeholder() -> QFrame:

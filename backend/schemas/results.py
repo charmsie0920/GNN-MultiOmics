@@ -24,7 +24,11 @@ class TrainingHistoryPoint(BaseModel):
     validation pair (when the backend loaded a pretrained checkpoint instead
     -- no epochs were run, so `actual_ln_ic50`/`predicted_ln_ic50` are set
     instead so the panel still has real data to plot). The client tells them
-    apart by which fields are non-None.
+    apart by `epoch` being set or not.
+
+    Every point, either shape, also carries `eval_val_rmse`/`eval_val_pcc`:
+    the backend's own validation metrics for the final model (see
+    `model_backends._common.attach_eval_metrics`), for the UI to report as-is.
     """
 
     epoch: int | None = None
@@ -33,6 +37,8 @@ class TrainingHistoryPoint(BaseModel):
     val_pcc: float | None = None
     actual_ln_ic50: float | None = None
     predicted_ln_ic50: float | None = None
+    eval_val_rmse: float | None = None
+    eval_val_pcc: float | None = None
 
 
 class GeneAttribution(BaseModel):

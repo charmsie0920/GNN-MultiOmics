@@ -31,7 +31,7 @@ from sklearn.model_selection import GroupShuffleSplit
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from backend.model_backends._common import enable_mc_dropout, rank_predictions
+from backend.model_backends._common import attach_eval_metrics, enable_mc_dropout, rank_predictions
 from backend.model_backends.base import ModelBackend
 from backend.model_backends.registry import register
 
@@ -581,7 +581,7 @@ class HeteroGNNBackend(ModelBackend):
                 # pairs from the same validation pass above.
                 history = _sample_val_scatter(val_preds, val_true)
                 log(f"[eval] no training curve to show (loaded from checkpoint) -- sending {len(history)} validation pairs instead")
-            on_training_history(history)
+            on_training_history(attach_eval_metrics(history, val_rmse, val_pcc))
 
             info = cell_info.get(target_cell_line, {})
             log(

@@ -54,6 +54,7 @@ from client.workers import RunStatusPoller
 from styles.theme import (
     BORDER,
     CARD_CONTAINER_STYLE,
+    CARD_RADIUS,
     CARD_TITLE_STYLE,
     PAGE_MARGIN,
     PAGE_SUBTITLE_STYLE,
@@ -67,6 +68,7 @@ from styles.theme import (
     TEXT_FAINT,
     TEXT_MUTED,
     WINDOW_BACKGROUND,
+    style_card_section,
 )
 from widgets.help import HELP
 from widgets.icons import icon_text
@@ -399,7 +401,7 @@ class ModelExecutionLogPage(QWidget):
         layout.setSpacing(0)
 
         header = QFrame()
-        header.setStyleSheet(f"background: {WINDOW_BACKGROUND}; border-bottom: 1px solid {SURFACE_CONTAINER};")
+        style_card_section(header, WINDOW_BACKGROUND, top=True)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(16, 12, 16, 12)
         header_title = QLabel("Active Pipeline Elements")
@@ -536,7 +538,7 @@ class ModelExecutionLogPage(QWidget):
     def _build_log_header(self) -> QFrame:
         """Build the log card's header: title, LIVE indicator, and download action."""
         header = QFrame()
-        header.setStyleSheet(f"background: #e2e2e2; border-bottom: 1px solid {BORDER};")
+        style_card_section(header, "#e2e2e2", top=True, divider=BORDER)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(16, 12, 16, 12)
 
@@ -573,7 +575,14 @@ class ModelExecutionLogPage(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("background: #1e1e1e; border: none;")
+        # Square top (it sits under the header strip) and rounded bottom to
+        # follow the card's outline; without explicit radii it inherits the
+        # card's 12px radius on all four corners (see `style_card_section`).
+        inner_radius = CARD_RADIUS - 1
+        scroll.setStyleSheet(
+            "background: #1e1e1e; border: none; border-radius: 0px;"
+            f" border-bottom-left-radius: {inner_radius}px; border-bottom-right-radius: {inner_radius}px;"
+        )
         scroll.setWidget(content)
         self._log_scroll = scroll
         return scroll

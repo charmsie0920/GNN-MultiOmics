@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QTableWidget
 
 from styles.theme import TEXT_MUTED, label_style
@@ -37,13 +36,14 @@ HELP: dict[str, str] = {
     "perf_curve": "Falling validation RMSE = model improving.",
     "perf_checkpoint": "Dots near the diagonal = accurate predictions.",
     "ic50_vs_confidence": "Top-left = strongest candidates. Hover a dot to see it.",
+    "kpi_rmse": "Typical prediction error on held-out data, in ln(IC50).",
     # -- final results page: sample profile --
     "omics_transcriptomics": "Gene expression (RNA) levels measured in the cell line.",
     "omics_genomics": "DNA mutations and gene copy-number gains or losses.",
     "omics_proteomics": "Protein abundance measured in the cell line.",
     # -- final results page: biological interpretation --
     "gene_panel": "Genes that most influenced this prediction.",
-    "col_contribution": "Negative = pushes toward sensitivity.",
+    "col_contribution": "Left = toward sensitivity, right = toward resistance (√ scale).",
     "col_evidence": "Drug target, driver mutation, or network link.",
     "target_recovery": "Is the drug's known target among the top genes?",
     "enrichment_panel": "Pathways enriched in the top genes (needs internet).",
@@ -60,7 +60,6 @@ def make_info_icon(key: str) -> QLabel:
     """
     icon = QLabel(icon_text("info"))
     icon.setStyleSheet(label_style(f"font-size: 16px; color: {TEXT_MUTED};"))
-    icon.setCursor(Qt.CursorShape.WhatsThisCursor)
     icon.setToolTip(HELP[key])
     return icon
 
