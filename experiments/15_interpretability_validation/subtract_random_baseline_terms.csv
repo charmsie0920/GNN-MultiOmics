@@ -1,0 +1,97 @@
+cell_line,drug,variant,term,library,adjusted_p_value,overlap
+SK-MEL-28,PLX-4720,raw,Disease R-HSA-1643685,Reactome_2022,7.750809485733759e-25,36/1736
+SK-MEL-28,PLX-4720,raw,Oncogenic MAPK Signaling R-HSA-6802957,Reactome_2022,7.791234556400668e-25,16/78
+SK-MEL-28,PLX-4720,raw,Signaling By BRAF And RAF1 Fusions R-HSA-6802952,Reactome_2022,1.6407730630851776e-24,15/62
+SK-MEL-28,PLX-4720,raw,Diseases Of Signal Transduction By Growth Factor Receptors And Second Messengers R-HSA-5663202,Reactome_2022,7.160181378725088e-22,22/424
+SK-MEL-28,PLX-4720,raw,Bladder cancer,KEGG_2021_Human,1.996913721877924e-20,12/41
+SK-MEL-28,PLX-4720,raw,Proteoglycans in cancer,KEGG_2021_Human,5.306029409167151e-20,17/205
+SK-MEL-28,PLX-4720,raw,Signaling By High-Kinase Activity BRAF Mutants R-HSA-6802948,Reactome_2022,1.720477592252633e-19,11/33
+SK-MEL-28,PLX-4720,raw,Glioma,KEGG_2021_Human,1.918473009964077e-19,13/75
+SK-MEL-28,PLX-4720,control_mean,Bladder cancer,KEGG_2021_Human,1.954198989859145e-20,12/41
+SK-MEL-28,PLX-4720,control_mean,Pathways in cancer,KEGG_2021_Human,5.649077632308377e-20,22/531
+SK-MEL-28,PLX-4720,control_mean,Melanoma,KEGG_2021_Human,1.0569573882307832e-19,13/72
+SK-MEL-28,PLX-4720,control_mean,Signaling By BRAF And RAF1 Fusions R-HSA-6802952,Reactome_2022,1.2123527662057666e-19,13/62
+SK-MEL-28,PLX-4720,control_mean,Glioma,KEGG_2021_Human,1.4080771156019765e-19,13/75
+SK-MEL-28,PLX-4720,control_mean,Endometrial cancer,KEGG_2021_Human,4.283700717360462e-19,12/58
+SK-MEL-28,PLX-4720,control_mean,Colorectal cancer,KEGG_2021_Human,6.210680419385898e-19,13/86
+SK-MEL-28,PLX-4720,control_mean,Hepatitis C,KEGG_2021_Human,6.210680419385898e-19,15/157
+SK-MEL-28,PLX-4720,residual,Oncogenic MAPK Signaling R-HSA-6802957,Reactome_2022,1.5631625166784934e-24,16/78
+SK-MEL-28,PLX-4720,residual,Signaling By BRAF And RAF1 Fusions R-HSA-6802952,Reactome_2022,2.4689235050209137e-24,15/62
+SK-MEL-28,PLX-4720,residual,Diseases Of Signal Transduction By Growth Factor Receptors And Second Messengers R-HSA-5663202,Reactome_2022,9.57702493558182e-22,22/424
+SK-MEL-28,PLX-4720,residual,Disease R-HSA-1643685,Reactome_2022,2.547092718644028e-21,33/1736
+SK-MEL-28,PLX-4720,residual,Bladder cancer,KEGG_2021_Human,1.9328416238497555e-20,12/41
+SK-MEL-28,PLX-4720,residual,Proteoglycans in cancer,KEGG_2021_Human,3.724892719299877e-20,17/205
+SK-MEL-28,PLX-4720,residual,Pathways in cancer,KEGG_2021_Human,3.724892719299877e-20,22/531
+SK-MEL-28,PLX-4720,residual,Melanoma,KEGG_2021_Human,7.840544560236546e-20,13/72
+SK-MEL-28,PLX-4720,zscore,Hepatitis B,KEGG_2021_Human,2.739965986362356e-05,7/162
+SK-MEL-28,PLX-4720,zscore,Neutrophil extracellular trap formation,KEGG_2021_Human,3.903547308793944e-05,7/189
+SK-MEL-28,PLX-4720,zscore,Natural killer cell mediated cytotoxicity,KEGG_2021_Human,4.2015759389868855e-05,6/131
+SK-MEL-28,PLX-4720,zscore,Lipid and atherosclerosis,KEGG_2021_Human,4.2015759389868855e-05,7/215
+SK-MEL-28,PLX-4720,zscore,Insulin signaling pathway,KEGG_2021_Human,4.2015759389868855e-05,6/137
+SK-MEL-28,PLX-4720,zscore,Apoptosis,KEGG_2021_Human,4.317744186366859e-05,6/142
+SK-MEL-28,PLX-4720,zscore,Non-alcoholic fatty liver disease,KEGG_2021_Human,5.810027486911645e-05,6/155
+SK-MEL-28,PLX-4720,zscore,Hepatitis C,KEGG_2021_Human,5.810027486911645e-05,6/157
+UACC-62,SB590885,raw,Oncogenic MAPK Signaling R-HSA-6802957,Reactome_2022,1.4722238168088328e-24,16/78
+UACC-62,SB590885,raw,Signaling By BRAF And RAF1 Fusions R-HSA-6802952,Reactome_2022,2.325291162747684e-24,15/62
+UACC-62,SB590885,raw,Signaling By High-Kinase Activity BRAF Mutants R-HSA-6802948,Reactome_2022,2.989143197706521e-24,13/33
+UACC-62,SB590885,raw,MAP2K And MAPK Activation R-HSA-5674135,Reactome_2022,1.3839838659895518e-23,13/37
+UACC-62,SB590885,raw,Signaling By RAF1 Mutants R-HSA-9656223,Reactome_2022,1.6800671634943176e-23,13/38
+UACC-62,SB590885,raw,Paradoxical Activation Of RAF Signaling By Kinase Inactive BRAF R-HSA-6802955,Reactome_2022,4.532548544736254e-23,13/41
+UACC-62,SB590885,raw,Disease R-HSA-1643685,Reactome_2022,6.368825353348637e-23,34/1736
+UACC-62,SB590885,raw,Diseases Of Signal Transduction By Growth Factor Receptors And Second Messengers R-HSA-5663202,Reactome_2022,4.236377183804679e-19,20/424
+UACC-62,SB590885,control_mean,Pathways in cancer,KEGG_2021_Human,1.04142216095126e-22,24/531
+UACC-62,SB590885,control_mean,Disease R-HSA-1643685,Reactome_2022,1.788245434738546e-19,32/1736
+UACC-62,SB590885,control_mean,Diseases Of Signal Transduction By Growth Factor Receptors And Second Messengers R-HSA-5663202,Reactome_2022,4.9995831977867657e-17,19/424
+UACC-62,SB590885,control_mean,Signal Transduction R-HSA-162582,Reactome_2022,2.3874149950044485e-15,32/2465
+UACC-62,SB590885,control_mean,Proteoglycans in cancer,KEGG_2021_Human,5.5378871117113614e-15,14/205
+UACC-62,SB590885,control_mean,Oncogenic MAPK Signaling R-HSA-6802957,Reactome_2022,7.121621265164862e-15,11/78
+UACC-62,SB590885,control_mean,Colorectal cancer,KEGG_2021_Human,9.414361184654e-15,11/86
+UACC-62,SB590885,control_mean,Endometrial cancer,KEGG_2021_Human,7.825818602206535e-13,9/58
+UACC-62,SB590885,residual,Oncogenic MAPK Signaling R-HSA-6802957,Reactome_2022,2.0769678204601452e-22,15/78
+UACC-62,SB590885,residual,Disease R-HSA-1643685,Reactome_2022,4.685689435241372e-21,33/1736
+UACC-62,SB590885,residual,Diseases Of Signal Transduction By Growth Factor Receptors And Second Messengers R-HSA-5663202,Reactome_2022,3.0205552309641115e-20,21/424
+UACC-62,SB590885,residual,Signaling By BRAF And RAF1 Fusions R-HSA-6802952,Reactome_2022,3.0205552309641115e-20,13/62
+UACC-62,SB590885,residual,Colorectal cancer,KEGG_2021_Human,3.542429150327285e-20,14/86
+UACC-62,SB590885,residual,Pathways in cancer,KEGG_2021_Human,5.432992695553413e-20,22/531
+UACC-62,SB590885,residual,Signaling By High-Kinase Activity BRAF Mutants R-HSA-6802948,Reactome_2022,1.5875069266053473e-19,11/33
+UACC-62,SB590885,residual,MAP2K And MAPK Activation R-HSA-5674135,Reactome_2022,5.802964201260896e-19,11/37
+UACC-62,SB590885,zscore,Signal Transduction R-HSA-162582,Reactome_2022,1.0431022590264884e-11,29/2465
+UACC-62,SB590885,zscore,Proteoglycans in cancer,KEGG_2021_Human,1.2847750248844822e-08,10/205
+UACC-62,SB590885,zscore,PIP3 Activates AKT Signaling R-HSA-1257604,Reactome_2022,1.3899234841321412e-08,11/268
+UACC-62,SB590885,zscore,Renal cell carcinoma,KEGG_2021_Human,2.2315367325373862e-08,7/69
+UACC-62,SB590885,zscore,Pathways in cancer,KEGG_2021_Human,2.2315367325373862e-08,13/531
+UACC-62,SB590885,zscore,Non-small cell lung cancer,KEGG_2021_Human,2.2315367325373862e-08,7/72
+UACC-62,SB590885,zscore,Chronic myeloid leukemia,KEGG_2021_Human,2.6295094363422912e-08,7/76
+UACC-62,SB590885,zscore,Intracellular Signaling By Second Messengers R-HSA-9006925,Reactome_2022,3.818555730368487e-08,11/306
+DU-4475,Dabrafenib,raw,Oncogenic MAPK Signaling R-HSA-6802957,Reactome_2022,8.950018715624848e-34,20/78
+DU-4475,Dabrafenib,raw,Signaling By BRAF And RAF1 Fusions R-HSA-6802952,Reactome_2022,8.950018715624848e-34,19/62
+DU-4475,Dabrafenib,raw,Signaling By High-Kinase Activity BRAF Mutants R-HSA-6802948,Reactome_2022,1.8986635597687758e-29,15/33
+DU-4475,Dabrafenib,raw,MAP2K And MAPK Activation R-HSA-5674135,Reactome_2022,1.2774442991114414e-28,15/37
+DU-4475,Dabrafenib,raw,Paradoxical Activation Of RAF Signaling By Kinase Inactive BRAF R-HSA-6802955,Reactome_2022,6.878095500184926e-28,15/41
+DU-4475,Dabrafenib,raw,Disease R-HSA-1643685,Reactome_2022,4.493113408687858e-27,37/1736
+DU-4475,Dabrafenib,raw,Signaling By RAF1 Mutants R-HSA-9656223,Reactome_2022,4.168672839779282e-26,14/38
+DU-4475,Dabrafenib,raw,Diseases Of Signal Transduction By Growth Factor Receptors And Second Messengers R-HSA-5663202,Reactome_2022,8.858150519664235e-24,23/424
+DU-4475,Dabrafenib,control_mean,Proteoglycans in cancer,KEGG_2021_Human,1.0328313930143547e-19,17/205
+DU-4475,Dabrafenib,control_mean,Disease R-HSA-1643685,Reactome_2022,1.8293182097413747e-19,32/1736
+DU-4475,Dabrafenib,control_mean,Endometrial cancer,KEGG_2021_Human,1.065073129179787e-18,12/58
+DU-4475,Dabrafenib,control_mean,Oncogenic MAPK Signaling R-HSA-6802957,Reactome_2022,1.5438770418785304e-18,13/78
+DU-4475,Dabrafenib,control_mean,Signaling By BRAF And RAF1 Fusions R-HSA-6802952,Reactome_2022,5.433441114999231e-18,12/62
+DU-4475,Dabrafenib,control_mean,Diseases Of Signal Transduction By Growth Factor Receptors And Second Messengers R-HSA-5663202,Reactome_2022,2.5572073069951747e-17,19/424
+DU-4475,Dabrafenib,control_mean,Signaling By High-Kinase Activity BRAF Mutants R-HSA-6802948,Reactome_2022,3.746924170450384e-17,10/33
+DU-4475,Dabrafenib,control_mean,Colorectal cancer,KEGG_2021_Human,1.1591079243043763e-16,12/86
+DU-4475,Dabrafenib,residual,Signaling By BRAF And RAF1 Fusions R-HSA-6802952,Reactome_2022,4.7893588488584825e-31,18/62
+DU-4475,Dabrafenib,residual,Oncogenic MAPK Signaling R-HSA-6802957,Reactome_2022,2.6875500702731264e-29,18/78
+DU-4475,Dabrafenib,residual,Signaling By High-Kinase Activity BRAF Mutants R-HSA-6802948,Reactome_2022,8.265376724955993e-27,14/33
+DU-4475,Dabrafenib,residual,MAP2K And MAPK Activation R-HSA-5674135,Reactome_2022,4.593072707209506e-26,14/37
+DU-4475,Dabrafenib,residual,Signaling By RAF1 Mutants R-HSA-9656223,Reactome_2022,5.808262316571452e-26,14/38
+DU-4475,Dabrafenib,residual,Paradoxical Activation Of RAF Signaling By Kinase Inactive BRAF R-HSA-6802955,Reactome_2022,1.755234387233223e-25,14/41
+DU-4475,Dabrafenib,residual,Disease R-HSA-1643685,Reactome_2022,2.8216355666968654e-24,35/1736
+DU-4475,Dabrafenib,residual,Diseases Of Signal Transduction By Growth Factor Receptors And Second Messengers R-HSA-5663202,Reactome_2022,8.815834513997049e-24,23/424
+DU-4475,Dabrafenib,zscore,Signaling By BRAF And RAF1 Fusions R-HSA-6802952,Reactome_2022,4.4021371929146485e-24,15/62
+DU-4475,Dabrafenib,zscore,Disease R-HSA-1643685,Reactome_2022,8.959257251375886e-24,35/1736
+DU-4475,Dabrafenib,zscore,Oncogenic MAPK Signaling R-HSA-6802957,Reactome_2022,6.710203727640468e-23,15/78
+DU-4475,Dabrafenib,zscore,Resolution Of D-loop Structures Thru Holliday Junction Intermediates R-HSA-5693568,Reactome_2022,1.5386605596328752e-19,11/33
+DU-4475,Dabrafenib,zscore,Signaling By High-Kinase Activity BRAF Mutants R-HSA-6802948,Reactome_2022,1.5386605596328752e-19,11/33
+DU-4475,Dabrafenib,zscore,Resolution Of D-Loop Structures R-HSA-5693537,Reactome_2022,1.8920924543413602e-19,11/34
+DU-4475,Dabrafenib,zscore,MAP2K And MAPK Activation R-HSA-5674135,Reactome_2022,4.820924105662898e-19,11/37
+DU-4475,Dabrafenib,zscore,Signaling By RAF1 Mutants R-HSA-9656223,Reactome_2022,5.926340431948408e-19,11/38
