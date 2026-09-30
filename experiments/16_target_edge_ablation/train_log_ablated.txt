@@ -1,0 +1,45 @@
+[setup] device=cuda  graph=ablated  seed=42
+epoch   1 | train 4.8825 | val rmse 1.4176 pcc 0.8779 | 4s
+epoch   2 | train 1.6889 | val rmse 1.3853 pcc 0.8829 | 8s
+epoch   3 | train 1.5972 | val rmse 1.3651 pcc 0.8836 | 11s
+epoch   4 | train 1.4986 | val rmse 1.3422 pcc 0.8876 | 15s
+epoch   5 | train 1.4260 | val rmse 1.3138 pcc 0.8893 | 19s
+epoch   6 | train 1.3882 | val rmse 1.3174 pcc 0.8895 | 22s
+epoch   7 | train 1.3395 | val rmse 1.3138 pcc 0.8912 | 26s
+epoch   8 | train 1.3088 | val rmse 1.2930 pcc 0.8939 | 29s
+epoch   9 | train 1.2856 | val rmse 1.2991 pcc 0.8922 | 33s
+epoch  10 | train 1.2520 | val rmse 1.2968 pcc 0.8932 | 37s
+epoch  11 | train 1.2372 | val rmse 1.3179 pcc 0.8929 | 40s
+epoch  12 | train 1.2127 | val rmse 1.2910 pcc 0.8933 | 44s
+epoch  13 | train 1.1919 | val rmse 1.2817 pcc 0.8949 | 48s
+epoch  14 | train 1.1782 | val rmse 1.2853 pcc 0.8942 | 51s
+epoch  15 | train 1.1562 | val rmse 1.2863 pcc 0.8945 | 55s
+epoch  16 | train 1.1356 | val rmse 1.3002 pcc 0.8930 | 59s
+epoch  17 | train 1.1267 | val rmse 1.2925 pcc 0.8932 | 62s
+epoch  18 | train 1.1108 | val rmse 1.2867 pcc 0.8939 | 66s
+epoch  19 | train 1.1004 | val rmse 1.2883 pcc 0.8944 | 70s
+epoch  20 | train 1.0532 | val rmse 1.2796 pcc 0.8955 | 74s
+epoch  21 | train 1.0407 | val rmse 1.2848 pcc 0.8943 | 77s
+epoch  22 | train 1.0258 | val rmse 1.2842 pcc 0.8945 | 81s
+epoch  23 | train 1.0185 | val rmse 1.2901 pcc 0.8942 | 85s
+epoch  24 | train 1.0141 | val rmse 1.2908 pcc 0.8940 | 88s
+epoch  25 | train 1.0009 | val rmse 1.2754 pcc 0.8958 | 92s
+epoch  26 | train 0.9979 | val rmse 1.2912 pcc 0.8938 | 96s
+epoch  27 | train 0.9939 | val rmse 1.2833 pcc 0.8947 | 99s
+epoch  28 | train 0.9857 | val rmse 1.2841 pcc 0.8947 | 103s
+epoch  29 | train 0.9884 | val rmse 1.2867 pcc 0.8939 | 106s
+epoch  30 | train 0.9829 | val rmse 1.2821 pcc 0.8948 | 110s
+epoch  31 | train 0.9598 | val rmse 1.2865 pcc 0.8939 | 113s
+epoch  32 | train 0.9458 | val rmse 1.2845 pcc 0.8952 | 117s
+epoch  33 | train 0.9343 | val rmse 1.2861 pcc 0.8946 | 121s
+epoch  34 | train 0.9265 | val rmse 1.2852 pcc 0.8945 | 124s
+epoch  35 | train 0.9242 | val rmse 1.2823 pcc 0.8946 | 128s
+epoch  36 | train 0.9154 | val rmse 1.2845 pcc 0.8947 | 131s
+epoch  37 | train 0.9190 | val rmse 1.2807 pcc 0.8952 | 135s
+epoch  38 | train 0.9008 | val rmse 1.2921 pcc 0.8941 | 139s
+epoch  39 | train 0.8971 | val rmse 1.2835 pcc 0.8948 | 142s
+epoch  40 | train 0.8929 | val rmse 1.2846 pcc 0.8951 | 146s
+[early stop] epoch 40, best epoch 25, val_rmse=1.2754
+
+[ablated] best epoch 25 | val rmse 1.2754 | test rmse 1.3121 pcc 0.8817 | 146s
+Saved -> experiments/16_target_edge_ablation/checkpoints/hetero_gnn_ablated_seed42.pt
