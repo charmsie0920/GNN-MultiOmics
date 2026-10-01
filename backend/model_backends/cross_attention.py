@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from backend.model_backends._common import enable_mc_dropout, rank_predictions
+from backend.model_backends._common import attach_eval_metrics, enable_mc_dropout, rank_predictions
 from backend.model_backends.base import ModelBackend
 from backend.model_backends.registry import register
 
@@ -225,7 +225,7 @@ class CrossAttentionBackend(ModelBackend):
 
         try:
             artifacts = _prepare_and_train(module)
-            on_training_history(history)
+            on_training_history(attach_eval_metrics(history, artifacts["val_rmse"]))
             log(f"[confidence] validation RMSE (ln IC50) = {artifacts['val_rmse']:.4f} -- used as the confidence scale")
             cell_info = artifacts["cell_info"].get(target_cell_line, {})
             log(

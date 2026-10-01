@@ -77,6 +77,23 @@ def rank_predictions(raw: list[dict], val_rmse: float, drug_info: dict[str, dict
     return results
 
 
+def attach_eval_metrics(history: list[dict], val_rmse: float, val_pcc: float | None = None) -> list[dict]:
+    """Stamp the backend's own post-training validation metrics onto every history point.
+
+    `val_rmse` here is the figure the backend logs as "[eval]/[confidence]
+    validation RMSE" and scales confidence by -- measured on the full
+    validation split with the final model. The history points alone can't
+    give the UI that number: per-epoch points carry each epoch's own RMSE,
+    and checkpoint-mode points are a down-sample of validation pairs. Carried
+    on every point (not just the first) so it survives any slicing, and the
+    endpoint's schema stays a flat list.
+    """
+    for point in history:
+        point["eval_val_rmse"] = float(val_rmse)
+        point["eval_val_pcc"] = None if val_pcc is None else float(val_pcc)
+    return history
+
+
 def enable_mc_dropout(model: nn.Module) -> None:
     """Put `model` in true eval mode, then re-enable train-mode only on
     Dropout layers, so BatchNorm keeps using its running stats (safe for

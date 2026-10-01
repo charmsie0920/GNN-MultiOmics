@@ -45,6 +45,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSpacerItem,
     QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -53,6 +54,7 @@ from client.workers import RunStatusPoller
 from styles.theme import (
     BORDER,
     CARD_CONTAINER_STYLE,
+    CARD_RADIUS,
     CARD_TITLE_STYLE,
     PAGE_MARGIN,
     PAGE_SUBTITLE_STYLE,
@@ -66,7 +68,9 @@ from styles.theme import (
     TEXT_FAINT,
     TEXT_MUTED,
     WINDOW_BACKGROUND,
+    style_card_section,
 )
+from widgets.help import HELP
 from widgets.icons import icon_text
 from widgets.navigation import (
     build_header_bar,
@@ -99,6 +103,14 @@ _PIPELINE_ROWS = [
     ("best_hetero_gnn.pt", "PENDING", "pending"),
     ("Hetero GNN Inference", "PENDING", "pending"),
 ]
+
+# Pipeline row filename -> `widgets.help.HELP` key, shown on hovering the row's file cell.
+_PIPELINE_ROW_HELP = {
+    "hetero_graph.pt": "file_graph",
+    "gdsc2_response_master.csv": "file_dataset",
+    "best_hetero_gnn.pt": "file_checkpoint",
+    "Hetero GNN Inference": "file_inference",
+}
 
 
 class ModelExecutionLogPage(QWidget):
@@ -317,6 +329,7 @@ class ModelExecutionLogPage(QWidget):
         remaining_label = QLabel("Est. Time Remaining: --")
         for label in (progress_label, remaining_label):
             label.setStyleSheet(f"font-size: 13px; font-family: Consolas, monospace; color: {TEXT_MUTED};")
+        progress_label.setToolTip(HELP["overall_progress"])
         self._progress_label = progress_label
         self._remaining_label = remaining_label
         labels_row.addWidget(progress_label)
@@ -388,7 +401,7 @@ class ModelExecutionLogPage(QWidget):
         layout.setSpacing(0)
 
         header = QFrame()
-        header.setStyleSheet(f"background: {WINDOW_BACKGROUND}; border-bottom: 1px solid {SURFACE_CONTAINER};")
+        style_card_section(header, WINDOW_BACKGROUND, top=True)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(16, 12, 16, 12)
         header_title = QLabel("Active Pipeline Elements")
@@ -419,6 +432,12 @@ class ModelExecutionLogPage(QWidget):
         if table is None:
             return
         for row_index, (filename, status, state) in enumerate(_PIPELINE_ROWS):
+            # The tooltip lives on an empty item beneath the cell widget rather
+            # than on the widget, so it survives the widget being rebuilt on
+            # every progress update; hover falls through the widget to the item.
+            help_item = QTableWidgetItem()
+            help_item.setToolTip(HELP[_PIPELINE_ROW_HELP[filename]])
+            table.setItem(row_index, 0, help_item)
             table.setCellWidget(row_index, 0, self._build_file_cell(filename, state))
             icon_name = "sync" if state == "active" else None
             table.setCellWidget(row_index, 1, build_status_badge(status, _STATE_TO_BADGE_TONE[state], icon_name=icon_name))
@@ -519,7 +538,7 @@ class ModelExecutionLogPage(QWidget):
     def _build_log_header(self) -> QFrame:
         """Build the log card's header: title, LIVE indicator, and download action."""
         header = QFrame()
-        header.setStyleSheet(f"background: #e2e2e2; border-bottom: 1px solid {BORDER};")
+        style_card_section(header, "#e2e2e2", top=True, divider=BORDER)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(16, 12, 16, 12)
 
@@ -556,7 +575,14 @@ class ModelExecutionLogPage(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("background: #1e1e1e; border: none;")
+        # Square top (it sits under the header strip) and rounded bottom to
+        # follow the card's outline; without explicit radii it inherits the
+        # card's 12px radius on all four corners (see `style_card_section`).
+        inner_radius = CARD_RADIUS - 1
+        scroll.setStyleSheet(
+            "background: #1e1e1e; border: none; border-radius: 0px;"
+            f" border-bottom-left-radius: {inner_radius}px; border-bottom-right-radius: {inner_radius}px;"
+        )
         scroll.setWidget(content)
         self._log_scroll = scroll
         return scroll
