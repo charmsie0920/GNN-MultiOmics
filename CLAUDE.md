@@ -12,6 +12,12 @@ phase finishes or a decision changes.
   components (below). Working name `PairGraphDRP` — placeholder, rename freely.
 - **Novelty component:** pair-specific cross-attention between a drug's target
   proteins and a cell line's driver-mutated proteins over the STRING PPI graph.
+- **Closest prior work: MIDI** (bioRxiv 2025.03.31.646490). It already uses
+  drug-target knowledge with attention over genes and tests mutated vs
+  wild-type cell lines. Do not claim to be first at either. Ours differs by
+  explicit target tokens, pair-specific weights and PPI topology. Limitation
+  to state: our component needs known targets (130 drugs have none).
+  See `docs/17_midi_review.md`.
 - **`HeteroIC50GNN` is no longer the final model.** It stays in the results
   table as a compared graph baseline. Its own diagnostics show why
   (`experiments/15_diagnostics/`): 95.8% of proteins unattached, 130 drugs with
@@ -23,9 +29,9 @@ phase finishes or a decision changes.
 |---|---|---|
 | Omics | expression, mutation, methylation, pathway | GE, Mut+CNV, **proteomics** |
 | Biological prior | none on the cell side | **STRING PPI + drug-target + driver-mutation edges** |
-| Cell-drug interaction | bilinear attention on two pooled vectors | bilinear **plus pair-specific target x mutation attention** |
+| Cell-drug interaction | bilinear attention on two pooled vectors | bilinear **plus pair-specific attention between known target proteins and mutated proteins over the PPI graph** (MIDI ranks genes per drug from structure; ours is per pair and uses targets as inputs) |
 | Target scaling | raw ln(IC50) | **per-drug standardisation** (cell-line split only) |
-| Evaluation | random pair split | **cell-line-grouped split**, seeds, per-drug-mean floor |
+| Evaluation | random pair split | cell-line-grouped split (also used by MIDI, so not a novelty claim), **seeds, per-drug-mean floor** |
 | Interpretability | none validated | attention/attribution tested against **untrained-model nulls** |
 
 Each row must be a switch and a row in the ablation table. A component that
@@ -55,19 +61,27 @@ make the model look different. MoGraphDRP is cited as the base architecture.
 
 ## Tasks
 
-### Phase 0 — Validate the base
-- [ ] Run `python "experiments/14_benchmark_alignment/benchmark_alignment.py"`
-      (never run so far; no results CSV exists).
-- [ ] Compare `MultiHeadBilinearAttention`, split code and hyperparameters
-      against the MoGraphDRP repo (not in this workspace; ask for its path).
-      The bilinear head was written from the paper text and is the likeliest
-      mismatch. Check their seed too.
-- [ ] Read MIDI (bioRxiv 2025.03.31.646490) in full: if its cross-attention
-      already uses target proteins on the drug side, the novelty claim must be
-      narrowed to the evaluation.
+### Phase 0 — Validate the base (passed 2026-10-01)
+- [x] Run `benchmark_alignment.py` for `aligned` under the random split,
+      seeds 42-44: test RMSE **0.978 +/- 0.002** (0.976 / 0.980 / 0.980).
+- [x] Compared against the MoGraphDRP repo and ported the differences into
+      `MoGraphDRPAligned`: BAN bilinear head (3 heads), `(512, 128)` predictor,
+      gated-sum drug fusion, halving fingerprint encoder, widening GCN with sum
+      pooling, no weight decay, no early stopping (200 epochs, constant LR).
+      Their training code sets no seed, so 0.9497 is one unreproducible draw.
+- [x] Read MIDI in full: see `docs/17_midi_review.md`. The novelty component
+      stands, with narrower wording (Direction section above).
 
 **Done when:** `aligned` under the random split is near 0.95 (their
 no-XGBoost figure), or the gap is explained by the documented data differences.
+
+**Result:** 0.978 vs their 0.9497, a gap of 0.029 (at the edge of the noise
+band). The architecture now follows their code; the remaining known differences
+are data (2 PCA omics vs 4 gene-filtered, Morgan only vs 3 fingerprints, our
+atom features, different pairs). Not tested: whether those explain the gap.
+`--seeds` varies initialisation only; the random split is fixed. Best epoch was
+195-200, so the model is still improving when their 200-epoch budget ends.
+**The base is now frozen.**
 
 ### Phase 1 — Additive ablation ladder (lecturer requirement)
 The lecturer requires **Base + a, Base + b, Base + c, ...**, where Base is the
@@ -93,7 +107,8 @@ Its `base+<name>` rung and its place in `full` follow automatically.
 ### Phase 2 — Run the ladder (3-5 seeds)
 - [ ] `python "experiments/14_benchmark_alignment/benchmark_alignment.py" --protocols grouped --seeds 42 43 44`
       (8 configs x 3 seeds; run on the GPU machine, in the background).
-- [ ] Random-split run of `aligned` for the Phase 0 sanity check.
+- [x] Random-split run of `aligned` for the Phase 0 sanity check (done in
+      Phase 0).
 - [ ] Decide whether `cross_attention` stays as-is: with one vector per
       modality its attention weights are always 1.0, so the rung currently
       measures the projection layers, not attention. Multi-token modalities
@@ -172,6 +187,7 @@ lines' edges in the graph is not leakage; say so in the report.
 | `experiments/15_diagnostics/` | why the old graph model underperforms |
 | `docs/09_split_protocol_comparison.md` | protocol vs architecture gap |
 | `docs/13_seed_variance_results.md` | noise band |
+| `docs/17_midi_review.md` | MIDI vs our novelty component |
 | `docs/CURRENTPLAN.md` | older plan, superseded by this file |
 
 ## Open questions

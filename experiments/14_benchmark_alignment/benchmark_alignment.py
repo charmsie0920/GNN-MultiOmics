@@ -79,9 +79,12 @@ RESULTS_CSV = Path("experiments/14_benchmark_alignment/benchmark_alignment_resul
 
 MODALITIES = [GE_KEY, PROTEOMICS_KEY]
 TORCH_SEED = 42
-WEIGHT_DECAY = 1e-5
-PATIENCE = 15
-LR_PATIENCE = 5
+# MoGraphDRP's trainer: plain Adam, and one patience of 200 for both the LR
+# scheduler and early stopping -- so within 200 epochs neither fires, and the
+# model trains the full schedule at a constant rate, keeping the best-val epoch.
+WEIGHT_DECAY = 0.0
+PATIENCE = 200
+LR_PATIENCE = 200
 
 # Each entry differs from `aligned` by exactly one switch, so the delta against
 # `aligned` measures that one component. `project_current` reproduces E10.
