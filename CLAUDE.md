@@ -53,6 +53,15 @@ make the model look different. MoGraphDRP is cited as the base architecture.
   is the frozen baseline.
 - **`docs/results.md` is generated.** Edit `experiments/build_results_table.py`
   and re-run; never hand-edit.
+- **Always update `src/ABLATION.md`.** It is the ablation write-up we present
+  from, and it is hand-written (unlike `docs/results.md`).
+  Whenever a ladder rung finishes, a component is added or dropped, a protocol
+  or seed set changes, or any number, table or conclusion that belongs in the
+  ablation story moves, put it in that file in the same session as the run —
+  mean +/- std, delta vs base, the per-drug-mean floor, and whether the rung
+  beat the noise band. Rejected components stay in the file, marked
+  tested-and-rejected. Never leave results only in a CSV, a log or a chat
+  reply.
 - Per-drug standardisation cannot be used under leave-drugs-out (unseen drugs
   have no statistics).
 - Hardware is a GTX 1650 (4 GB). Keep the graph full-batch and small; batch-128
@@ -186,6 +195,7 @@ lines' edges in the graph is not leakage; say so in the report.
 | `experiments/14_benchmark_alignment/` | ladder script |
 | `experiments/15_diagnostics/` | why the old graph model underperforms |
 | `docs/09_split_protocol_comparison.md` | protocol vs architecture gap |
+| `src/ABLATION.md` | ablation write-up; keep it current (see Rules) |
 | `docs/13_seed_variance_results.md` | noise band |
 | `docs/17_midi_review.md` | MIDI vs our novelty component |
 | `docs/CURRENTPLAN.md` | older plan, superseded by this file |
