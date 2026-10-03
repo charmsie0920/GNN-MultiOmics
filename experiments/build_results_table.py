@@ -66,6 +66,11 @@ def _per_drug_floor(df: pd.DataFrame) -> float:
         )
     return float(vals.median())
 ENSEMBLE_CSV = Path("experiments/08_ensemble_refinement/ensemble_results.csv")
+# Multi-seed, multi-protocol runs. Summarised in their own section rather than
+# ranked above: those rows are single grouped-split runs, these are mean +/- std
+# and include random-split rows that must never be ranked against them.
+ALIGNMENT_CSV = Path("experiments/14_benchmark_alignment/benchmark_alignment_results.csv")
+ABLATION_CSV = Path("src/final_model/results/ablation_results.csv")
 OUTPUT = Path("docs/results.md")
 
 METRICS = ["test_rmse", "test_mae", "test_r2", "test_pcc", "test_scc", "test_auc", "test_f1"]
@@ -99,6 +104,37 @@ def load_all() -> pd.DataFrame:
     if not later.empty:
         later["exp_id"] = [f"E{i:02d}" for i in range(len(legacy) + 1, len(legacy) + len(later) + 1)]
     return pd.concat([legacy, later], ignore_index=True)
+
+
+def seed_summary_rows(path: Path, drug_floor: float) -> str:
+    """Mean +/- std over seeds per (protocol, config), with the delta vs `base`.
+
+    `base` is the ladder's bottom rung; CSVs without one (the Phase 0
+    alignment run) show no delta. The floor gain is only meaningful under the
+    grouped split, which is the split the per-drug floor was measured on.
+    """
+    if not path.exists():
+        return "| _not run yet_ | | | | | | | |"
+    df = pd.read_csv(path)
+    lines = []
+    for protocol, block in df.groupby("protocol", sort=False):
+        stats = block.groupby("config", sort=False).agg(
+            omics=("omics", "first"),
+            n=("test_rmse", "size"),
+            mean=("test_rmse", "mean"),
+            std=("test_rmse", "std"),
+            pcc=("test_pcc", "mean"),
+        )
+        base = stats.loc["base", "mean"] if "base" in stats.index else None
+        for config, r in stats.sort_values("mean").iterrows():
+            std = f"{r['std']:.4f}" if r["n"] > 1 else "—"
+            delta = "—" if base is None else f"{r['mean'] - base:+.4f}"
+            gain = f"{drug_floor - r['mean']:+.4f}" if protocol == "grouped" else "n/a"
+            lines.append(
+                f"| `{config}` | {protocol} | {r['omics']} | {int(r['n'])} | "
+                f"{r['mean']:.4f} ± {std} | {delta} | {gain} | {r['pcc']:.4f} |"
+            )
+    return "\n".join(lines)
 
 
 def fmt_row(r: pd.Series) -> str:
@@ -164,6 +200,13 @@ def main() -> None:
         f"{r['test_pcc']:.4f} | {r['test_r2']:.4f} |"
         for _, r in per_family.iterrows()
     )
+
+    seed_header = (
+        "| Config | Split | Omics | Seeds | Test RMSE (mean ± std) | Δ vs base | "
+        "Gain over per-drug mean | PCC |\n|---|---|---|---|---|---|---|---|"
+    )
+    alignment_rows = seed_summary_rows(ALIGNMENT_CSV, drug_floor)
+    ablation_rows = seed_summary_rows(ABLATION_CSV, drug_floor)
 
     ens = pd.read_csv(ENSEMBLE_CSV) if ENSEMBLE_CSV.exists() else pd.DataFrame()
     ens_rows = "\n".join(
@@ -242,6 +285,29 @@ worst of the three configurations tested, and its recorded value is the
 favourable end of its own distribution. See
 [13_seed_variance_results](./13_seed_variance_results.md) before quoting any
 single number from this table.
+
+## Additive ablation ladder (final model)
+
+Base + one component at a time on the frozen MoGraphDRP-aligned model
+([`src/final_model/run_ablation.py`](../src/final_model/run_ablation.py); write-up
+in [`src/ABLATION.md`](../src/ABLATION.md)). Mean ± std over seeds. Negative Δ
+is better than `base`; a Δ smaller than ~{NOISE_THRESHOLD:.2f} is noise. The
+random-split rows are a sanity check only and are not comparable to the
+grouped rows.
+
+{seed_header}
+{ablation_rows}
+
+### Phase 0: MoGraphDRP alignment (random split)
+
+The aligned model under MoGraphDRP's own random pair split
+([`experiments/14_benchmark_alignment`](../experiments/14_benchmark_alignment/benchmark_alignment.py)).
+Their published figure without XGBoost is 0.9497 from one unseeded run, so
+this is a check that the reproduction is faithful, not a ranking. Uses
+GE+Proteomics, unlike the ladder's `aligned` (GE+Mut_CNV).
+
+{seed_header}
+{alignment_rows}
 
 ## Ensemble refinement (XGBoost, applied post-hoc)
 

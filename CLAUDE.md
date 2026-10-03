@@ -95,17 +95,17 @@ atom features, different pairs). Not tested: whether those explain the gap.
 ### Phase 1 — Additive ablation ladder (lecturer requirement)
 The lecturer requires **Base + a, Base + b, Base + c, ...**, where Base is the
 simplest pipeline that functions with none of the improvements, and Base plus
-everything is the final model. This is meant to be built in
-`experiments/14_benchmark_alignment/benchmark_alignment.py`.
+everything is the final model.
 
-**Status (checked 2026-10-03): not done as ticked below.** The ladder exists only
-in the uncommitted `src/final_model/run_ablation.py`, and its `model.py` is a
-pre-Phase-0 copy (4-head simple bilinear, weight decay 1e-5, early stopping,
-ReduceLROnPlateau). `experiments/14/benchmark_alignment.py` still has the old
-`CONFIGS` dict. Before Phase 2: move `BASE`/`COMPONENTS` into experiments/14
-on top of the frozen `MoGraphDRPAligned` and the Phase 0 training settings,
-delete the duplicate model, then re-run the smoke test. The ticks below
-describe `src/final_model/`, not experiments/14.
+**Decided 2026-10-03: all final experiments live in `src/final_model/`.**
+`experiments/` is history and is not extended; `experiments/14_benchmark_alignment/`
+keeps only the Phase 0 reproduction. The ladder is
+`src/final_model/run_ablation.py`, which imports the frozen `MoGraphDRPAligned`
+(no copy) and trains with the Phase 0 settings: Adam, lr 1e-4, weight decay 0,
+200 epochs, patience 200 for both early stopping and the LR scheduler (so
+neither fires), checkpoint on best validation RMSE. The earlier copy
+`src/final_model/model.py` (pre-Phase-0: 4-head simple bilinear, weight decay
+1e-5, early stopping) was deleted; no ladder result was produced with it.
 
 - [x] `BASE`: per-omics branches -> concat, Morgan fingerprint encoder,
       concat -> MLP head, raw ln(IC50), GE + Mut_CNV.
@@ -115,22 +115,107 @@ describe `src/final_model/`, not experiments/14.
       (= `base+mol_graph+bilinear`) and `full` (= base + every component).
 - [x] One row appended per finished run; finished runs are skipped on re-run
       (`--rerun` to repeat); `--out` for scratch runs; `--list` prints the ladder.
-- [x] Smoke-tested for 1 epoch on CPU (`base`, `base+std_targets`, `full`).
-- [ ] Register experiment 14 in `experiments/build_results_table.py`.
+- [x] Smoke-tested for 1 epoch on CPU (`base`, `base+std_targets`, `full`),
+      re-run 2026-10-03 on the frozen model.
+- [x] Registered in `experiments/build_results_table.py`: a separate
+      "Additive ablation ladder" section (mean +/- std, delta vs base, gain over
+      the per-drug floor) reading `src/final_model/results/ablation_results.csv`,
+      plus the Phase 0 random-split row from experiment 14. Kept out of the
+      single-run ranking because these rows are multi-seed and mix protocols.
+
+**Phase 1 done 2026-10-03.**
 
 **To add a component** (e.g. the pair module): add one entry to `COMPONENTS`
 that overrides one new `BASE` field, and thread that field into `run_one`.
 Its `base+<name>` rung and its place in `full` follow automatically.
 
 ### Phase 2 — Run the ladder (3-5 seeds)
-- [ ] `python "experiments/14_benchmark_alignment/benchmark_alignment.py" --protocols grouped --seeds 42 43 44`
-      (8 configs x 3 seeds; run on the GPU machine, in the background).
+
+**Status: ready to run, nothing run yet.** The next action is the runbook
+below. Do not edit the model or `run_ablation.py` before running; Phase 1
+froze them.
+
+#### Runbook (Colab)
+
+**What runs:** 8 configs x 3 seeds = **24 runs**, grouped split only (the
+random split was Phase 0). `--list` prints the 8 configs. Each run is 200
+epochs. Phase 0's `aligned` took 35-62 min per run on a GPU, so budget
+**~10-20 h in total**. A free Colab session ends after about 12 h, so run
+**one seed per session**.
+
+**Data:** five gitignored files (~68 MB) must be copied in. If they aren't on the
+shared Drive, get them from a teammate who has a local copy. Paths are relative to the repo root:
+
+| File | Size |
+|---|---|
+| `data/processed/transcriptomics_pca.csv` | 0.7 MB |
+| `data/processed/genomics_pca.csv` | 0.7 MB |
+| `data/processed/proteomics_pca.csv` | 0.7 MB |
+| `data/processed/aligned/gdsc2_response_master.csv` | 66 MB |
+| `data/raw/pubchem/gdsc_drug_smiles.csv` | 0.05 MB |
+
+The STRING graph (`src/graph/hetero_graph.pt`) is not needed until Phase 4.
+
+**Colab cells** (Runtime -> Change runtime type -> GPU). Set `DRIVE` to the
+folder holding the data and the results CSV:
+
+```
+from google.colab import drive; drive.mount('/content/drive')
+DRIVE = '/content/drive/MyDrive/FIT3161'
+!git clone -b dev https://github.com/charmsie0920/GNN-MultiOmics.git /content/repo
+%cd /content/repo
+!pip install -q torch_geometric rdkit      # keep Colab's own torch; do not pip install -r requirements.txt
+!mkdir -p data/processed/aligned data/raw/pubchem
+!cp {DRIVE}/data/processed/*_pca.csv data/processed/
+!cp {DRIVE}/data/processed/aligned/gdsc2_response_master.csv data/processed/aligned/
+!cp {DRIVE}/data/raw/pubchem/gdsc_drug_smiles.csv data/raw/pubchem/
+!git rev-parse HEAD                         # record this hash in src/ABLATION.md section 15
+!python src/final_model/run_ablation.py --list
+```
+
+Then, one seed per session (change `42` to `43`, then `44`):
+
+```
+!python src/final_model/run_ablation.py --protocols grouped --seeds 42 --out {DRIVE}/ablation_results.csv
+```
+
+- **`--out` must point at Drive.** One row is appended after each finished
+  run, so a disconnect loses only the run in progress. Re-running the same
+  command skips rows already in the CSV and resumes. Never delete or hand-edit
+  that CSV; `--rerun` repeats runs on purpose.
+- Every session must write to the **same** CSV and run from the **same
+  commit**. If `dev` has moved, `git checkout <hash>` first.
+- Expected sanity values: `per_drug_mean_rmse` = 1.4889 on every row, and
+  `best_epoch` usually late (Phase 0's was 195-200). After 200 epochs `base`
+  should be below 1.4889 (comparable earlier models reached ~1.28-1.33); if it
+  is not, stop and investigate. A 1-epoch `base` scores ~2.75, which is normal.
+
+**After all 24 rows exist** (on the local machine, from the repo root):
+
+1. Copy the Drive CSV to `src/final_model/results/ablation_results.csv`.
+2. `python experiments/build_results_table.py` regenerates `docs/results.md`
+   (section "Additive ablation ladder").
+3. Fill `src/ABLATION.md` by hand: section 5 (mean +/- std, delta vs base,
+   beyond the ~0.03 noise band?, gain over 1.4889), section 2 (seeds,
+   hardware), section 6 per component (`cross_attention` with its caveat),
+   section 7 (additivity), and the commit hash in section 15. A component
+   that does not beat the noise band is marked tested-and-rejected.
+4. Tick the boxes below, write the result under "Done when", and commit the
+   CSV, `docs/results.md`, `src/ABLATION.md` and this file together.
+
+- [ ] Seed 42 (8 runs)
+- [ ] Seed 43 (8 runs)
+- [ ] Seed 44 (8 runs)
+- [ ] Results table regenerated and `src/ABLATION.md` filled
 - [x] Random-split run of `aligned` for the Phase 0 sanity check (done in
       Phase 0).
-- [ ] Decide whether `cross_attention` stays as-is: with one vector per
-      modality its attention weights are always 1.0, so the rung currently
-      measures the projection layers, not attention. Multi-token modalities
-      would make it a real component.
+- [x] `cross_attention` stays in the ladder as-is (decided 2026-10-03). With
+      one vector per modality its attention weights are always 1.0, so the rung
+      measures the projection layers, not attention, and it *replaces* the
+      per-omics branches rather than adding to them. Report it with that
+      caveat; a gain cannot be credited to attention, and no gain does not
+      show attention fails. Multi-token modalities would make it a real
+      component (possible later rung).
 
 **Done when:** there is a table of mean +/- std and delta-vs-base per rung.
 A component that does not beat base by more than the noise band is reported as
@@ -201,7 +286,9 @@ lines' edges in the graph is not leakage; say so in the report.
 | `src/models/mographdrp_aligned.py` | frozen baseline with `fusion` / `head` / `drug_mode` switches |
 | `src/data/experiment_utils.py` | shared loading, splits, `evaluate`, floors |
 | `src/graph/hetero_graph.pt` | graph: 532 cell lines, 498 drugs, 16,214 proteins |
-| `experiments/14_benchmark_alignment/` | ladder script |
+| `src/final_model/run_ablation.py` | the ablation ladder; all final experiments run from here |
+| `src/final_model/results/ablation_results.csv` | ladder results, one row per run |
+| `experiments/14_benchmark_alignment/` | Phase 0 reproduction only (random split) |
 | `experiments/15_diagnostics/` | why the old graph model underperforms |
 | `docs/09_split_protocol_comparison.md` | protocol vs architecture gap |
 | `src/ABLATION.md` | ablation write-up; keep it current (see Rules) |

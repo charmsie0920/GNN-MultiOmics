@@ -53,8 +53,8 @@ from the compound label alone.
 |---|---|---|---|---|---|
 | MLP | Proteomics | fingerprint | 1.2843 | +0.2046 | +13.7% |
 | CrossAttention | GE+Proteomics | fingerprint | 1.3205 | +0.1684 | +11.3% |
-| HeteroIC50GNN | GE+Mut_CNV+Proteomics | fingerprint | 1.3301 | +0.1588 | +10.7% |
 | FullArchitecture-GCN | GE+Mut_CNV+Proteomics | molecular_graph | 1.3397 | +0.1492 | +10.0% |
+| HeteroIC50GNN | GE+Mut_CNV+Proteomics | fingerprint | 1.3449 | +0.1440 | +9.7% |
 | GNN-GCN | GE+Mut_CNV+Proteomics | fingerprint | 1.3513 | +0.1376 | +9.2% |
 | RF | GE+Proteomics | fingerprint | 1.3712 | +0.1177 | +7.9% |
 | GNN-GAT | GE+Mut_CNV+Proteomics | fingerprint | 2.2546 | -0.7657 | -51.4% |
@@ -69,8 +69,8 @@ any conclusion from differences between families.
 |---|---|---|---|---|---|
 | MLP | Proteomics | fingerprint | 1.2843 | 0.8866 | 0.7839 |
 | CrossAttention | GE+Proteomics | fingerprint | 1.3205 | 0.8837 | 0.7716 |
-| HeteroIC50GNN | GE+Mut_CNV+Proteomics | fingerprint | 1.3301 | 0.8805 | 0.7682 |
 | FullArchitecture-GCN | GE+Mut_CNV+Proteomics | molecular_graph | 1.3397 | 0.8774 | 0.7649 |
+| HeteroIC50GNN | GE+Mut_CNV+Proteomics | fingerprint | 1.3449 | 0.8767 | 0.7631 |
 | GNN-GCN | GE+Mut_CNV+Proteomics | fingerprint | 1.3513 | 0.8757 | 0.7608 |
 | RF | GE+Proteomics | fingerprint | 1.3712 | 0.8710 | 0.7537 |
 | GNN-GAT | GE+Mut_CNV+Proteomics | fingerprint | 2.2546 | 0.5865 | 0.3341 |
@@ -83,6 +83,31 @@ worst of the three configurations tested, and its recorded value is the
 favourable end of its own distribution. See
 [13_seed_variance_results](./13_seed_variance_results.md) before quoting any
 single number from this table.
+
+## Additive ablation ladder (final model)
+
+Base + one component at a time on the frozen MoGraphDRP-aligned model
+([`src/final_model/run_ablation.py`](../src/final_model/run_ablation.py); write-up
+in [`src/ABLATION.md`](../src/ABLATION.md)). Mean ± std over seeds. Negative Δ
+is better than `base`; a Δ smaller than ~0.03 is noise. The
+random-split rows are a sanity check only and are not comparable to the
+grouped rows.
+
+| Config | Split | Omics | Seeds | Test RMSE (mean ± std) | Δ vs base | Gain over per-drug mean | PCC |
+|---|---|---|---|---|---|---|---|
+| _not run yet_ | | | | | | | |
+
+### Phase 0: MoGraphDRP alignment (random split)
+
+The aligned model under MoGraphDRP's own random pair split
+([`experiments/14_benchmark_alignment`](../experiments/14_benchmark_alignment/benchmark_alignment.py)).
+Their published figure without XGBoost is 0.9497 from one unseeded run, so
+this is a check that the reproduction is faithful, not a ranking. Uses
+GE+Proteomics, unlike the ladder's `aligned` (GE+Mut_CNV).
+
+| Config | Split | Omics | Seeds | Test RMSE (mean ± std) | Δ vs base | Gain over per-drug mean | PCC |
+|---|---|---|---|---|---|---|---|
+| `aligned` | random | GE+Proteomics | 3 | 0.9784 ± 0.0025 | — | n/a | 0.9390 |
 
 ## Ensemble refinement (XGBoost, applied post-hoc)
 
@@ -102,9 +127,9 @@ cell-line leakage).
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | E04 | MLP | Proteomics | fingerprint | — | 111,799 | 1.2843 | 0.9721 | 0.7839 | 0.8866 | 0.8461 | 0.9153 | 0.8328 | 1,280,769 | 18.6 | [06_mlp_ablation_results](./06_mlp_ablation_results.md) |
 | E10 | CrossAttention | GE+Proteomics | fingerprint | — | 111,799 | 1.3205 | 0.9891 | 0.7716 | 0.8837 | 0.8424 | 0.9145 | 0.8305 | 742,017 | 181.4 | [06_cross_attention_ablation_results](./06_cross_attention_ablation_results.md) |
-| E11 | HeteroIC50GNN | GE+Mut_CNV+Proteomics | fingerprint | +mutation edges | 111,799 | 1.3301 | 0.9899 | 0.7682 | 0.8805 | 0.8382 | 0.9129 | 0.8366 | 2,815,489 | 114.4 | [hetero_gnn_test_bugfixes](./hetero_gnn_test_bugfixes.md) |
 | E60 | CrossAttention | GE+Proteomics | molecular_graph | — | 111,799 | 1.3331 | 0.9964 | 0.7672 | 0.8802 | 0.8349 | 0.9119 | 0.8284 | 501,377 | 159.1 | [11_molecular_graph_results](./11_molecular_graph_results.md) |
 | E61 | FullArchitecture-GCN | GE+Mut_CNV+Proteomics | molecular_graph | — | 111,799 | 1.3397 | 1.0062 | 0.7649 | 0.8774 | 0.8309 | 0.9087 | 0.8337 | 3,319,425 | 266.8 | [12_full_architecture_results](./12_full_architecture_results.md) |
+| E12 | HeteroIC50GNN | GE+Mut_CNV+Proteomics | fingerprint | +mutation edges | 111,799 | 1.3449 | 1.0087 | 0.7631 | 0.8767 | 0.8325 | 0.9101 | 0.8269 | 2,815,489 | 6252.1 | [hetero_gnn_test_bugfixes](./hetero_gnn_test_bugfixes.md) |
 | E13 | GNN-GCN | GE+Mut_CNV+Proteomics | fingerprint | +mutation edges | 111,799 | 1.3513 | 1.0175 | 0.7608 | 0.8757 | 0.8298 | 0.9081 | 0.8297 | 2,816,257 | 108.2 | [07_gnn_ablation_results](./07_gnn_ablation_results.md) |
 | E14 | CrossAttention | GE+Mut_CNV+Proteomics | fingerprint | — | 111,799 | 1.3589 | 1.0262 | 0.7581 | 0.8752 | 0.8297 | 0.9064 | 0.8165 | 1,138,305 | 154.7 | [06_cross_attention_ablation_results](./06_cross_attention_ablation_results.md) |
 | E15 | MLP | GE | fingerprint | — | 111,799 | 1.3639 | 1.0324 | 0.7563 | 0.8722 | 0.8273 | 0.9075 | 0.8271 | 1,280,769 | 60.2 | [06_mlp_ablation_results](./06_mlp_ablation_results.md) |
@@ -151,7 +176,7 @@ hands that to the model directly.
 | E07 | CrossAttention | GE+Mut_CNV | onehot | — | 134,764 | 1.2961 | 0.9701 | 0.7702 | 0.8810 | 0.8376 | 0.9132 | 0.8368 | 505,985 | 68.4 | [06_cross_attention_ablation_results](./06_cross_attention_ablation_results.md) |
 | E08 | CrossAttention | Mut_CNV+Proteomics | onehot_restricted | — | 111,799 | 1.2987 | 0.9693 | 0.7790 | 0.8840 | 0.8413 | 0.9148 | 0.8394 | 491,905 | 114.2 | [06_cross_attention_ablation_results](./06_cross_attention_ablation_results.md) |
 | E09 | CrossAttention | GE+Mut_CNV+Proteomics | onehot_restricted | — | 111,799 | 1.2992 | 0.9716 | 0.7789 | 0.8854 | 0.8426 | 0.9141 | 0.8384 | 888,193 | 201.5 | [06_cross_attention_ablation_results](./06_cross_attention_ablation_results.md) |
-| E12 | MLP | Proteomics | onehot_restricted | — | 111,799 | 1.3305 | 1.0096 | 0.7681 | 0.8765 | 0.8320 | 0.9085 | 0.8332 | 355,073 | 35.4 | [06_mlp_ablation_results](./06_mlp_ablation_results.md) |
+| E11 | MLP | Proteomics | onehot_restricted | — | 111,799 | 1.3305 | 1.0096 | 0.7681 | 0.8765 | 0.8320 | 0.9085 | 0.8332 | 355,073 | 35.4 | [06_mlp_ablation_results](./06_mlp_ablation_results.md) |
 | E16 | CrossAttention | GE+Mut_CNV | onehot_restricted | — | 111,799 | 1.3667 | 1.0153 | 0.7553 | 0.8713 | 0.8248 | 0.9057 | 0.8303 | 491,905 | 84.5 | [06_cross_attention_ablation_results](./06_cross_attention_ablation_results.md) |
 | E21 | MLP | GE | onehot_restricted | — | 111,799 | 1.3906 | 1.0570 | 0.7467 | 0.8667 | 0.8226 | 0.9040 | 0.8254 | 355,073 | 209.4 | [06_mlp_ablation_results](./06_mlp_ablation_results.md) |
 | E24 | MLP | GE | onehot | — | 134,764 | 1.3995 | 1.0727 | 0.7321 | 0.8602 | 0.8122 | 0.8990 | 0.8161 | 383,233 | 212.7 | [06_mlp_ablation_results](./06_mlp_ablation_results.md) |

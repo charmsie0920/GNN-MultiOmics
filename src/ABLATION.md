@@ -1,9 +1,9 @@
 # Ablation Study — Base + One Component at a Time
 
-**Script:** [`src/final_model/run_ablation.py`](../src/final_model/run_ablation.py)
-**Model:** [`src/final_model/model.py`](../src/final_model/model.py)
+**Script:** [`src/final_model/run_ablation.py`](./final_model/run_ablation.py)
+**Model:** [`src/models/mographdrp_aligned.py`](./models/mographdrp_aligned.py) (frozen Phase 0 baseline, imported by the script)
 **Raw results:** `src/final_model/results/ablation_results.csv`
-**Companions:** [`results.md`](./results.md), [`13_seed_variance_results.md`](./13_seed_variance_results.md), [`09_split_protocol_comparison.md`](./09_split_protocol_comparison.md)
+**Companions:** [`results.md`](../docs/results.md), [`13_seed_variance_results.md`](../docs/13_seed_variance_results.md), [`09_split_protocol_comparison.md`](../docs/09_split_protocol_comparison.md)
 **Date:** TBD · **Runtime:** TBD · **Hardware:** TBD
 **Status:** DRAFT TEMPLATE. Every `TBD` is to be filled from the results CSV; no number in this file is a result yet.
 
@@ -38,10 +38,10 @@ These must be identical for every rung, otherwise a delta is not attributable.
 | Epochs / early stopping | 200 epochs, **no early stopping** (Phase 0 frozen base) |
 | LR schedule | **constant** (Phase 0 frozen base) |
 
-> Note (2026-10-03): `src/final_model/run_ablation.py` still uses the
-> pre-Phase-0 settings (weight decay 1e-5, patience 15, ReduceLROnPlateau, 4-head
-> simple bilinear). The ladder must use the frozen settings above before any
-> number goes into this file.
+Early-stopping and LR-scheduler patience are both 200, so neither fires within
+the 200-epoch budget. The model is the frozen `MoGraphDRPAligned` (BAN
+bilinear head with 3 heads, (512, 128) predictor, gated-sum drug fusion).
+Aligned to these settings on 2026-10-03; no ladder run predates that.
 | Checkpoint | best validation RMSE, in ln(IC50) units |
 | Seeds | TBD (list them) |
 | Metrics | RMSE, MAE, R², PCC, SCC; AUC and F1 at the shared median threshold |
@@ -54,7 +54,7 @@ Reference floors on the same test fold:
 | **Per-drug training mean** (no omics, no model) | **1.4889** |
 
 **Noise band:** TBD from this study's own seeds (std of `base`). Until then use
-~0.03 RMSE from [13_seed_variance](./13_seed_variance_results.md). A delta
+~0.03 RMSE from [13_seed_variance](../docs/13_seed_variance_results.md). A delta
 smaller than the band is reported as "no measurable effect".
 
 ## 3. The base
@@ -115,7 +115,7 @@ Negative Δ means better than base.
 
 **Is each delta real?** Fill one line per component:
 
-| Component | Δ RMSE | Seeds where it beat base | Test used (TBD: paired bootstrap over test cell lines, as in [16](./16_target_edge_ablation_results.md)) | 95% CI | Verdict |
+| Component | Δ RMSE | Seeds where it beat base | Test used (TBD: paired bootstrap over test cell lines, as in [16](../docs/16_target_edge_ablation_results.md)) | 95% CI | Verdict |
 |---|---|---|---|---|---|
 | a | TBD | TBD / TBD | TBD | TBD | helps / no effect / hurts |
 | b | TBD | | | | |
@@ -137,7 +137,7 @@ consistently.
 
 ### b. Molecular-graph GCN
 - **Result / Interpretation / Why / Cost:** TBD
-- Compare with [11_molecular_graph_results](./11_molecular_graph_results.md), where the single-run ranking reversed across seeds.
+- Compare with [11_molecular_graph_results](../docs/11_molecular_graph_results.md), where the single-run ranking reversed across seeds.
 
 ### c. Bilinear head
 - **Result / Interpretation / Why / Cost:** TBD
@@ -145,7 +145,7 @@ consistently.
 
 ### d. Proteomics
 - **Result / Interpretation / Why / Cost:** TBD
-- Earlier flat-model result to reconcile: Mut_CNV hurt (E32 vs E04 in [results.md](./results.md)).
+- Earlier flat-model result to reconcile: Mut_CNV hurt (E32 vs E04 in [results.md](../docs/results.md)).
 
 ### e. Per-drug target standardisation
 - **Result / Interpretation / Why / Cost:** TBD
@@ -231,7 +231,7 @@ Not a ranking. It checks that the reproduction (`aligned`) is faithful.
   GE+Mut_CNV. The two are not directly comparable.
 
 Protocol gap for the final model (random − grouped): TBD. Compare with the
-0.347 measured in [09](./09_split_protocol_comparison.md).
+0.347 measured in [09](../docs/09_split_protocol_comparison.md).
 
 ## 10. Comparison with the other models on the same pairs
 
@@ -242,15 +242,15 @@ Same 111,799 pairs, same grouped split. TBD seeds each.
 | Per-drug mean | 1.4889 | — | floor |
 | RF | TBD | TBD | |
 | MLP | TBD | TBD | |
-| CrossAttention (E10) | 1.3029 ± 0.0126 | TBD | 5 seeds, [13](./13_seed_variance_results.md) |
+| CrossAttention (E10) | 1.3029 ± 0.0126 | TBD | 5 seeds, [13](../docs/13_seed_variance_results.md) |
 | HeteroIC50GNN (E11) | TBD | TBD | single run 1.3301 |
 | `aligned` (MoGraphDRP-style) | TBD | TBD | |
 | **Final model** | TBD | TBD | |
 
 ## 11. Further checks (fill if run)
 
-- **Leave-drugs-out** (unseen compounds, no standardisation): TBD vs the MLP's 1.8516 in [10](./10_leave_drugs_out_results.md).
-- **Interpretability:** does attention on BRAF track measured sensitivity against untrained models? TBD, see [15](./15_interpretability_validation_results.md).
+- **Leave-drugs-out** (unseen compounds, no standardisation): TBD vs the MLP's 1.8516 in [10](../docs/10_leave_drugs_out_results.md).
+- **Interpretability:** does attention on BRAF track measured sensitivity against untrained models? TBD, see [15](../docs/15_interpretability_validation_results.md).
 
 ## 12. Limitations to state
 
