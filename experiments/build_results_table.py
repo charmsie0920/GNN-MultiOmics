@@ -42,8 +42,29 @@ REFERENCE_DRUG_REPS = {"onehot", "onehot_restricted"}
 # run-to-run variance -- see 13_seed_variance_results.md.
 NOISE_THRESHOLD = 0.03
 # Predicting each drug's training mean, with no omics input at all, on the
-# 111,799-pair population (computed in 11_molecular_graph_results.md).
+# 111,799-pair population. Runners that call `experiment_utils.per_drug_mean_floor`
+# emit this per row as `per_drug_mean_rmse`; `_per_drug_floor` below prefers that
+# measured value and falls back to this literal for CSVs written before the
+# column existed. It is a property of the split, not of any model, so every row
+# that reports it must agree.
 PER_DRUG_MEAN_RMSE = 1.4889
+
+
+def _per_drug_floor(df: pd.DataFrame) -> float:
+    """The measured per-drug floor, if any runner recorded it."""
+    if "per_drug_mean_rmse" not in df.columns:
+        return PER_DRUG_MEAN_RMSE
+    vals = pd.to_numeric(df["per_drug_mean_rmse"], errors="coerce").dropna()
+    vals = vals[vals > 0]
+    if vals.empty:
+        return PER_DRUG_MEAN_RMSE
+    spread = float(vals.max() - vals.min())
+    if spread > 1e-3:
+        print(
+            f"[warn] per_drug_mean_rmse disagrees across runs (spread {spread:.4f}); "
+            "runs are not on the same split/population"
+        )
+    return float(vals.median())
 ENSEMBLE_CSV = Path("experiments/08_ensemble_refinement/ensemble_results.csv")
 OUTPUT = Path("docs/results.md")
 
@@ -123,8 +144,20 @@ def main() -> None:
         for _, r in seeds.iterrows()
     )
 
+    drug_floor = _per_drug_floor(df)
     best = primary.iloc[0]
     near_best = primary[primary["test_rmse"] < best["test_rmse"] + NOISE_THRESHOLD]
+
+    # What each family actually buys over a drug-identity lookup table. This is
+    # the omics-and-graph contribution; the raw RMSE column is dominated by the
+    # 71.8% of target variance that is between-drug offset.
+    gain_rows = "\n".join(
+        f"| {r['model']} | {r['omics']} | {r['drug_rep']} | {r['test_rmse']:.4f} | "
+        f"{drug_floor - r['test_rmse']:+.4f} | {100 * (drug_floor - r['test_rmse']) / drug_floor:+.1f}% |"
+        for _, r in primary.loc[primary.groupby("model")["test_rmse"].idxmin()]
+        .sort_values("test_rmse")
+        .iterrows()
+    )
     per_family = primary.loc[primary.groupby("model")["test_rmse"].idxmin()].sort_values("test_rmse")
     family_rows = "\n".join(
         f"| {r['model']} | {r['omics']} | {r['drug_rep']} | {r['test_rmse']:.4f} | "
@@ -174,13 +207,27 @@ reversed:
 |---|---|
 | Global training mean, 134,764-pair population | 2.7097 |
 | Global training mean, 111,799-pair population | 2.7690 |
-| **Per-drug training mean** (no omics at all), 111,799 pairs | **{PER_DRUG_MEAN_RMSE:.4f}** |
+| **Per-drug training mean** (no omics at all), 111,799 pairs | **{drug_floor:.4f}** |
 
 The per-drug mean is the baseline that matters: **drug identity alone accounts
 for 71% of the reducible error.** Measured against it, the best model here
 explains roughly a quarter of the remaining, omics-dependent variance. Measured
 against the global mean instead, the same model shows R² ≈ 0.78 — which mostly
 reflects knowing which compound was screened, not the multi-omics profile.
+
+### What the omics and the graph actually buy
+
+Best run per family, scored against the per-drug lookup rather than the global
+mean. The `Gain` column is the entire contribution of every omics modality, the
+PPI network and the message passing — everything to the left of it is available
+from the compound label alone.
+
+| Model | Omics | Drug rep | RMSE | Gain over drug lookup | % |
+|---|---|---|---|---|---|
+{gain_rows}
+
+Read the `Gain` column against the ±0.03 noise threshold above before drawing
+any conclusion from differences between families.
 
 ## Best per model family
 

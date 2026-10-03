@@ -42,6 +42,27 @@ explains roughly a quarter of the remaining, omics-dependent variance. Measured
 against the global mean instead, the same model shows R² ≈ 0.78 — which mostly
 reflects knowing which compound was screened, not the multi-omics profile.
 
+### What the omics and the graph actually buy
+
+Best run per family, scored against the per-drug lookup rather than the global
+mean. The `Gain` column is the entire contribution of every omics modality, the
+PPI network and the message passing — everything to the left of it is available
+from the compound label alone.
+
+| Model | Omics | Drug rep | RMSE | Gain over drug lookup | % |
+|---|---|---|---|---|---|
+| MLP | Proteomics | fingerprint | 1.2843 | +0.2046 | +13.7% |
+| CrossAttention | GE+Proteomics | fingerprint | 1.3205 | +0.1684 | +11.3% |
+| HeteroIC50GNN | GE+Mut_CNV+Proteomics | fingerprint | 1.3301 | +0.1588 | +10.7% |
+| FullArchitecture-GCN | GE+Mut_CNV+Proteomics | molecular_graph | 1.3397 | +0.1492 | +10.0% |
+| GNN-GCN | GE+Mut_CNV+Proteomics | fingerprint | 1.3513 | +0.1376 | +9.2% |
+| RF | GE+Proteomics | fingerprint | 1.3712 | +0.1177 | +7.9% |
+| GNN-GAT | GE+Mut_CNV+Proteomics | fingerprint | 2.2546 | -0.7657 | -51.4% |
+| FullArchitecture-GAT | GE+Mut_CNV+Proteomics | molecular_graph | 2.3269 | -0.8380 | -56.3% |
+
+Read the `Gain` column against the ±0.03 noise threshold above before drawing
+any conclusion from differences between families.
+
 ## Best per model family
 
 | Model | Omics | Drug rep | RMSE | PCC | R² |
