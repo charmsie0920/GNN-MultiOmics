@@ -95,8 +95,17 @@ atom features, different pairs). Not tested: whether those explain the gap.
 ### Phase 1 — Additive ablation ladder (lecturer requirement)
 The lecturer requires **Base + a, Base + b, Base + c, ...**, where Base is the
 simplest pipeline that functions with none of the improvements, and Base plus
-everything is the final model. This is built in
-`experiments/14_benchmark_alignment/benchmark_alignment.py`:
+everything is the final model. This is meant to be built in
+`experiments/14_benchmark_alignment/benchmark_alignment.py`.
+
+**Status (checked 2026-10-03): not done as ticked below.** The ladder exists only
+in the uncommitted `src/final_model/run_ablation.py`, and its `model.py` is a
+pre-Phase-0 copy (4-head simple bilinear, weight decay 1e-5, early stopping,
+ReduceLROnPlateau). `experiments/14/benchmark_alignment.py` still has the old
+`CONFIGS` dict. Before Phase 2: move `BASE`/`COMPONENTS` into experiments/14
+on top of the frozen `MoGraphDRPAligned` and the Phase 0 training settings,
+delete the duplicate model, then re-run the smoke test. The ticks below
+describe `src/final_model/`, not experiments/14.
 
 - [x] `BASE`: per-omics branches -> concat, Morgan fingerprint encoder,
       concat -> MLP head, raw ln(IC50), GE + Mut_CNV.

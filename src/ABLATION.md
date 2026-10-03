@@ -33,10 +33,15 @@ These must be identical for every rung, otherwise a delta is not attributable.
 | Pairs | 111,799 (cell line, drug) pairs; 532 cell lines; 240 drug IDs |
 | Split | grouped by cell line, 70/15/15, `random_state=42` (77,668 / 17,291 / 16,840) |
 | Omics preprocessing | per-modality scaling + PCA to 128 |
-| Optimiser | Adam, lr 1e-4, weight decay 1e-5 |
+| Optimiser | Adam, lr 1e-4, weight decay **0** (Phase 0 frozen base) |
 | Batch size / dropout | 128 / 0.4 |
-| Epochs / early stopping | max 200, patience 15 on validation RMSE |
-| LR schedule | ReduceLROnPlateau, factor 0.5, patience 5 |
+| Epochs / early stopping | 200 epochs, **no early stopping** (Phase 0 frozen base) |
+| LR schedule | **constant** (Phase 0 frozen base) |
+
+> Note (2026-10-03): `src/final_model/run_ablation.py` still uses the
+> pre-Phase-0 settings (weight decay 1e-5, patience 15, ReduceLROnPlateau, 4-head
+> simple bilinear). The ladder must use the frozen settings above before any
+> number goes into this file.
 | Checkpoint | best validation RMSE, in ln(IC50) units |
 | Seeds | TBD (list them) |
 | Metrics | RMSE, MAE, R², PCC, SCC; AUC and F1 at the shared median threshold |
@@ -197,13 +202,33 @@ Not a ranking. It checks that the reproduction (`aligned`) is faithful.
 
 | Config | Random-split RMSE | Reference |
 |---|---|---|
-| `aligned` | TBD | MoGraphDRP without XGBoost: 0.9497 |
+| `aligned` (Phase 0, GE+Proteomics) | **0.978 ± 0.002** (3 seeds) | MoGraphDRP without XGBoost: 0.9497 |
 | `base` | TBD | — |
 | `full` | TBD | MoGraphDRP with XGBoost: 0.6622 |
 
-If `aligned` is far from 0.95, list the likely causes: 2–3 omics vs their 4,
-PCA vs COSMIC gene filtering, one fingerprint type vs three, head
-implementation. TBD.
+**Phase 0 result (2026-10-01).** Source:
+`experiments/14_benchmark_alignment/benchmark_alignment_results.csv`.
+
+| Seed | Test RMSE | PCC | R² | Best epoch |
+|---|---|---|---|---|
+| 42 | 0.9756 | 0.9395 | 0.8819 | 195 |
+| 43 | 0.9799 | 0.9386 | 0.8808 | 196 |
+| 44 | 0.9798 | 0.9389 | 0.8808 | 200 |
+| **mean ± std** | **0.9784 ± 0.0025** | 0.9390 | 0.8812 | |
+
+- Settings: BAN head (3 heads), (512, 128) predictor, gated-sum drug fusion,
+  weight decay 0, no early stopping, 200 epochs at a constant LR, 3,528,562
+  parameters. Mean-only floor on this split: 2.838. The per-drug-mean floor
+  (1.4889) is for the grouped split and does not apply here.
+- The gap to 0.9497 is 0.029, at the edge of the ~0.03 noise band. Remaining
+  known differences are all data: 2 PCA omics vs their 4 gene-filtered ones,
+  Morgan only vs 3 fingerprints, our atom features, different pairs. Whether
+  they explain the gap has not been tested.
+- Seeds vary initialisation only; the random split is fixed.
+- Best epoch 195-200: the model is still improving when the 200-epoch budget ends.
+- **Not the same config as the ladder's `aligned`.** This run used
+  GE+Proteomics; the ladder's `aligned` (= `base+mol_graph+bilinear`) uses
+  GE+Mut_CNV. The two are not directly comparable.
 
 Protocol gap for the final model (random − grouped): TBD. Compare with the
 0.347 measured in [09](./09_split_protocol_comparison.md).
