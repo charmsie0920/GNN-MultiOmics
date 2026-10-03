@@ -131,82 +131,68 @@ Its `base+<name>` rung and its place in `full` follow automatically.
 
 ### Phase 2 — Run the ladder (3-5 seeds)
 
-**Status: ready to run, nothing run yet.** The next action is the runbook
-below. Do not edit the model or `run_ablation.py` before running; Phase 1
-froze them.
+**Status: done 2026-10-03.** All 24 runs finished locally in 6.5 h (15:33 to
+22:05) at commit `66205f8`. Results and verdicts are under "Done when" below
+and in `src/ABLATION.md`.
 
-#### Runbook (Colab)
+#### Runbook (local GTX 1650; decided 2026-10-03, replaces the Colab plan)
 
 **What runs:** 8 configs x 3 seeds = **24 runs**, grouped split only (the
 random split was Phase 0). `--list` prints the 8 configs. Each run is 200
-epochs. Phase 0's `aligned` took 35-62 min per run on a GPU, so budget
-**~10-20 h in total**. A free Colab session ends after about 12 h, so run
-**one seed per session**.
+epochs.
 
-**Data:** five gitignored files (~68 MB) must be copied in. If they aren't on the
-shared Drive, get them from a teammate who has a local copy. Paths are relative to the repo root:
+**Why local, not Colab:** the model is small (peak GPU memory 129 MiB, GPU at
+66-80% utilisation on `aligned`), so the laptop is not the bottleneck one
+would expect. Timed on the real training loop (200 batches per config,
+extrapolated to 200 epochs): `base` ~9 min, `aligned` ~21 min, `full` ~39 min,
+**~2.2 h per seed, ~6.5 h for all 24** (budget 7-10 h for thermal throttling).
+Colab was not timed; its free tier also needs the browser tab open, so it does
+not remove the need to keep the laptop on. The data files and `.venv`
+(CUDA torch, PyG, RDKit) are already on this machine.
 
-| File | Size |
-|---|---|
-| `data/processed/transcriptomics_pca.csv` | 0.7 MB |
-| `data/processed/genomics_pca.csv` | 0.7 MB |
-| `data/processed/proteomics_pca.csv` | 0.7 MB |
-| `data/processed/aligned/gdsc2_response_master.csv` | 66 MB |
-| `data/raw/pubchem/gdsc_drug_smiles.csv` | 0.05 MB |
-
-The STRING graph (`src/graph/hetero_graph.pt`) is not needed until Phase 4.
-
-**Colab cells** (Runtime -> Change runtime type -> GPU). Set `DRIVE` to the
-folder holding the data and the results CSV:
+**Launch** from the repo root, at one commit, on a clean tree:
 
 ```
-from google.colab import drive; drive.mount('/content/drive')
-DRIVE = '/content/drive/MyDrive/FIT3161'
-!git clone -b dev https://github.com/charmsie0920/GNN-MultiOmics.git /content/repo
-%cd /content/repo
-!pip install -q torch_geometric rdkit      # keep Colab's own torch; do not pip install -r requirements.txt
-!mkdir -p data/processed/aligned data/raw/pubchem
-!cp {DRIVE}/data/processed/*_pca.csv data/processed/
-!cp {DRIVE}/data/processed/aligned/gdsc2_response_master.csv data/processed/aligned/
-!cp {DRIVE}/data/raw/pubchem/gdsc_drug_smiles.csv data/raw/pubchem/
-!git rev-parse HEAD                         # record this hash in src/ABLATION.md section 15
-!python src/final_model/run_ablation.py --list
+setsid nohup systemd-inhibit --what=sleep:idle --why="Phase 2 ladder" \
+  .venv/bin/python -u src/final_model/run_ablation.py \
+  --protocols grouped --seeds 42 43 44 > phase2_ladder.log 2>&1 < /dev/null &
 ```
 
-Then, one seed per session (change `42` to `43`, then `44`):
-
-```
-!python src/final_model/run_ablation.py --protocols grouped --seeds 42 --out {DRIVE}/ablation_results.csv
-```
-
-- **`--out` must point at Drive.** One row is appended after each finished
-  run, so a disconnect loses only the run in progress. Re-running the same
-  command skips rows already in the CSV and resumes. Never delete or hand-edit
-  that CSV; `--rerun` repeats runs on purpose.
-- Every session must write to the **same** CSV and run from the **same
-  commit**. If `dev` has moved, `git checkout <hash>` first.
+- Results go to the default `src/final_model/results/ablation_results.csv`.
+  One row is appended after each finished run, so an interruption loses only
+  the run in progress. Re-running the same command skips rows already in the
+  CSV and resumes. Never delete or hand-edit that CSV; `--rerun` repeats runs
+  on purpose.
+- The laptop must stay powered on and awake (plugged in). Shutdown, hibernate
+  or suspend ends the run in progress. `HandleLidSwitch=ignore` is set, but a
+  lid close has not been tested.
+- **Keep all 24 rows on this machine and this commit.** GPU results are not
+  bit-identical across hardware, so do not mix in rows from Colab or another
+  laptop.
+- `--seeds` varies initialisation and batch order only; the grouped split is
+  fixed at seed 42. The std over seeds is training noise, not split noise.
+- Progress: `tail phase2_ladder.log` (gitignored) and the CSV row count.
 - Expected sanity values: `per_drug_mean_rmse` = 1.4889 on every row, and
   `best_epoch` usually late (Phase 0's was 195-200). After 200 epochs `base`
   should be below 1.4889 (comparable earlier models reached ~1.28-1.33); if it
   is not, stop and investigate. A 1-epoch `base` scores ~2.75, which is normal.
 
-**After all 24 rows exist** (on the local machine, from the repo root):
+**After all 24 rows exist** (from the repo root):
 
-1. Copy the Drive CSV to `src/final_model/results/ablation_results.csv`.
-2. `python experiments/build_results_table.py` regenerates `docs/results.md`
+1. `python experiments/build_results_table.py` regenerates `docs/results.md`
    (section "Additive ablation ladder").
-3. Fill `src/ABLATION.md` by hand: section 5 (mean +/- std, delta vs base,
+2. Fill `src/ABLATION.md` by hand: section 5 (mean +/- std, delta vs base,
    beyond the ~0.03 noise band?, gain over 1.4889), section 2 (seeds,
    hardware), section 6 per component (`cross_attention` with its caveat),
    section 7 (additivity), and the commit hash in section 15. A component
    that does not beat the noise band is marked tested-and-rejected.
-4. Tick the boxes below, write the result under "Done when", and commit the
+3. Tick the boxes below, write the result under "Done when", and commit the
    CSV, `docs/results.md`, `src/ABLATION.md` and this file together.
 
-- [ ] Seed 42 (8 runs)
-- [ ] Seed 43 (8 runs)
-- [ ] Seed 44 (8 runs)
-- [ ] Results table regenerated and `src/ABLATION.md` filled
+- [x] Seed 42 (8 runs) — done 2026-10-03, 2.2 h on the GTX 1650
+- [x] Seed 43 (8 runs) — done 2026-10-03
+- [x] Seed 44 (8 runs) — done 2026-10-03
+- [x] Results table regenerated and `src/ABLATION.md` filled (2026-10-03)
 - [x] Random-split run of `aligned` for the Phase 0 sanity check (done in
       Phase 0).
 - [x] `cross_attention` stays in the ladder as-is (decided 2026-10-03). With
@@ -220,6 +206,32 @@ Then, one seed per session (change `42` to `43`, then `44`):
 **Done when:** there is a table of mean +/- std and delta-vs-base per rung.
 A component that does not beat base by more than the noise band is reported as
 such; Mut_CNV has hurt flat models before (E32 vs E04), so base may be weak.
+
+**Result (2026-10-03, grouped split, seeds 42-44, floor 1.4889):**
+
+| Config | Test RMSE | Delta vs base | Seeds better than base | Verdict |
+|---|---|---|---|---|
+| `base` | 1.3232 +/- 0.0105 | 0 | | |
+| `base+proteomics` | 1.2930 +/- 0.0169 | -0.0302 | 3 / 3 | borderline, at the band edge |
+| `base+std_targets` | 1.3108 +/- 0.0195 | -0.0124 | 2 / 3 | tested-and-rejected (no effect) |
+| `base+mol_graph` | 1.3319 +/- 0.0223 | +0.0087 | 1 / 3 | tested-and-rejected (no effect) |
+| `base+cross_attention` | 1.4144 +/- 0.0040 | +0.0912 | 0 / 3 | tested-and-rejected (hurts) |
+| `base+bilinear` | 1.8343 +/- 0.4946 | +0.5111 | 0 / 3 | tested-and-rejected as configured (unstable) |
+| `aligned` | 1.3416 +/- 0.0088 | +0.0184 | 0 / 3 | no measurable difference from base |
+| `full` | 1.3394 +/- 0.0081 | +0.0162 | 0 / 3 | not better than base |
+
+- **`full` does not beat `base`**, and no single component clearly beats the
+  noise band. Proteomics is the only consistent gain.
+- **`base+bilinear` is not converged**: best epoch 187-200, per-seed RMSE
+  2.40 / 1.62 / 1.48, PCC 0.85 with a large absolute error. The same head
+  trains normally with the molecular graph (`aligned`). Cause not diagnosed.
+- **Validation and test rank the rungs differently** (`aligned` and
+  `std_targets` look good on validation only), so rankings from this one
+  split are weak.
+- **Open before Phase 5:** which row Phase 5 builds on. Best on test is
+  `base+proteomics`; best on validation is `base+std_targets`. Not decided.
+- `src/ABLATION.md` previously listed `base` at 544,001 parameters; the frozen
+  model has 3,184,257 (`full`: 4,270,706).
 
 ### Phase 3 — Cheap gate for the pair-specific idea
 - [ ] Precompute per-pair features from `src/graph/hetero_graph.pt`: target
