@@ -26,6 +26,7 @@ Run from the repository root, after 03_graph_construction.py and
 
 from __future__ import annotations
 
+import argparse
 import copy
 import importlib.util
 import sys
@@ -43,13 +44,16 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from src.data.experiment_utils import (  # noqa: E402
     compute_shared_threshold,
+    drug_lookup_similarity,
     evaluate,
     grouped_split,
     mean_only_floor,
     peak_rss_gb,
+    per_drug_mean_floor,
     print_metric_block,
 )
-from src.models.test.hetero_gnn import HeteroIC50GNN  # noqa: E402
+from src.data.target_scaling import PerDrugTargetScaler  # noqa: E402
+from src.models.train.hetero_gnn import HeteroIC50GNN  # noqa: E402
 
 RESULTS_CSV = Path("experiments/07_gnn_ablation/hetero_ic50_gnn_results.csv")
 
@@ -89,7 +93,14 @@ def predict(model, x_dict, edge_dict, cell_index, drug_index, device) -> np.ndar
     return np.concatenate(preds)
 
 
-def train(model, x_dict, edge_dict, loader, cell_va, drug_va, y_va, device):
+def train(model, x_dict, edge_dict, loader, cell_va, drug_va, y_va, device, inverse=None):
+    """Fit with early stopping on validation RMSE.
+
+    `y_va` is always in ln(IC50) units and `inverse` maps model output back
+    into those units, so the stopping criterion is identical whether or not
+    the targets were standardized. Selecting on z-space RMSE instead would
+    silently change which epoch is kept and make the two arms incomparable.
+    """
     criterion = nn.MSELoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -108,6 +119,8 @@ def train(model, x_dict, edge_dict, loader, cell_va, drug_va, y_va, device):
             optimizer.step()
 
         val_pred = predict(model, x_dict, edge_dict, cell_va, drug_va, device)
+        if inverse is not None:
+            val_pred = inverse(val_pred, drug_va)
         val_rmse = float(np.sqrt(np.mean((y_va - val_pred) ** 2)))
         scheduler.step(val_rmse)
 
@@ -129,6 +142,17 @@ def train(model, x_dict, edge_dict, loader, cell_va, drug_va, y_va, device):
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--standardize-targets",
+        action="store_true",
+        help="Train on per-drug z-scored ln(IC50); predictions are inverted "
+             "before scoring so every metric stays in ln(IC50) units.",
+    )
+    parser.add_argument("--seed", type=int, default=TORCH_SEED)
+    parser.add_argument("--out", type=Path, default=RESULTS_CSV)
+    args = parser.parse_args()
+
     t_start = time.perf_counter()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[device] {device}")
@@ -136,11 +160,12 @@ def main() -> None:
 
     data, cell_index, drug_index, y, groups = gnn_mod.load_graph_and_pairs(threshold)
 
+    arm = "per-drug standardized" if args.standardize_targets else "raw ln(IC50)"
     print("\n" + "#" * 82)
-    print("# MATRIX | HeteroIC50GNN (tuned) | fingerprint | +mutation edges")
+    print(f"# MATRIX | HeteroIC50GNN (tuned) | fingerprint | +mutation edges | {arm}")
     print("#" * 82)
 
-    torch.manual_seed(TORCH_SEED)
+    torch.manual_seed(args.seed)
     t0 = time.perf_counter()
 
     x_dict = {nt: data[nt].x.to(device, dtype=torch.float32) for nt in data.node_types}
@@ -158,10 +183,22 @@ def main() -> None:
     train_idx, val_idx, test_idx = grouped_split(groups)
     t_prep = time.perf_counter() - t0
 
+    # --- target space -------------------------------------------------------
+    # `drug_index` is the drug node id, so it is the grouping key for per-drug
+    # statistics. Fitted on training rows only; `y` itself is never modified,
+    # so every metric below is computed in ln(IC50) units either way.
+    if args.standardize_targets:
+        scaler = PerDrugTargetScaler().fit(y[train_idx], drug_index[train_idx])
+        y_fit = scaler.transform(y, drug_index)
+        inverse = scaler.inverse_transform
+    else:
+        y_fit = y
+        inverse = None
+
     ds = TensorDataset(
         torch.from_numpy(cell_index[train_idx]),
         torch.from_numpy(drug_index[train_idx]),
-        torch.from_numpy(y[train_idx]),
+        torch.from_numpy(y_fit[train_idx]),
     )
     loader = DataLoader(ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
 
@@ -174,14 +211,34 @@ def main() -> None:
     model, best_epoch = train(
         model, x_dict, edge_dict, loader,
         cell_index[val_idx], drug_index[val_idx], y[val_idx], device,
+        inverse=inverse,
     )
     t_fit = time.perf_counter() - t1
 
-    val = evaluate(y[val_idx], predict(model, x_dict, edge_dict, cell_index[val_idx], drug_index[val_idx], device), threshold)
-    test = evaluate(y[test_idx], predict(model, x_dict, edge_dict, cell_index[test_idx], drug_index[test_idx], device), threshold)
-    floor = mean_only_floor(y[train_idx], y[test_idx])
+    def predict_ln(idx: np.ndarray) -> np.ndarray:
+        """Model output mapped back into ln(IC50) units."""
+        p = predict(model, x_dict, edge_dict, cell_index[idx], drug_index[idx], device)
+        return inverse(p, drug_index[idx]) if inverse is not None else p
 
-    print_metric_block("MATRIX | HeteroIC50GNN (tuned)", val, test, floor)
+    val_pred, test_pred = predict_ln(val_idx), predict_ln(test_idx)
+    val = evaluate(y[val_idx], val_pred, threshold)
+    test = evaluate(y[test_idx], test_pred, threshold)
+    floor = mean_only_floor(y[train_idx], y[test_idx])
+    drug_floor = per_drug_mean_floor(
+        y[train_idx], drug_index[train_idx], y[test_idx], drug_index[test_idx]
+    )
+    lookup = drug_lookup_similarity(
+        y[train_idx], drug_index[train_idx], test_pred, drug_index[test_idx]
+    )
+
+    print_metric_block("MATRIX | HeteroIC50GNN (tuned)", val, test, floor, drug_floor)
+    print(
+        "How much of the prediction is just the drug-mean lookup?\n"
+        f"  corr(prediction, per-drug train mean) = {lookup['lookup_pcc']:.4f}  "
+        f"(r^2 = {lookup['lookup_r2']:.4f})\n"
+        f"  share of prediction variance beyond the lookup = "
+        f"{lookup['pred_var_beyond_lookup']:.4f}"
+    )
     print(f"n_pairs={len(y)}  params={n_params:,}  best_epoch={best_epoch}  "
           f"prep={t_prep:.1f}s  fit={t_fit:.1f}s")
     print(f"Peak RSS: {peak_rss_gb():.2f} GB")
@@ -191,9 +248,14 @@ def main() -> None:
         "omics": "GE+Mut_CNV+Proteomics",
         "drug_rep": "fingerprint",
         "mutation_edges": True,
+        "standardize_targets": args.standardize_targets,
+        "seed": args.seed,
         "n_pairs": len(y),
         "n_edge_types": len(edge_dict),
         "mean_only_rmse": floor,
+        "per_drug_mean_rmse": drug_floor,
+        "gain_over_drug_lookup": drug_floor - test["rmse"],
+        **lookup,
         **{f"val_{k}": v for k, v in val.items()},
         **{f"test_{k}": v for k, v in test.items()},
         "params": n_params,
@@ -202,13 +264,13 @@ def main() -> None:
     }
 
     df = pd.DataFrame([row])
-    RESULTS_CSV.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(RESULTS_CSV, index=False)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(args.out, index=False)
 
     print("\n" + "=" * 100)
     print(f"COMPLETE in {time.perf_counter() - t_start:.1f}s — test RMSE {test['rmse']:.4f}")
     print("=" * 100)
-    print(f"Saved -> {RESULTS_CSV}")
+    print(f"Saved -> {args.out}")
 
 
 if __name__ == "__main__":

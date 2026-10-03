@@ -467,11 +467,92 @@ def evaluate(y_true: np.ndarray, y_pred: np.ndarray, threshold: float) -> Dict[s
 
 
 def mean_only_floor(y_train: np.ndarray, y_test: np.ndarray) -> float:
-    """RMSE of always predicting the training-fold mean -- the floor every model must beat."""
+    """RMSE of always predicting the training-fold mean.
+
+    This is the *weak* floor. It is retained because every historical row in
+    docs/results.md quotes it, but it flatters every model in the project:
+    71.8% of the variance in ln_ic50 is between-drug offset, which a bare
+    drug-identity lookup captures for free. Report `per_drug_mean_floor`
+    alongside it -- that is the number a model actually has to beat.
+    """
     return float(np.sqrt(np.mean((y_test - y_train.mean()) ** 2)))
 
 
-def print_metric_block(title: str, val: Dict[str, float], test: Dict[str, float], floor: float) -> None:
+def per_drug_mean_floor(
+    y_train: np.ndarray,
+    drugs_train: np.ndarray,
+    y_test: np.ndarray,
+    drugs_test: np.ndarray,
+) -> float:
+    """RMSE of predicting each drug's *training-fold mean* response.
+
+    The honest baseline for the cell-line-grouped protocol. It uses no omics,
+    no graph and no learned parameters -- only "which compound is this" -- yet
+    scores 1.4889 on the shared test fold, versus 2.7690 for the mean-only
+    floor. The gap between this and a model is the entire contribution of the
+    omics and the graph.
+
+    Legitimate under the grouped split: every drug appears in training, so the
+    statistics describe compounds already seen, never the held-out cell lines.
+    Drugs absent from the training fold fall back to the global training mean.
+    """
+    y_train = np.asarray(y_train, dtype=np.float64)
+    order = np.argsort(drugs_train, kind="stable")
+    sorted_groups = np.asarray(drugs_train)[order]
+    sorted_y = y_train[order]
+    boundaries = np.flatnonzero(np.r_[True, sorted_groups[1:] != sorted_groups[:-1]])
+    means = {
+        group: float(values.mean())
+        for group, values in zip(sorted_groups[boundaries], np.split(sorted_y, boundaries[1:]))
+    }
+    global_mean = float(y_train.mean())
+    pred = np.array([means.get(g, global_mean) for g in drugs_test], dtype=np.float64)
+    return float(np.sqrt(np.mean((np.asarray(y_test, dtype=np.float64) - pred) ** 2)))
+
+
+def drug_lookup_similarity(
+    y_train: np.ndarray,
+    drugs_train: np.ndarray,
+    y_pred: np.ndarray,
+    drugs_test: np.ndarray,
+) -> Dict[str, float]:
+    """How much of a model's output is just the per-drug mean it could have looked up?
+
+    Returns the Pearson r between the model's predictions and the per-drug
+    training mean, plus the share of prediction variance that survives once
+    that mean is removed. An r near 1.0 means the model has reproduced the
+    lookup table and the omics are contributing almost nothing.
+    """
+    y_train = np.asarray(y_train, dtype=np.float64)
+    order = np.argsort(drugs_train, kind="stable")
+    sorted_groups = np.asarray(drugs_train)[order]
+    sorted_y = y_train[order]
+    boundaries = np.flatnonzero(np.r_[True, sorted_groups[1:] != sorted_groups[:-1]])
+    means = {
+        group: float(values.mean())
+        for group, values in zip(sorted_groups[boundaries], np.split(sorted_y, boundaries[1:]))
+    }
+    global_mean = float(y_train.mean())
+    lookup = np.array([means.get(g, global_mean) for g in drugs_test], dtype=np.float64)
+
+    y_pred = np.asarray(y_pred, dtype=np.float64)
+    r = float(np.corrcoef(y_pred, lookup)[0, 1]) if np.std(y_pred) > 0 else float("nan")
+    resid_var = float(np.var(y_pred - lookup))
+    pred_var = float(np.var(y_pred))
+    return {
+        "lookup_pcc": r,
+        "lookup_r2": r * r,
+        "pred_var_beyond_lookup": resid_var / pred_var if pred_var > 0 else float("nan"),
+    }
+
+
+def print_metric_block(
+    title: str,
+    val: Dict[str, float],
+    test: Dict[str, float],
+    floor: float,
+    drug_floor: float | None = None,
+) -> None:
     """Standard formatted console report, matching the existing baseline scripts' style."""
     cols = ["rmse", "mae", "r2", "pcc", "scc", "auc", "f1"]
     header = "".join(f"{c.upper():>10}" for c in cols)
@@ -482,4 +563,14 @@ def print_metric_block(title: str, val: Dict[str, float], test: Dict[str, float]
     print(f"{'Validation':<12}" + "".join(f"{val[c]:>10.4f}" for c in cols))
     print(f"{'Test':<12}" + "".join(f"{test[c]:>10.4f}" for c in cols))
     print(f"{'Mean-only':<12}{floor:>10.4f}" + "".join(f"{'--':>10}" for _ in cols[1:]))
+    if drug_floor is not None:
+        print(f"{'Drug-mean':<12}{drug_floor:>10.4f}" + "".join(f"{'--':>10}" for _ in cols[1:]))
     print("-" * (12 + 10 * len(cols)))
+    if drug_floor is not None:
+        gain = drug_floor - test["rmse"]
+        pct = 100 * gain / drug_floor if drug_floor else float("nan")
+        print(
+            f"{'Gain over drug-mean lookup:':<32}{gain:+.4f} RMSE ({pct:+.1f}%)  "
+            f"-- everything the omics and graph buy"
+        )
+        print("-" * (12 + 10 * len(cols)))

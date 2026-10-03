@@ -49,7 +49,7 @@ from src.data.experiment_utils import (  # noqa: E402
     peak_rss_gb,
     print_metric_block,
 )
-from src.models.test.hetero_gnn import HeteroIC50GNN  # noqa: E402
+from src.models.train.hetero_gnn import HeteroIC50GNN  # noqa: E402
 
 RESULTS_CSV = Path("experiments/10_leave_drugs_out/leave_drugs_out_gnn_test_model_results.csv")
 
