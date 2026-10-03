@@ -26,6 +26,10 @@ Reference points, all under the random split:
 | MoGraphDRP without XGBoost (Table 6)     | 0.9497 |
 | BANDRP, best prior work (their Table 2)  | 0.9305 |
 
+The model is the frozen `MoGraphDRPAligned` (`src/models/mographdrp_aligned.py`)
+and training follows Phase 0: Adam, lr 1e-4, no weight decay, 200 epochs at a
+constant rate, checkpoint on best validation RMSE.
+
 Results are appended one row per finished run, so an interrupted sweep loses
 nothing and re-running skips what is already done (`--rerun` to repeat).
 
@@ -74,7 +78,9 @@ from src.data.experiment_utils import (  # noqa: E402
     random_pair_split,
 )
 from src.data.target_scaling import PerDrugTargetScaler  # noqa: E402
-from src.final_model.model import (  # noqa: E402
+# The frozen Phase 0 baseline. Imported, never copied: every rung must be built
+# from the exact class whose random-split reproduction was validated.
+from src.models.mographdrp_aligned import (  # noqa: E402
     BATCH_SIZE,
     DROPOUT,
     LR,
@@ -86,9 +92,13 @@ RESULTS_CSV = Path("src/final_model/results/ablation_results.csv")
 
 ALL_MODALITIES = (GE_KEY, MUT_CNV_KEY, PROTEOMICS_KEY)
 TORCH_SEED = 42
-WEIGHT_DECAY = 1e-5
-PATIENCE = 15
-LR_PATIENCE = 5
+# The Phase 0 training settings (experiments/14_benchmark_alignment), taken
+# from MoGraphDRP's trainer: plain Adam, and one patience of 200 for both the
+# LR scheduler and early stopping -- so within 200 epochs neither fires, and the
+# model trains the full schedule at a constant rate, keeping the best-val epoch.
+WEIGHT_DECAY = 0.0
+PATIENCE = 200
+LR_PATIENCE = 200
 
 # The simplest pipeline that functions with none of the improvements. Two omics
 # are the minimum for "fusion" to mean anything, and GE + Mut_CNV is the pair
