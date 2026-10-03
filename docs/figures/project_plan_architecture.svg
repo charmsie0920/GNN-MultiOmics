@@ -1,0 +1,577 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1900 965" width="1900" height="965" font-family="Helvetica, Arial, sans-serif">
+<defs>
+<marker id="ar-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1E2530"/></marker>
+<marker id="as-ink" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M10,0 L0,5 L10,10 z" fill="#1E2530"/></marker>
+<marker id="ar-cell" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2E6DB4"/></marker>
+<marker id="as-cell" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M10,0 L0,5 L10,10 z" fill="#2E6DB4"/></marker>
+<marker id="ar-drug" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#D9782A"/></marker>
+<marker id="as-drug" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M10,0 L0,5 L10,10 z" fill="#D9782A"/></marker>
+<marker id="ar-prot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3E9A6A"/></marker>
+<marker id="as-prot" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M10,0 L0,5 L10,10 z" fill="#3E9A6A"/></marker>
+<marker id="ar-ours" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#C0392B"/></marker>
+<marker id="as-ours" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M10,0 L0,5 L10,10 z" fill="#C0392B"/></marker>
+</defs>
+<rect x="0" y="0" width="1900" height="965" rx="0" fill="#FFFFFF" stroke="none" stroke-width="1.0"/>
+<rect x="20" y="20" width="760" height="880" rx="10" fill="#F4F6F9" stroke="#D5DAE1" stroke-width="1.0"/>
+<text x="36" y="50" font-size="18" text-anchor="start" font-weight="700" fill="#1E2530">A</text>
+<text x="58" y="50" font-size="15" text-anchor="start" font-weight="700" fill="#1E2530">Feature encoders</text>
+<rect x="198.4" y="37" width="34.4" height="16" rx="8" fill="#C0392B" stroke="none" stroke-width="1.0"/>
+<text x="215.6" y="48.5" font-size="9.5" text-anchor="middle" font-weight="700" fill="#FFFFFF">OURS</text>
+<text x="36" y="69" font-size="11" text-anchor="start" font-weight="400" fill="#5B6472">cell line and drug are encoded separately, as in MoGraphDRP</text>
+<text x="40" y="100" font-size="13" text-anchor="start" font-weight="700" fill="#1E2530">Cell-line multi-omics · 532 cell lines</text>
+<rect x="300" y="88" width="34.4" height="16" rx="8" fill="#C0392B" stroke="none" stroke-width="1.0"/>
+<text x="317.2" y="99.5" font-size="9.5" text-anchor="middle" font-weight="700" fill="#FFFFFF">OURS</text>
+<text x="40" y="117" font-size="10" text-anchor="start" font-weight="400" fill="#5B6472" font-style="italic">MoGraphDRP: expression, mutation, methylation, pathway · COSMIC genes · per-omics MLP → concat</text>
+<rect x="40.0" y="145.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.35" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="49.3" y="145.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.89" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="58.7" y="145.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.82" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="68.0" y="145.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.44" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="77.3" y="145.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.62" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="86.7" y="145.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.59" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="40.0" y="156.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.74" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="49.3" y="156.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.84" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="58.7" y="156.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.32" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="68.0" y="156.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.27" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="77.3" y="156.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.88" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="86.7" y="156.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.57" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="40.0" y="167.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.82" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="49.3" y="167.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.25" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="58.7" y="167.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.58" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="68.0" y="167.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.79" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="77.3" y="167.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="86.7" y="167.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.96" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="40.0" y="178.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.93" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="49.3" y="178.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.27" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="58.7" y="178.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.27" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="68.0" y="178.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.66" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="77.3" y="178.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.95" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="86.7" y="178.0" width="9.3" height="11.0" fill="#2E6DB4" fill-opacity="0.54" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="40" y="145" width="56" height="44" rx="0" fill="none" stroke="#2E6DB4" stroke-width="1"/>
+<text x="106" y="163" font-size="12.5" text-anchor="start" font-weight="700" fill="#1E2530">Transcriptomics</text>
+<text x="106" y="179" font-size="10.5" text-anchor="start" font-weight="400" fill="#5B6472">RNA-seq TPM</text>
+<line x1="222" y1="167" x2="246" y2="167" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="248" y="145" width="118" height="44" rx="6" fill="#FFFFFF" stroke="#2E6DB4" stroke-width="1.4"/>
+<text x="307" y="163" font-size="10.5" text-anchor="middle" font-weight="400" fill="#1E2530">log1p · scale</text>
+<text x="307" y="179" font-size="11.5" text-anchor="middle" font-weight="700" fill="#1E2530">PCA → 128</text>
+<line x1="366" y1="167" x2="386" y2="167" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="389" y="149.0" width="14" height="9.0" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="389" y="158.0" width="14" height="9.0" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="389" y="167.0" width="14" height="9.0" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="389" y="176.0" width="14" height="9.0" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="389" y="149" width="14" height="36" rx="0" fill="none" stroke="#2E6DB4" stroke-width="1"/>
+<text x="396" y="199" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">128</text>
+<line x1="403" y1="167" x2="476" y2="167" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="40.0" y="225.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.97" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="49.3" y="225.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.96" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="58.7" y="225.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.29" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="68.0" y="225.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.31" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="77.3" y="225.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.88" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="86.7" y="225.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.80" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="40.0" y="236.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.75" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="49.3" y="236.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.48" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="58.7" y="236.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.70" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="68.0" y="236.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.71" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="77.3" y="236.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.69" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="86.7" y="236.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.37" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="40.0" y="247.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.57" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="49.3" y="247.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.55" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="58.7" y="247.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.79" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="68.0" y="247.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="1.00" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="77.3" y="247.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.96" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="86.7" y="247.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.66" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="40.0" y="258.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.58" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="49.3" y="258.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.45" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="58.7" y="258.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.28" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="68.0" y="258.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.27" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="77.3" y="258.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.60" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="86.7" y="258.0" width="9.3" height="11.0" fill="#7B52AB" fill-opacity="0.49" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="40" y="225" width="56" height="44" rx="0" fill="none" stroke="#7B52AB" stroke-width="1"/>
+<text x="106" y="243" font-size="12.5" text-anchor="start" font-weight="700" fill="#1E2530">Genomics</text>
+<text x="106" y="259" font-size="10.5" text-anchor="start" font-weight="400" fill="#5B6472">Mutation + CNV</text>
+<line x1="222" y1="247" x2="246" y2="247" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="248" y="225" width="118" height="44" rx="6" fill="#FFFFFF" stroke="#7B52AB" stroke-width="1.4"/>
+<text x="307" y="243" font-size="10.5" text-anchor="middle" font-weight="400" fill="#1E2530">scale</text>
+<text x="307" y="259" font-size="11.5" text-anchor="middle" font-weight="700" fill="#1E2530">PCA → 128</text>
+<line x1="366" y1="247" x2="386" y2="247" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="389" y="229.0" width="14" height="9.0" rx="0" fill="#7B52AB" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="389" y="238.0" width="14" height="9.0" rx="0" fill="#7B52AB" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="389" y="247.0" width="14" height="9.0" rx="0" fill="#7B52AB" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="389" y="256.0" width="14" height="9.0" rx="0" fill="#7B52AB" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="389" y="229" width="14" height="36" rx="0" fill="none" stroke="#7B52AB" stroke-width="1"/>
+<text x="396" y="279" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">128</text>
+<line x1="403" y1="247" x2="476" y2="247" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="40.0" y="305.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.43" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="49.3" y="305.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.66" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="58.7" y="305.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.53" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="68.0" y="305.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.70" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="77.3" y="305.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.72" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="86.7" y="305.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.30" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="40.0" y="316.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.26" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="49.3" y="316.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.88" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="58.7" y="316.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.44" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="68.0" y="316.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.43" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="77.3" y="316.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="1.00" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="86.7" y="316.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.60" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="40.0" y="327.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.88" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="49.3" y="327.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.61" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="58.7" y="327.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.73" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="68.0" y="327.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.36" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="77.3" y="327.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.73" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="86.7" y="327.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.90" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="40.0" y="338.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.64" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="49.3" y="338.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.81" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="58.7" y="338.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.75" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="68.0" y="338.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.30" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="77.3" y="338.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.82" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="86.7" y="338.0" width="9.3" height="11.0" fill="#2A8C8C" fill-opacity="0.69" stroke="#FFFFFF" stroke-width="0.6"/>
+<rect x="40" y="305" width="56" height="44" rx="0" fill="none" stroke="#2A8C8C" stroke-width="1"/>
+<text x="106" y="323" font-size="12.5" text-anchor="start" font-weight="700" fill="#1E2530">Proteomics</text>
+<text x="106" y="339" font-size="10.5" text-anchor="start" font-weight="400" fill="#5B6472">mass spec</text>
+<line x1="222" y1="327" x2="246" y2="327" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="248" y="305" width="118" height="44" rx="6" fill="#FFFFFF" stroke="#2A8C8C" stroke-width="1.4"/>
+<text x="307" y="323" font-size="10.5" text-anchor="middle" font-weight="400" fill="#1E2530">impute · scale</text>
+<text x="307" y="339" font-size="11.5" text-anchor="middle" font-weight="700" fill="#1E2530">PCA → 128</text>
+<line x1="366" y1="327" x2="386" y2="327" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="389" y="309.0" width="14" height="9.0" rx="0" fill="#2A8C8C" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="389" y="318.0" width="14" height="9.0" rx="0" fill="#2A8C8C" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="389" y="327.0" width="14" height="9.0" rx="0" fill="#2A8C8C" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="389" y="336.0" width="14" height="9.0" rx="0" fill="#2A8C8C" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="389" y="309" width="14" height="36" rx="0" fill="none" stroke="#2A8C8C" stroke-width="1"/>
+<text x="396" y="359" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">128</text>
+<line x1="403" y1="327" x2="476" y2="327" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="478" y="120" width="222" height="256" rx="8" fill="#DCE8F6" stroke="#2E6DB4" stroke-width="1.4"/>
+<text x="490" y="140" font-size="12.5" text-anchor="start" font-weight="700" fill="#1E2530">Cross-attention fusion</text>
+<rect x="636" y="128" width="34.4" height="16" rx="8" fill="#C0392B" stroke="none" stroke-width="1.0"/>
+<text x="653.2" y="139.5" font-size="9.5" text-anchor="middle" font-weight="700" fill="#FFFFFF">OURS</text>
+<line x1="512.0" y1="224.0" x2="512.0" y2="286.0" stroke="#2E6DB4" stroke-width="1.4" marker-end="url(#ar-cell)" marker-start="url(#as-cell)"/>
+<line x1="527.1447508149262" y1="216.47329607191378" x2="562.8552491850738" y2="243.52670392808622" stroke="#2E6DB4" stroke-width="1.4" marker-end="url(#ar-cell)" marker-start="url(#as-cell)"/>
+<line x1="527.1447508149262" y1="293.5267039280862" x2="562.8552491850738" y2="266.4732960719138" stroke="#2E6DB4" stroke-width="1.4" marker-end="url(#ar-cell)" marker-start="url(#as-cell)"/>
+<circle cx="512" cy="205" r="16" fill="#2E6DB4" stroke="none" stroke-width="1.0"/>
+<text x="512" y="209" font-size="10" text-anchor="middle" font-weight="700" fill="#FFFFFF">GE</text>
+<circle cx="512" cy="305" r="16" fill="#7B52AB" stroke="none" stroke-width="1.0"/>
+<text x="512" y="309" font-size="10" text-anchor="middle" font-weight="700" fill="#FFFFFF">MC</text>
+<circle cx="578" cy="255" r="16" fill="#2A8C8C" stroke="none" stroke-width="1.0"/>
+<text x="578" y="259" font-size="10" text-anchor="middle" font-weight="700" fill="#FFFFFF">PR</text>
+<text x="606" y="190" font-size="10.5" text-anchor="start" font-weight="400" fill="#1E2530">6 directed pairs</text>
+<text x="606" y="206" font-size="10.5" text-anchor="start" font-weight="400" fill="#1E2530">q ← omics i</text>
+<text x="606" y="222" font-size="10.5" text-anchor="start" font-weight="400" fill="#1E2530">k, v ← omics j</text>
+<text x="606" y="238" font-size="10.5" text-anchor="start" font-weight="400" fill="#1E2530">MHA · 4 heads</text>
+<text x="606" y="254" font-size="10.5" text-anchor="start" font-weight="400" fill="#1E2530">+ FFN · LayerNorm</text>
+<text x="589.0" y="336" font-size="10.5" text-anchor="middle" font-weight="400" fill="#1E2530">concat 6 × 128 → Linear → 256</text>
+<text x="589.0" y="351" font-size="10.5" text-anchor="middle" font-weight="400" fill="#5B6472">GELU · LayerNorm</text>
+<line x1="700" y1="255" x2="716" y2="255" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="719" y="205.0" width="16" height="12.5" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="719" y="217.5" width="16" height="12.5" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="719" y="230.0" width="16" height="12.5" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="719" y="242.5" width="16" height="12.5" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="719" y="255.0" width="16" height="12.5" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="719" y="267.5" width="16" height="12.5" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="719" y="280.0" width="16" height="12.5" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="719" y="292.5" width="16" height="12.5" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="719" y="205" width="16" height="100" rx="0" fill="none" stroke="#2E6DB4" stroke-width="1"/>
+<text x="727" y="322" font-size="10.5" text-anchor="middle" font-weight="400" fill="#1E2530">x<tspan dy="3" font-size="0.75em">c</tspan><tspan dy="-3"></tspan> ∈ ℝ²⁵⁶</text>
+<text x="727" y="336" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">cell vector</text>
+<line x1="40" y1="432" x2="760" y2="432" stroke="#D5DAE1" stroke-width="1"/>
+<text x="40" y="460" font-size="13" text-anchor="start" font-weight="700" fill="#1E2530">Drug structure · 498 drugs</text>
+<text x="40" y="477" font-size="10" text-anchor="start" font-weight="400" fill="#5B6472" font-style="italic">MoGraphDRP: Morgan + ESPF + PubChem fingerprints, attention-based drug fusion</text>
+<polygon points="78.0,636.0 98.8,648.0 98.8,672.0 78.0,684.0 57.2,672.0 57.2,648.0" fill="#FBE7D5" stroke="#D9782A" stroke-width="1.6"/>
+<circle cx="78" cy="660" r="10" fill="none" stroke="#D9782A" stroke-width="1.2"/>
+<text x="78" y="702" font-size="11" text-anchor="middle" font-weight="700" fill="#1E2530">SMILES</text>
+<text x="78" y="716" font-size="10" text-anchor="middle" font-weight="400" fill="#5B6472">PubChem</text>
+<line x1="106" y1="660" x2="128" y2="660" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="130" y="642" width="64" height="36" rx="6" fill="#FFFFFF" stroke="#D9782A" stroke-width="1.4"/>
+<text x="162.0" y="664.0" font-size="11" text-anchor="middle" font-weight="700" fill="#1E2530">RDKit</text>
+<line x1="194" y1="660" x2="214" y2="660" stroke="#1E2530" stroke-width="1.3"/>
+<line x1="214" y1="560" x2="214" y2="780" stroke="#1E2530" stroke-width="1.3"/>
+<line x1="214" y1="560" x2="238" y2="560" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<line x1="214" y1="780" x2="238" y2="780" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<text x="240" y="512" font-size="11.5" text-anchor="start" font-weight="700" fill="#1E2530">Graph branch</text>
+<rect x="326" y="500" width="74.0" height="16" rx="8" fill="#FFFFFF" stroke="#6B7480" stroke-width="1.1"/>
+<text x="363.0" y="511.5" font-size="9.5" text-anchor="middle" font-weight="700" fill="#6B7480">MoGraphDRP</text>
+<line x1="252" y1="548" x2="272" y2="536" stroke="#5B6472" stroke-width="1.2"/>
+<line x1="272" y1="536" x2="292" y2="548" stroke="#5B6472" stroke-width="1.2"/>
+<line x1="292" y1="548" x2="292" y2="572" stroke="#5B6472" stroke-width="1.2"/>
+<line x1="292" y1="572" x2="272" y2="584" stroke="#5B6472" stroke-width="1.2"/>
+<line x1="272" y1="584" x2="252" y2="572" stroke="#5B6472" stroke-width="1.2"/>
+<line x1="252" y1="572" x2="252" y2="548" stroke="#5B6472" stroke-width="1.2"/>
+<line x1="292" y1="548" x2="312" y2="536" stroke="#5B6472" stroke-width="1.2"/>
+<line x1="252" y1="548" x2="232" y2="536" stroke="#5B6472" stroke-width="1.2"/>
+<circle cx="252" cy="548" r="5" fill="#FBE7D5" stroke="#D9782A" stroke-width="1.2"/>
+<circle cx="272" cy="536" r="5" fill="#FFFFFF" stroke="#D9782A" stroke-width="1.2"/>
+<circle cx="292" cy="548" r="5" fill="#FFFFFF" stroke="#D9782A" stroke-width="1.2"/>
+<circle cx="292" cy="572" r="5" fill="#FBE7D5" stroke="#D9782A" stroke-width="1.2"/>
+<circle cx="272" cy="584" r="5" fill="#FFFFFF" stroke="#D9782A" stroke-width="1.2"/>
+<circle cx="252" cy="572" r="5" fill="#FFFFFF" stroke="#D9782A" stroke-width="1.2"/>
+<circle cx="312" cy="536" r="5" fill="#FBE7D5" stroke="#D9782A" stroke-width="1.2"/>
+<circle cx="232" cy="536" r="5" fill="#FFFFFF" stroke="#D9782A" stroke-width="1.2"/>
+<text x="272" y="608" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">atom graph · 39-d atoms</text>
+<line x1="322" y1="560" x2="346" y2="560" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="350" y="530" width="50" height="52" rx="2" fill="#DCE8F6" stroke="#2E6DB4" stroke-width="1"/>
+<rect x="357" y="535" width="50" height="52" rx="2" fill="#DCE8F6" stroke="#2E6DB4" stroke-width="1"/>
+<rect x="364" y="540" width="50" height="52" rx="2" fill="#DCE8F6" stroke="#2E6DB4" stroke-width="1"/>
+<text x="385" y="608" font-size="11" text-anchor="middle" font-weight="700" fill="#1E2530">GCN × 3</text>
+<text x="385" y="622" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">39 → 128</text>
+<line x1="416" y1="560" x2="436" y2="560" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="438" y="542" width="70" height="36" rx="6" fill="#FFFFFF" stroke="#D9782A" stroke-width="1.4"/>
+<text x="473.0" y="564.0" font-size="10.5" text-anchor="middle" font-weight="700" fill="#1E2530">mean pool</text>
+<line x1="508" y1="560" x2="528" y2="560" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="531" y="538.0" width="14" height="11.0" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="531" y="549.0" width="14" height="11.0" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="531" y="560.0" width="14" height="11.0" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="531" y="571.0" width="14" height="11.0" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="531" y="538" width="14" height="44" rx="0" fill="none" stroke="#D9782A" stroke-width="1"/>
+<text x="538" y="596" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">128</text>
+<text x="240" y="728" font-size="11.5" text-anchor="start" font-weight="700" fill="#1E2530">Fingerprint branch</text>
+<rect x="358" y="716" width="34.4" height="16" rx="8" fill="#C0392B" stroke="none" stroke-width="1.0"/>
+<text x="375.2" y="727.5" font-size="9.5" text-anchor="middle" font-weight="700" fill="#FFFFFF">OURS</text>
+<rect x="240" y="768" width="6" height="24" rx="0" fill="#D9782A" stroke="#D9782A" stroke-width="0.6"/>
+<rect x="246" y="768" width="6" height="24" rx="0" fill="#FFFFFF" stroke="#D9782A" stroke-width="0.6"/>
+<rect x="252" y="768" width="6" height="24" rx="0" fill="#D9782A" stroke="#D9782A" stroke-width="0.6"/>
+<rect x="258" y="768" width="6" height="24" rx="0" fill="#D9782A" stroke="#D9782A" stroke-width="0.6"/>
+<rect x="264" y="768" width="6" height="24" rx="0" fill="#FFFFFF" stroke="#D9782A" stroke-width="0.6"/>
+<rect x="270" y="768" width="6" height="24" rx="0" fill="#FFFFFF" stroke="#D9782A" stroke-width="0.6"/>
+<rect x="276" y="768" width="6" height="24" rx="0" fill="#D9782A" stroke="#D9782A" stroke-width="0.6"/>
+<rect x="282" y="768" width="6" height="24" rx="0" fill="#FFFFFF" stroke="#D9782A" stroke-width="0.6"/>
+<rect x="288" y="768" width="6" height="24" rx="0" fill="#D9782A" stroke="#D9782A" stroke-width="0.6"/>
+<rect x="294" y="768" width="6" height="24" rx="0" fill="#FFFFFF" stroke="#D9782A" stroke-width="0.6"/>
+<rect x="300" y="768" width="6" height="24" rx="0" fill="#FFFFFF" stroke="#D9782A" stroke-width="0.6"/>
+<rect x="306" y="768" width="6" height="24" rx="0" fill="#D9782A" stroke="#D9782A" stroke-width="0.6"/>
+<rect x="312" y="768" width="6" height="24" rx="0" fill="#D9782A" stroke="#D9782A" stroke-width="0.6"/>
+<rect x="318" y="768" width="6" height="24" rx="0" fill="#FFFFFF" stroke="#D9782A" stroke-width="0.6"/>
+<text x="282" y="808" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">Morgan · r = 2</text>
+<text x="282" y="821" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">2048 bits</text>
+<line x1="326" y1="780" x2="346" y2="780" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="348" y="758" width="160" height="44" rx="6" fill="#FFFFFF" stroke="#D9782A" stroke-width="1.4"/>
+<text x="428.0" y="777.0" font-size="10.5" text-anchor="middle" font-weight="700" fill="#1E2530">FP encoder</text>
+<text x="428.0" y="791.0" font-size="10.5" text-anchor="middle" font-weight="400" fill="#1E2530">2048 → 128 → 128</text>
+<line x1="508" y1="780" x2="528" y2="780" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="531" y="758.0" width="14" height="11.0" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="531" y="769.0" width="14" height="11.0" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="531" y="780.0" width="14" height="11.0" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="531" y="791.0" width="14" height="11.0" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="531" y="758" width="14" height="44" rx="0" fill="none" stroke="#D9782A" stroke-width="1"/>
+<text x="538" y="816" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">128</text>
+<circle cx="610" cy="670" r="15" fill="#FFFFFF" stroke="#D9782A" stroke-width="1.4"/>
+<text x="610" y="675" font-size="13" text-anchor="middle" font-weight="700" fill="#1E2530">‖</text>
+<polyline points="545,560 610,560 610,653" fill="none" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<polyline points="545,780 610,780 610,687" fill="none" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<text x="632" y="648" font-size="10" text-anchor="start" font-weight="400" fill="#5B6472">concat</text>
+<line x1="625" y1="670" x2="716" y2="670" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="719" y="620.0" width="16" height="12.5" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="719" y="632.5" width="16" height="12.5" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="719" y="645.0" width="16" height="12.5" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="719" y="657.5" width="16" height="12.5" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="719" y="670.0" width="16" height="12.5" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="719" y="682.5" width="16" height="12.5" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="719" y="695.0" width="16" height="12.5" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="719" y="707.5" width="16" height="12.5" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="719" y="620" width="16" height="100" rx="0" fill="none" stroke="#D9782A" stroke-width="1"/>
+<text x="727" y="737" font-size="10.5" text-anchor="middle" font-weight="400" fill="#1E2530">x<tspan dy="3" font-size="0.75em">d</tspan><tspan dy="-3"></tspan> ∈ ℝ²⁵⁶</text>
+<text x="727" y="751" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">drug vector</text>
+<line x1="735" y1="255" x2="846" y2="255" stroke="#2E6DB4" stroke-width="1.6" marker-end="url(#ar-cell)"/>
+<line x1="735" y1="670" x2="846" y2="670" stroke="#D9782A" stroke-width="1.6" marker-end="url(#ar-drug)"/>
+<text x="788" y="247" font-size="9.5" text-anchor="middle" font-weight="400" fill="#2E6DB4">node</text>
+<text x="788" y="662" font-size="9.5" text-anchor="middle" font-weight="400" fill="#D9782A">node</text>
+<rect x="800" y="20" width="520" height="880" rx="10" fill="#F4F6F9" stroke="#D5DAE1" stroke-width="1.0"/>
+<text x="816" y="50" font-size="18" text-anchor="start" font-weight="700" fill="#1E2530">B</text>
+<text x="838" y="50" font-size="15" text-anchor="start" font-weight="700" fill="#1E2530">Biological graph learning</text>
+<rect x="1054.0" y="37" width="34.4" height="16" rx="8" fill="#C0392B" stroke="none" stroke-width="1.0"/>
+<text x="1071.2" y="48.5" font-size="9.5" text-anchor="middle" font-weight="700" fill="#FFFFFF">OURS</text>
+<text x="816" y="69" font-size="11" text-anchor="start" font-weight="400" fill="#5B6472">heterogeneous GNN over the STRING PPI network · not in MoGraphDRP</text>
+<text x="862" y="110" font-size="12" text-anchor="middle" font-weight="700" fill="#2E6DB4">cell_line</text>
+<text x="990" y="110" font-size="12" text-anchor="middle" font-weight="700" fill="#3E9A6A">protein</text>
+<text x="862" y="540" font-size="12" text-anchor="middle" font-weight="700" fill="#D9782A">drug</text>
+<line x1="975" y1="150" x2="1040" y2="190" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="975" y1="150" x2="990" y2="240" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="1040" y1="190" x2="990" y2="240" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="1040" y1="190" x2="1050" y2="290" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="990" y1="240" x2="1050" y2="290" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="990" y1="240" x2="970" y2="340" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="1050" y1="290" x2="1035" y2="390" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="970" y1="340" x2="1035" y2="390" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="970" y1="340" x2="985" y2="440" stroke="#C0392B" stroke-width="2.4"/>
+<line x1="1035" y1="390" x2="985" y2="440" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="1035" y1="390" x2="1050" y2="490" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="985" y1="440" x2="1050" y2="490" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="985" y1="440" x2="970" y2="545" stroke="#C0392B" stroke-width="2.4"/>
+<line x1="1050" y1="490" x2="1035" y2="595" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="970" y1="545" x2="1035" y2="595" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="970" y1="545" x2="985" y2="650" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="1035" y1="595" x2="985" y2="650" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="1035" y1="595" x2="1045" y2="705" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="985" y1="650" x2="1045" y2="705" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="985" y1="650" x2="975" y2="760" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="1045" y1="705" x2="975" y2="760" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="1050" y1="290" x2="1050" y2="490" stroke="#A9C9B5" stroke-width="1.4"/>
+<line x1="874" y1="150" x2="967" y2="150" stroke="#2E6DB4" stroke-width="1.1"/>
+<line x1="874" y1="205" x2="982" y2="240" stroke="#2E6DB4" stroke-width="1.1"/>
+<line x1="874" y1="260" x2="982" y2="240" stroke="#2E6DB4" stroke-width="1.1"/>
+<line x1="874" y1="315" x2="1042" y2="290" stroke="#2E6DB4" stroke-width="1.1"/>
+<line x1="874" y1="370" x2="962" y2="340" stroke="#C0392B" stroke-width="2.4"/>
+<line x1="874" y1="580" x2="962" y2="545" stroke="#C0392B" stroke-width="2.4"/>
+<line x1="874" y1="635" x2="962" y2="545" stroke="#D9782A" stroke-width="1.1"/>
+<line x1="874" y1="690" x2="977" y2="650" stroke="#D9782A" stroke-width="1.1"/>
+<line x1="874" y1="745" x2="967" y2="760" stroke="#D9782A" stroke-width="1.1"/>
+<circle cx="862" cy="150" r="12" fill="#DCE8F6" stroke="#2E6DB4" stroke-width="1.5"/>
+<circle cx="862" cy="205" r="12" fill="#DCE8F6" stroke="#2E6DB4" stroke-width="1.5"/>
+<circle cx="862" cy="260" r="12" fill="#DCE8F6" stroke="#2E6DB4" stroke-width="1.5"/>
+<circle cx="862" cy="315" r="12" fill="#DCE8F6" stroke="#2E6DB4" stroke-width="1.5"/>
+<circle cx="862" cy="370" r="12" fill="#DCE8F6" stroke="#2E6DB4" stroke-width="1.5"/>
+<rect x="851" y="569" width="22" height="22" rx="4" fill="#FBE7D5" stroke="#D9782A" stroke-width="1.5"/>
+<rect x="851" y="624" width="22" height="22" rx="4" fill="#FBE7D5" stroke="#D9782A" stroke-width="1.5"/>
+<rect x="851" y="679" width="22" height="22" rx="4" fill="#FBE7D5" stroke="#D9782A" stroke-width="1.5"/>
+<rect x="851" y="734" width="22" height="22" rx="4" fill="#FBE7D5" stroke="#D9782A" stroke-width="1.5"/>
+<circle cx="975" cy="150" r="8" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1.4"/>
+<circle cx="1040" cy="190" r="8" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1.4"/>
+<circle cx="990" cy="240" r="8" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1.4"/>
+<circle cx="1050" cy="290" r="8" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1.4"/>
+<circle cx="970" cy="340" r="8" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1.4"/>
+<circle cx="1035" cy="390" r="8" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1.4"/>
+<circle cx="985" cy="440" r="8" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1.4"/>
+<circle cx="1050" cy="490" r="8" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1.4"/>
+<circle cx="970" cy="545" r="8" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1.4"/>
+<circle cx="1035" cy="595" r="8" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1.4"/>
+<circle cx="985" cy="650" r="8" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1.4"/>
+<circle cx="1045" cy="705" r="8" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1.4"/>
+<circle cx="975" cy="760" r="8" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1.4"/>
+<line x1="830" y1="796" x2="852" y2="796" stroke="#2E6DB4" stroke-width="2"/>
+<text x="860" y="800" font-size="10.5" text-anchor="start" font-weight="700" fill="#2E6DB4">has_mutation</text>
+<text x="952" y="800" font-size="10.5" text-anchor="start" font-weight="400" fill="#5B6472">4,341 driver-mutation edges</text>
+<line x1="830" y1="816" x2="852" y2="816" stroke="#D9782A" stroke-width="2"/>
+<text x="860" y="820" font-size="10.5" text-anchor="start" font-weight="700" fill="#D9782A">targets</text>
+<text x="952" y="820" font-size="10.5" text-anchor="start" font-weight="400" fill="#5B6472">683 GDSC drug–target edges</text>
+<line x1="830" y1="836" x2="852" y2="836" stroke="#3E9A6A" stroke-width="2"/>
+<text x="860" y="840" font-size="10.5" text-anchor="start" font-weight="700" fill="#3E9A6A">interacts_with</text>
+<text x="952" y="840" font-size="10.5" text-anchor="start" font-weight="400" fill="#5B6472">473,860 STRING edges, score ≥ 700</text>
+<text x="830" y="870" font-size="10" text-anchor="start" font-weight="400" fill="#C0392B">red path: a mutated protein and a drug target meet in 2 hops</text>
+<rect x="1090" y="96" width="214" height="520" rx="8" fill="#FFFFFF" stroke="#1E2530" stroke-width="1.4"/>
+<text x="1197.0" y="118" font-size="12.5" text-anchor="middle" font-weight="700" fill="#1E2530">HeteroConv × 2 layers</text>
+<text x="1197.0" y="134" font-size="10" text-anchor="middle" font-weight="400" fill="#5B6472">one GraphSAGE conv per relation</text>
+<text x="1104" y="160" font-size="10.5" text-anchor="start" font-weight="700" fill="#1E2530">node encoders → D = 128</text>
+<text x="1104" y="176" font-size="10" text-anchor="start" font-weight="400" fill="#5B6472">cell_line: Linear 256 → 128</text>
+<text x="1104" y="190" font-size="10" text-anchor="start" font-weight="400" fill="#5B6472">drug: Linear 256 → 128</text>
+<text x="1104" y="204" font-size="10" text-anchor="start" font-weight="400" fill="#5B6472">protein: Embedding 16,214 × 128</text>
+<rect x="1104" y="232" width="186" height="40" rx="5" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1.2"/>
+<text x="1197.0" y="249" font-size="11" text-anchor="middle" font-weight="700" fill="#1E2530" font-style="italic">interacts_with</text>
+<text x="1197.0" y="263" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">protein → protein</text>
+<rect x="1104" y="282" width="186" height="40" rx="5" fill="#DCE8F6" stroke="#2E6DB4" stroke-width="1.2"/>
+<text x="1197.0" y="299" font-size="11" text-anchor="middle" font-weight="700" fill="#1E2530" font-style="italic">has_mutation</text>
+<text x="1197.0" y="313" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">cell_line → protein</text>
+<rect x="1104" y="332" width="186" height="40" rx="5" fill="#FBE7D5" stroke="#D9782A" stroke-width="1.2"/>
+<text x="1197.0" y="349" font-size="11" text-anchor="middle" font-weight="700" fill="#1E2530" font-style="italic">targets</text>
+<text x="1197.0" y="363" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">drug → protein</text>
+<rect x="1104" y="382" width="186" height="40" rx="5" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1.2"/>
+<text x="1197.0" y="399" font-size="11" text-anchor="middle" font-weight="700" fill="#1E2530" font-style="italic">rev_has_mutation</text>
+<text x="1197.0" y="413" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">protein → cell_line</text>
+<rect x="1104" y="432" width="186" height="40" rx="5" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1.2"/>
+<text x="1197.0" y="449" font-size="11" text-anchor="middle" font-weight="700" fill="#1E2530" font-style="italic">rev_targets</text>
+<text x="1197.0" y="463" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">protein → drug</text>
+<text x="1197.0" y="498" font-size="11" text-anchor="middle" font-weight="700" fill="#1E2530">Σ over relations → ReLU</text>
+<text x="1197.0" y="518" font-size="10" text-anchor="middle" font-weight="400" fill="#5B6472">full-batch message passing;</text>
+<text x="1197.0" y="532" font-size="10" text-anchor="middle" font-weight="400" fill="#5B6472">only label pairs are mini-batched</text>
+<rect x="1104" y="556" width="186" height="44" rx="5" fill="#FFF4F2" stroke="#C0392B" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="1197.0" y="574" font-size="10" text-anchor="middle" font-weight="400" fill="#C0392B">GAT in the proposal → GraphSAGE</text>
+<text x="1197.0" y="588" font-size="10" text-anchor="middle" font-weight="400" fill="#C0392B">(GAT diverged in 3 runs)</text>
+<line x1="1062" y1="400" x2="1088" y2="400" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<line x1="1197.0" y1="616" x2="1197.0" y2="640" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="1120.0" y="648" width="18.75" height="16" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1138.75" y="648" width="18.75" height="16" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1157.5" y="648" width="18.75" height="16" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1176.25" y="648" width="18.75" height="16" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1195.0" y="648" width="18.75" height="16" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1213.75" y="648" width="18.75" height="16" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1232.5" y="648" width="18.75" height="16" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1251.25" y="648" width="18.75" height="16" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1120" y="648" width="150" height="16" rx="0" fill="none" stroke="#2E6DB4" stroke-width="1"/>
+<text x="1197" y="682" font-size="10.5" text-anchor="middle" font-weight="400" fill="#1E2530">h<tspan dy="3" font-size="0.75em">c</tspan><tspan dy="-3"></tspan> ∈ ℝ¹²⁸  refined cell</text>
+<rect x="1120.0" y="700" width="18.75" height="16" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1138.75" y="700" width="18.75" height="16" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1157.5" y="700" width="18.75" height="16" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1176.25" y="700" width="18.75" height="16" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1195.0" y="700" width="18.75" height="16" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1213.75" y="700" width="18.75" height="16" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1232.5" y="700" width="18.75" height="16" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1251.25" y="700" width="18.75" height="16" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1120" y="700" width="150" height="16" rx="0" fill="none" stroke="#D9782A" stroke-width="1"/>
+<text x="1197" y="734" font-size="10.5" text-anchor="middle" font-weight="400" fill="#1E2530">h<tspan dy="3" font-size="0.75em">d</tspan><tspan dy="-3"></tspan> ∈ ℝ¹²⁸  refined drug</text>
+<line x1="1270" y1="656" x2="1292" y2="656" stroke="#1E2530" stroke-width="1.3"/>
+<line x1="1270" y1="708" x2="1292" y2="708" stroke="#1E2530" stroke-width="1.3"/>
+<line x1="1292" y1="656" x2="1292" y2="708" stroke="#1E2530" stroke-width="1.3"/>
+<polyline points="1292,682 1333,682 1333,205 1374,205" fill="none" stroke="#1E2530" stroke-width="1.5" marker-end="url(#ar-ink)"/>
+<rect x="1345" y="20" width="535" height="560" rx="10" fill="#F4F6F9" stroke="#D5DAE1" stroke-width="1.0"/>
+<text x="1361" y="50" font-size="18" text-anchor="start" font-weight="700" fill="#1E2530">C</text>
+<text x="1383" y="50" font-size="15" text-anchor="start" font-weight="700" fill="#1E2530">Interaction &amp; prediction</text>
+<rect x="1590.6" y="37" width="74.0" height="16" rx="8" fill="#FFFFFF" stroke="#6B7480" stroke-width="1.1"/>
+<text x="1627.6" y="48.5" font-size="9.5" text-anchor="middle" font-weight="700" fill="#6B7480">MoGraphDRP</text>
+<text x="1361" y="69" font-size="11" text-anchor="start" font-weight="400" fill="#5B6472">multi-head bilinear attention, then an MLP regressor</text>
+<line x1="1374" y1="150" x2="1374" y2="265" stroke="#1E2530" stroke-width="1.3"/>
+<rect x="1394" y="110.0" width="16" height="13.333333333333334" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1394" y="123.33333333333333" width="16" height="13.333333333333334" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1394" y="136.66666666666666" width="16" height="13.333333333333334" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1394" y="150.0" width="16" height="13.333333333333334" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1394" y="163.33333333333334" width="16" height="13.333333333333334" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1394" y="176.66666666666669" width="16" height="13.333333333333334" rx="0" fill="#2E6DB4" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1394" y="110" width="16" height="80" rx="0" fill="none" stroke="#2E6DB4" stroke-width="1"/>
+<rect x="1394" y="225.0" width="16" height="13.333333333333334" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1394" y="238.33333333333334" width="16" height="13.333333333333334" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1394" y="251.66666666666666" width="16" height="13.333333333333334" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1394" y="265.0" width="16" height="13.333333333333334" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1394" y="278.3333333333333" width="16" height="13.333333333333334" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1394" y="291.6666666666667" width="16" height="13.333333333333334" rx="0" fill="#D9782A" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1394" y="225" width="16" height="80" rx="0" fill="none" stroke="#D9782A" stroke-width="1"/>
+<line x1="1374" y1="150" x2="1392" y2="150" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<line x1="1374" y1="265" x2="1392" y2="265" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<text x="1402" y="104" font-size="10.5" text-anchor="middle" font-weight="400" fill="#1E2530">h<tspan dy="3" font-size="0.75em">c</tspan><tspan dy="-3"></tspan></text>
+<text x="1402" y="320" font-size="10.5" text-anchor="middle" font-weight="400" fill="#1E2530">h<tspan dy="3" font-size="0.75em">d</tspan><tspan dy="-3"></tspan></text>
+<line x1="1410" y1="150" x2="1436" y2="150" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<line x1="1410" y1="265" x2="1436" y2="265" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="1438" y="124" width="112" height="52" rx="6" fill="#FFFFFF" stroke="#1E2530" stroke-width="1.4"/>
+<text x="1494.0" y="141.0" font-size="10" text-anchor="middle" font-weight="700" fill="#1E2530">FCNet</text>
+<text x="1494.0" y="154.0" font-size="10" text-anchor="middle" font-weight="400" fill="#1E2530">128 → 4 × 128</text>
+<text x="1494.0" y="167.0" font-size="10" text-anchor="middle" font-weight="400" fill="#1E2530">ReLU · dropout</text>
+<rect x="1438" y="239" width="112" height="52" rx="6" fill="#FFFFFF" stroke="#1E2530" stroke-width="1.4"/>
+<text x="1494.0" y="256.0" font-size="10" text-anchor="middle" font-weight="700" fill="#1E2530">FCNet</text>
+<text x="1494.0" y="269.0" font-size="10" text-anchor="middle" font-weight="400" fill="#1E2530">128 → 4 × 128</text>
+<text x="1494.0" y="282.0" font-size="10" text-anchor="middle" font-weight="400" fill="#1E2530">ReLU · dropout</text>
+<line x1="1550" y1="150" x2="1588" y2="190" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<line x1="1550" y1="265" x2="1588" y2="232" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="1590" y="160" width="70" height="70" rx="2" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1"/>
+<rect x="1598" y="166" width="70" height="70" rx="2" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1"/>
+<rect x="1606" y="172" width="70" height="70" rx="2" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1"/>
+<rect x="1614" y="178" width="70" height="70" rx="2" fill="#DDF0E5" stroke="#3E9A6A" stroke-width="1"/>
+<text x="1650" y="270" font-size="11.5" text-anchor="middle" font-weight="700" fill="#1E2530">Bilinear attention</text>
+<text x="1650" y="285" font-size="10" text-anchor="middle" font-weight="400" fill="#5B6472">4 heads · c ⊙ d</text>
+<line x1="1690" y1="205" x2="1740" y2="205" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<rect x="1743" y="160.0" width="18" height="11.25" rx="0" fill="#8E6BB8" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1743" y="171.25" width="18" height="11.25" rx="0" fill="#8E6BB8" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1743" y="182.5" width="18" height="11.25" rx="0" fill="#8E6BB8" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1743" y="193.75" width="18" height="11.25" rx="0" fill="#8E6BB8" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1743" y="205.0" width="18" height="11.25" rx="0" fill="#8E6BB8" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1743" y="216.25" width="18" height="11.25" rx="0" fill="#8E6BB8" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1743" y="227.5" width="18" height="11.25" rx="0" fill="#8E6BB8" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1743" y="238.75" width="18" height="11.25" rx="0" fill="#8E6BB8" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1743" y="160" width="18" height="90" rx="0" fill="none" stroke="#8E6BB8" stroke-width="1"/>
+<text x="1752" y="268" font-size="10.5" text-anchor="middle" font-weight="700" fill="#1E2530">f ∈ ℝ²⁵⁶</text>
+<text x="1752" y="282" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">interaction</text>
+<line x1="1752" y1="290" x2="1752" y2="320" stroke="#1E2530" stroke-width="1.3"/>
+<polyline points="1752,320 1470,320 1470,350" fill="none" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<line x1="1470" y1="350" x2="1580" y2="386" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="350" x2="1580" y2="422" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="350" x2="1580" y2="458" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="350" x2="1580" y2="494" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="386" x2="1580" y2="386" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="386" x2="1580" y2="422" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="386" x2="1580" y2="458" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="386" x2="1580" y2="494" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="422" x2="1580" y2="386" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="422" x2="1580" y2="422" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="422" x2="1580" y2="458" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="422" x2="1580" y2="494" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="458" x2="1580" y2="386" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="458" x2="1580" y2="422" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="458" x2="1580" y2="458" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="458" x2="1580" y2="494" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="494" x2="1580" y2="386" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="494" x2="1580" y2="422" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="494" x2="1580" y2="458" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="494" x2="1580" y2="494" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="530" x2="1580" y2="386" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="530" x2="1580" y2="422" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="530" x2="1580" y2="458" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1470" y1="530" x2="1580" y2="494" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1580" y1="386" x2="1690" y2="440" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1580" y1="422" x2="1690" y2="440" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1580" y1="458" x2="1690" y2="440" stroke="#C4CAD3" stroke-width="0.7"/>
+<line x1="1580" y1="494" x2="1690" y2="440" stroke="#C4CAD3" stroke-width="0.7"/>
+<circle cx="1470" cy="350" r="10" fill="#FFFFFF" stroke="#1E2530" stroke-width="1.3"/>
+<circle cx="1470" cy="386" r="10" fill="#FFFFFF" stroke="#1E2530" stroke-width="1.3"/>
+<circle cx="1470" cy="422" r="10" fill="#FFFFFF" stroke="#1E2530" stroke-width="1.3"/>
+<circle cx="1470" cy="458" r="10" fill="#FFFFFF" stroke="#1E2530" stroke-width="1.3"/>
+<circle cx="1470" cy="494" r="10" fill="#FFFFFF" stroke="#1E2530" stroke-width="1.3"/>
+<circle cx="1470" cy="530" r="10" fill="#FFFFFF" stroke="#1E2530" stroke-width="1.3"/>
+<circle cx="1580" cy="386" r="10" fill="#FFFFFF" stroke="#1E2530" stroke-width="1.3"/>
+<circle cx="1580" cy="422" r="10" fill="#FFFFFF" stroke="#1E2530" stroke-width="1.3"/>
+<circle cx="1580" cy="458" r="10" fill="#FFFFFF" stroke="#1E2530" stroke-width="1.3"/>
+<circle cx="1580" cy="494" r="10" fill="#FFFFFF" stroke="#1E2530" stroke-width="1.3"/>
+<circle cx="1690" cy="440" r="11" fill="#1E2530" stroke="none" stroke-width="1.0"/>
+<text x="1470" y="556" font-size="10.5" text-anchor="middle" font-weight="700" fill="#1E2530">256</text>
+<text x="1580" y="556" font-size="10.5" text-anchor="middle" font-weight="700" fill="#1E2530">128</text>
+<text x="1690" y="556" font-size="10.5" text-anchor="middle" font-weight="700" fill="#1E2530">1</text>
+<text x="1712" y="430" font-size="15" text-anchor="start" font-weight="700" fill="#1E2530">ŷ</text>
+<text x="1712" y="450" font-size="11" text-anchor="start" font-weight="400" fill="#1E2530">ln(IC50)</text>
+<text x="1810" y="405" font-size="11.5" text-anchor="middle" font-weight="700" fill="#1E2530">MLP</text>
+<text x="1810" y="421" font-size="10" text-anchor="middle" font-weight="400" fill="#5B6472">BatchNorm</text>
+<text x="1810" y="435" font-size="10" text-anchor="middle" font-weight="400" fill="#5B6472">ReLU</text>
+<text x="1810" y="449" font-size="10" text-anchor="middle" font-weight="400" fill="#5B6472">dropout 0.4</text>
+<rect x="1345" y="600" width="535" height="300" rx="10" fill="#F4F6F9" stroke="#D5DAE1" stroke-width="1.0"/>
+<text x="1361" y="630" font-size="18" text-anchor="start" font-weight="700" fill="#1E2530">D</text>
+<text x="1383" y="630" font-size="15" text-anchor="start" font-weight="700" fill="#1E2530">Ensemble refinement</text>
+<rect x="1548.6" y="617" width="74.0" height="16" rx="8" fill="#FFFFFF" stroke="#6B7480" stroke-width="1.1"/>
+<text x="1585.6" y="628.5" font-size="9.5" text-anchor="middle" font-weight="700" fill="#6B7480">MoGraphDRP</text>
+<text x="1361" y="649" font-size="11" text-anchor="start" font-weight="400" fill="#5B6472">gradient-boosted trees correct the network's residual error</text>
+<polyline points="1761,205 1860,205 1860,672 1458,672 1458,682" fill="none" stroke="#1E2530" stroke-width="1.4" marker-end="url(#ar-ink)"/>
+<polyline points="1690,452 1690,520 1860,520" fill="none" stroke="#1E2530" stroke-width="1.4"/>
+<circle cx="1860" cy="520" r="3.5" fill="#1E2530" stroke="none" stroke-width="1.0"/>
+<text x="1868" y="196" font-size="10.5" text-anchor="start" font-weight="700" fill="#1E2530">f</text>
+<text x="1698" y="536" font-size="11" text-anchor="start" font-weight="700" fill="#1E2530">ŷ</text>
+<rect x="1450" y="684.0" width="16" height="12.5" rx="0" fill="#8E6BB8" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1450" y="696.5" width="16" height="12.5" rx="0" fill="#8E6BB8" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1450" y="709.0" width="16" height="12.5" rx="0" fill="#8E6BB8" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1450" y="721.5" width="16" height="12.5" rx="0" fill="#8E6BB8" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1450" y="734.0" width="16" height="12.5" rx="0" fill="#8E6BB8" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1450" y="746.5" width="16" height="12.5" rx="0" fill="#8E6BB8" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1450" y="759.0" width="16" height="12.5" rx="0" fill="#8E6BB8" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1450" y="771.5" width="16" height="12.5" rx="0" fill="#8E6BB8" stroke="#FFFFFF" stroke-width="0.8"/>
+<rect x="1450" y="684" width="16" height="100" rx="0" fill="none" stroke="#8E6BB8" stroke-width="1"/>
+<rect x="1450" y="784" width="16" height="12" rx="0" fill="#1E2530" stroke="none" stroke-width="1.0"/>
+<text x="1458" y="814" font-size="10.5" text-anchor="middle" font-weight="700" fill="#1E2530">Z = f ⊕ ŷ</text>
+<text x="1458" y="828" font-size="9.5" text-anchor="middle" font-weight="400" fill="#5B6472">257-d</text>
+<line x1="1470" y1="740" x2="1520" y2="740" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<line x1="1570" y1="700" x2="1544" y2="732" stroke="#5B6472" stroke-width="1.1"/>
+<line x1="1570" y1="700" x2="1596" y2="732" stroke="#5B6472" stroke-width="1.1"/>
+<line x1="1544" y1="732" x2="1532" y2="764" stroke="#5B6472" stroke-width="1.1"/>
+<line x1="1544" y1="732" x2="1556" y2="764" stroke="#5B6472" stroke-width="1.1"/>
+<line x1="1596" y1="732" x2="1584" y2="764" stroke="#5B6472" stroke-width="1.1"/>
+<line x1="1596" y1="732" x2="1608" y2="764" stroke="#5B6472" stroke-width="1.1"/>
+<circle cx="1570" cy="700" r="6" fill="#1E2530" stroke="none" stroke-width="1.0"/>
+<circle cx="1544" cy="732" r="6" fill="#B7BEC8" stroke="none" stroke-width="1.0"/>
+<circle cx="1596" cy="732" r="6" fill="#B7BEC8" stroke="none" stroke-width="1.0"/>
+<circle cx="1532" cy="764" r="6" fill="#B7BEC8" stroke="none" stroke-width="1.0"/>
+<circle cx="1556" cy="764" r="6" fill="#1E2530" stroke="none" stroke-width="1.0"/>
+<circle cx="1584" cy="764" r="6" fill="#1E2530" stroke="none" stroke-width="1.0"/>
+<circle cx="1608" cy="764" r="6" fill="#B7BEC8" stroke="none" stroke-width="1.0"/>
+<text x="1622" y="740" font-size="16" text-anchor="middle" font-weight="700" fill="#1E2530">···</text>
+<line x1="1676" y1="700" x2="1650" y2="732" stroke="#5B6472" stroke-width="1.1"/>
+<line x1="1676" y1="700" x2="1702" y2="732" stroke="#5B6472" stroke-width="1.1"/>
+<line x1="1650" y1="732" x2="1638" y2="764" stroke="#5B6472" stroke-width="1.1"/>
+<line x1="1650" y1="732" x2="1662" y2="764" stroke="#5B6472" stroke-width="1.1"/>
+<line x1="1702" y1="732" x2="1690" y2="764" stroke="#5B6472" stroke-width="1.1"/>
+<line x1="1702" y1="732" x2="1714" y2="764" stroke="#5B6472" stroke-width="1.1"/>
+<circle cx="1676" cy="700" r="6" fill="#1E2530" stroke="none" stroke-width="1.0"/>
+<circle cx="1650" cy="732" r="6" fill="#B7BEC8" stroke="none" stroke-width="1.0"/>
+<circle cx="1702" cy="732" r="6" fill="#B7BEC8" stroke="none" stroke-width="1.0"/>
+<circle cx="1638" cy="764" r="6" fill="#B7BEC8" stroke="none" stroke-width="1.0"/>
+<circle cx="1662" cy="764" r="6" fill="#1E2530" stroke="none" stroke-width="1.0"/>
+<circle cx="1690" cy="764" r="6" fill="#1E2530" stroke="none" stroke-width="1.0"/>
+<circle cx="1714" cy="764" r="6" fill="#B7BEC8" stroke="none" stroke-width="1.0"/>
+<text x="1622" y="800" font-size="12" text-anchor="middle" font-weight="700" fill="#1E2530">XGBoost</text>
+<text x="1622" y="816" font-size="10" text-anchor="middle" font-weight="400" fill="#5B6472">100 trees · depth 6 · lr 0.05</text>
+<line x1="1725" y1="740" x2="1778" y2="740" stroke="#1E2530" stroke-width="1.3" marker-end="url(#ar-ink)"/>
+<polygon points="1810,712 1838,740 1810,768 1782,740" fill="#C0392B"/>
+<text x="1810" y="744" font-size="9.5" text-anchor="middle" font-weight="700" fill="#FFFFFF">IC50</text>
+<text x="1810" y="790" font-size="10.5" text-anchor="middle" font-weight="700" fill="#1E2530">final</text>
+<text x="1810" y="804" font-size="10.5" text-anchor="middle" font-weight="400" fill="#1E2530">ln(IC50)</text>
+<rect x="20" y="922" width="34.4" height="16" rx="8" fill="#C0392B" stroke="none" stroke-width="1.0"/>
+<text x="37.2" y="933.5" font-size="9.5" text-anchor="middle" font-weight="700" fill="#FFFFFF">OURS</text>
+<text x="62.4" y="934" font-size="11" text-anchor="start" font-weight="400" fill="#1E2530">changed from, or added to, MoGraphDRP</text>
+<rect x="324.4" y="922" width="74.0" height="16" rx="8" fill="#FFFFFF" stroke="#6B7480" stroke-width="1.1"/>
+<text x="361.4" y="933.5" font-size="9.5" text-anchor="middle" font-weight="700" fill="#6B7480">MoGraphDRP</text>
+<text x="406.4" y="934" font-size="11" text-anchor="start" font-weight="400" fill="#1E2530">kept from MoGraphDRP (hyperparameters from their Table 1)</text>
+<circle cx="782.4" cy="930" r="6" fill="#2E6DB4" stroke="none" stroke-width="1.0"/>
+<text x="794.4" y="934" font-size="11" text-anchor="start" font-weight="400" fill="#1E2530">cell line</text>
+<circle cx="870.9" cy="930" r="6" fill="#D9782A" stroke="none" stroke-width="1.0"/>
+<text x="882.9" y="934" font-size="11" text-anchor="start" font-weight="400" fill="#1E2530">drug</text>
+<circle cx="926.9" cy="930" r="6" fill="#3E9A6A" stroke="none" stroke-width="1.0"/>
+<text x="938.9" y="934" font-size="11" text-anchor="start" font-weight="400" fill="#1E2530">protein / PPI</text>
+<text x="1880" y="934" font-size="10.5" text-anchor="end" font-weight="400" fill="#5B6472">trained on 111,799 (cell line, drug) pairs · GDSC2 ln(IC50) · split grouped by cell line 70 / 15 / 15</text>
+</svg>
