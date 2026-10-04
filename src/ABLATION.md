@@ -28,7 +28,7 @@ These must be identical for every rung, otherwise a delta is not attributable.
 
 | Item | Setting |
 |---|---|
-| Pairs | 111,799 (cell line, drug) pairs; 532 cell lines; 240 drug IDs |
+| Pairs | 111,799 (cell line, drug) pairs; 531 cell lines (371 / 80 / 80 train / val / test; 532 have omics, one has no pair after the fingerprint filter); 240 drug IDs |
 | Split | grouped by cell line, 70/15/15, `random_state=42` (77,668 / 17,291 / 16,840) |
 | Omics preprocessing | per-modality scaling + PCA to 128 |
 | Optimiser | Adam, lr 1e-4, weight decay **0** (Phase 0 frozen base) |
@@ -97,8 +97,10 @@ Known caveats to state honestly in the report:
   built, this rung measures the extra projection layers, not attention.
   Decided 2026-10-03: reported with this caveat, not fixed.
 - **e:** not usable under leave-drugs-out (unseen drugs have no statistics).
-- **f:** not built yet. Covers only pairs whose drug has a known target
-  (TBD % of pairs); 130 drugs have none.
+- **f:** covers only pairs whose drug has a known target: 71.75% of pairs
+  (80,213 of 111,799; test 12,119 of 16,840). 169 of the 240 drugs have a
+  target and 71 have none. (The "130 drugs with no target" figure counts all
+  498 drugs in the graph, most of which are not in these pairs.)
 
 ## 5. Main result — grouped split
 
@@ -376,7 +378,7 @@ Tick the ones that apply and add numbers.
 - [x] Base uses PCA features, not gene-level features; differs from the benchmark's COSMIC filtering.
 - [ ] Only 532 of GDSC2's 969 cell lines (tri-omics-complete subset).
 - [x] Component a is degenerate as built (see §4).
-- [ ] Component f covers TBD % of pairs.
+- [x] Component f covers 71.75% of pairs (169 of 240 drugs have a known target).
 - [x] The benchmark comparison is against a reimplementation, not the authors' code on their data.
 
 ## 13. Figures to produce

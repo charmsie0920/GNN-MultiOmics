@@ -16,7 +16,9 @@ phase finishes or a decision changes.
   drug-target knowledge with attention over genes and tests mutated vs
   wild-type cell lines. Do not claim to be first at either. Ours differs by
   explicit target tokens, pair-specific weights and PPI topology. Limitation
-  to state: our component needs known targets (130 drugs have none).
+  to state: our component needs known targets. Of the 240 drugs in the
+  training pairs, 71 have none (28.25% of pairs); the graph's "130 drugs with
+  no target" counts all 498 drug nodes.
   See `docs/17_midi_review.md`.
 - **`HeteroIC50GNN` is no longer the final model.** It stays in the results
   table as a compared graph baseline. Its own diagnostics show why
@@ -127,7 +129,10 @@ neither fires), checkpoint on best validation RMSE. The earlier copy
 
 **To add a component** (e.g. the pair module): add one entry to `COMPONENTS`
 that overrides one new `BASE` field, and thread that field into `run_one`.
-Its `base+<name>` rung and its place in `full` follow automatically.
+Its `base+<name>` rung follows automatically. `full` does not: since
+2026-10-04 it is pinned to the five Phase 2 components (`PHASE2_COMPONENTS`),
+so adding a component cannot change what the existing `full` rows mean. The
+final model gets its own name when Phase 5 defines it.
 
 ### Phase 2 — Run the ladder (3-5 seeds)
 
@@ -172,8 +177,10 @@ setsid nohup systemd-inhibit --what=sleep:idle --why="Phase 2 ladder" \
 - `--seeds` varies initialisation and batch order only; the grouped split is
   fixed at seed 42. The std over seeds is training noise, not split noise.
 - Progress: `tail phase2_ladder.log` (gitignored) and the CSV row count.
-- Expected sanity values: `per_drug_mean_rmse` = 1.4889 on every row, and
-  `best_epoch` usually late (Phase 0's was 195-200). After 200 epochs `base`
+- Expected sanity values: `per_drug_mean_rmse` = 1.4889 on every row. Under
+  the grouped split `best_epoch` is mostly early (10-60; `base` 72-122,
+  `base+proteomics` 102-180), unlike Phase 0's 195-200 under the random split;
+  only `base+bilinear` peaked at the end. After 200 epochs `base`
   should be below 1.4889 (comparable earlier models reached ~1.28-1.33); if it
   is not, stop and investigate. A 1-epoch `base` scores ~2.75, which is normal.
 
@@ -253,7 +260,8 @@ New file `src/models/pair_graph_drp.py`; reuse encoders from
       line, target proteins per drug.
 - [ ] Cross-attention: drug target tokens as queries, cell mutated-protein
       tokens as keys/values, masked mean-pool to one pair vector.
-- [ ] Empty sets (130 drugs with no target, 6 cell lines with no mutation):
+- [ ] Empty sets (71 of the 240 training drugs have no target, 6 cell lines
+      have no mutation):
       add a learned "none" token so no row is fully masked
       (`nn.MultiheadAttention` returns NaN on an all-masked row).
 - [ ] Concatenate the pair vector with the bilinear interaction vector before

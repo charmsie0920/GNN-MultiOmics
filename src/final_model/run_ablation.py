@@ -9,11 +9,12 @@ The ladder is **Base + one component at a time**:
     base+<component>        exactly one switch changed, so the delta against
                             `base` measures that component alone
     aligned                 base+mol_graph+bilinear, the MoGraphDRP reproduction
-    full                    base + every component
+    full                    base + the five Phase 2 components
 
 Components are declared once in `COMPONENTS`; adding a new one there adds its
-`base+<name>` rung to the default ladder and to `full`. Any combination can be
-requested by name, e.g. `--configs base+bilinear+proteomics`.
+`base+<name>` rung to the default ladder. `full` is pinned to the components it
+was run with, so a later component cannot change what its rows mean. Any
+combination can be requested by name, e.g. `--configs base+bilinear+proteomics`.
 
 Every configuration can be evaluated under **both** the benchmark's random
 pair split and this project's cell-line-grouped split. The grouped split is the
@@ -31,7 +32,9 @@ and training follows Phase 0: Adam, lr 1e-4, no weight decay, 200 epochs at a
 constant rate, checkpoint on best validation RMSE.
 
 Results are appended one row per finished run, so an interrupted sweep loses
-nothing and re-running skips what is already done (`--rerun` to repeat).
+nothing and re-running skips what is already done (`--rerun` to repeat). Each
+run's validation and test predictions are saved beside the CSV, in
+`<csv name>_predictions/`, for subset metrics and paired comparisons.
 
 Run from the repository root:
     python "src/final_model/run_ablation.py" --list
@@ -77,6 +80,7 @@ from src.data.experiment_utils import (  # noqa: E402
     print_metric_block,
     random_pair_split,
 )
+from src.data.pair_features import build_pair_features  # noqa: E402
 from src.data.target_scaling import PerDrugTargetScaler  # noqa: E402
 # The frozen Phase 0 baseline. Imported, never copied: every rung must be built
 # from the exact class whose random-split reproduction was validated.
@@ -87,6 +91,7 @@ from src.models.mographdrp_aligned import (  # noqa: E402
     MAX_EPOCHS,
     MoGraphDRPAligned,
 )
+from src.models.pair_graph_drp import PairGraphDRP  # noqa: E402
 
 RESULTS_CSV = Path("src/final_model/results/ablation_results.csv")
 
@@ -109,6 +114,7 @@ BASE: dict = dict(
     drug_mode="fingerprint",
     modalities=(GE_KEY, MUT_CNV_KEY),
     standardize_targets=False,
+    pair_module="none",
 )
 
 # One entry per improvement: the single BASE field it overrides, and what it is.
@@ -123,14 +129,21 @@ COMPONENTS: dict[str, tuple[dict, str]] = {
                    "proteomics as a third omics branch"),
     "std_targets": (dict(standardize_targets=True),
                     "per-drug standardized ln(IC50) targets"),
+    "pair_features": (dict(pair_module="features"),
+                      "hand-built target-vs-mutation pair features into the predictor (Phase 3 gate)"),
 }
 # Each component must own a different field, otherwise two of them could not be
 # combined and `base+a` vs `base+b` would not be independent switches.
 assert len({k for override, _ in COMPONENTS.values() for k in override}) == len(COMPONENTS)
 
+# `full` is the model the Phase 2 rows were run with. It is spelled out rather
+# than derived from `COMPONENTS`: a component added later would otherwise
+# redefine it, and the skip-if-done check would take the old rows for the new
+# model.
+PHASE2_COMPONENTS = ("cross_attention", "mol_graph", "bilinear", "proteomics", "std_targets")
 ALIASES: dict[str, str] = {
     "aligned": "base+mol_graph+bilinear",
-    "full": "+".join(["base", *COMPONENTS]),
+    "full": "+".join(["base", *PHASE2_COMPONENTS]),
 }
 DEFAULT_LADDER = ["base", *[f"base+{name}" for name in COMPONENTS], "aligned", "full"]
 PROTOCOLS = ("grouped", "random")
@@ -153,12 +166,13 @@ def resolve_config(config_id: str) -> dict:
 
 
 def print_ladder(config_ids: list[str]) -> None:
-    print(f"{'config':<34}{'fusion':<17}{'head':<10}{'drug':<13}{'std_y':<7}omics")
-    print("-" * 104)
+    print(f"{'config':<34}{'fusion':<17}{'head':<10}{'drug':<13}{'std_y':<7}{'pair':<10}omics")
+    print("-" * 114)
     for config_id in config_ids:
         cfg = resolve_config(config_id)
         print(f"{config_id:<34}{cfg['fusion']:<17}{cfg['head']:<10}{cfg['drug_mode']:<13}"
-              f"{str(cfg['standardize_targets']):<7}{'+'.join(cfg['modalities'])}")
+              f"{str(cfg['standardize_targets']):<7}{cfg['pair_module']:<10}"
+              f"{'+'.join(cfg['modalities'])}")
     print("\ncomponents:")
     for name, (_, description) in COMPONENTS.items():
         print(f"  {name:<17}{description}")
@@ -194,8 +208,11 @@ def load_pairs(graphs):
 
 
 @torch.no_grad()
-def predict(model, omics, fingerprints, codes, idx, keys, device) -> np.ndarray:
-    """Raw model output for the rows in `idx` (z-scores when targets are standardized)."""
+def predict(model, omics, fingerprints, codes, idx, keys, device, pair=None) -> np.ndarray:
+    """Raw model output for the rows in `idx` (z-scores when targets are standardized).
+
+    `pair` is the per-pair feature matrix for models that take one, else None.
+    """
     model.eval()
     preds = []
     for start in range(0, len(idx), BATCH_SIZE):
@@ -203,7 +220,8 @@ def predict(model, omics, fingerprints, codes, idx, keys, device) -> np.ndarray:
         ob = {k: torch.from_numpy(omics[k][rows]).to(device) for k in keys}
         fb = torch.from_numpy(fingerprints[rows]).to(device)
         cb = torch.from_numpy(codes[rows]).to(device)
-        preds.append(model(ob, fb, cb).cpu().numpy())
+        extra = [] if pair is None else [torch.from_numpy(pair[rows]).to(device)]
+        preds.append(model(ob, fb, cb, *extra).cpu().numpy())
     return np.concatenate(preds)
 
 
@@ -220,11 +238,14 @@ def train(model, loader, predict_ln, val_idx, y_va, keys, device, max_epochs) ->
 
     for epoch in range(1, max_epochs + 1):
         model.train()
-        for *omics_batches, fb, cb, yb in loader:
-            od = {k: t.to(device) for k, t in zip(keys, omics_batches)}
-            fb, cb, yb = fb.to(device), cb.to(device), yb.to(device)
+        for *inputs, yb in loader:
+            # One tensor per omics key, then fingerprint, drug code and, for
+            # models that take one, the pair features.
+            od = {k: t.to(device) for k, t in zip(keys, inputs)}
+            fb, cb, *extra = (t.to(device) for t in inputs[len(keys):])
+            yb = yb.to(device)
             optimizer.zero_grad()
-            loss = criterion(model(od, fb, cb), yb)
+            loss = criterion(model(od, fb, cb, *extra), yb)
             loss.backward()
             optimizer.step()
 
@@ -248,13 +269,15 @@ def train(model, loader, predict_ln, val_idx, y_va, keys, device, max_epochs) ->
     return model, best_epoch
 
 
-def run_one(config_id, protocol, data, batched, threshold, device, seed, max_epochs) -> dict:
-    gathered, fingerprints, codes, y, groups = data
+def run_one(config_id, protocol, data, batched, threshold, device, seed, max_epochs) -> tuple[dict, dict]:
+    """Train and score one run -> (results row, validation and test predictions)."""
+    gathered, fingerprints, codes, y, groups, pair_features = data
     cfg = resolve_config(config_id)
+    pair = pair_features if cfg["pair_module"] == "features" else None
     keys = list(cfg["modalities"])
     print("\n" + "#" * 82)
     print(f"# {config_id} | protocol={protocol} | seed={seed}")
-    print(f"# components: {cfg['components']} | omics: {'+'.join(keys)}")
+    print(f"# components: {cfg['components']} | omics: {'+'.join(keys)} | pair: {cfg['pair_module']}")
     print("#" * 82)
 
     torch.manual_seed(seed)
@@ -277,28 +300,33 @@ def run_one(config_id, protocol, data, batched, threshold, device, seed, max_epo
     tensors = [torch.from_numpy(gathered[k][train_idx]) for k in keys] + [
         torch.from_numpy(fingerprints[train_idx]),
         torch.from_numpy(codes[train_idx]),
+        *([] if pair is None else [torch.from_numpy(pair[train_idx])]),
         torch.from_numpy(y_fit[train_idx]),
     ]
     loader = DataLoader(TensorDataset(*tensors), batch_size=BATCH_SIZE,
                         shuffle=True, drop_last=True)
 
-    model = MoGraphDRPAligned(
+    model_kwargs = dict(
         modalities=keys, drug_mode=cfg["drug_mode"], fusion=cfg["fusion"],
         head=cfg["head"], batched=batched, omics_in_dim=gathered[keys[0]].shape[1],
         dropout=DROPOUT,
-    ).to(device)
+    )
+    # Without a pair module this is the frozen base itself, built as in Phase 2.
+    model = (MoGraphDRPAligned(**model_kwargs) if pair is None
+             else PairGraphDRP(**model_kwargs, pair_dim=pair.shape[1])).to(device)
     n_params = sum(p.numel() for p in model.parameters())
 
     def predict_ln(idx: np.ndarray) -> np.ndarray:
-        raw = predict(model, gathered, fingerprints, codes, idx, keys, device)
+        raw = predict(model, gathered, fingerprints, codes, idx, keys, device, pair)
         return raw if scaler is None else scaler.inverse_transform(raw, codes[idx])
 
     t0 = time.perf_counter()
     model, best_epoch = train(model, loader, predict_ln, val_idx, y[val_idx], keys, device, max_epochs)
     t_fit = time.perf_counter() - t0
 
-    val = evaluate(y[val_idx], predict_ln(val_idx), threshold)
-    test = evaluate(y[test_idx], predict_ln(test_idx), threshold)
+    val_pred, test_pred = predict_ln(val_idx), predict_ln(test_idx)
+    val = evaluate(y[val_idx], val_pred, threshold)
+    test = evaluate(y[test_idx], test_pred, threshold)
     floor = mean_only_floor(y[train_idx], y[test_idx])
     drug_floor = per_drug_mean_floor(y[train_idx], codes[train_idx], y[test_idx], codes[test_idx])
 
@@ -306,7 +334,10 @@ def run_one(config_id, protocol, data, batched, threshold, device, seed, max_epo
     print(f"params={n_params:,}  best_epoch={best_epoch}  fit={t_fit:.1f}s")
     print(f"Peak RSS: {peak_rss_gb():.2f} GB")
 
-    return {
+    # The row's columns are fixed: rows are appended to an existing CSV without
+    # a header, so a new column would misalign every later row. `components`
+    # already records the pair module.
+    row = {
         "config": config_id, "components": cfg["components"], "protocol": protocol, "seed": seed,
         "fusion": cfg["fusion"], "head": cfg["head"], "drug_rep": cfg["drug_mode"],
         "omics": "+".join(keys), "standardize_targets": cfg["standardize_targets"],
@@ -318,6 +349,18 @@ def run_one(config_id, protocol, data, batched, threshold, device, seed, max_epo
         "params": n_params, "best_epoch": best_epoch, "max_epochs": max_epochs,
         "fit_seconds": t_fit,
     }
+    # Row indices and true values are stored with the predictions so a reader
+    # can check it has rebuilt the same pair rows before scoring subsets.
+    predictions = {
+        "val_idx": val_idx, "val_true": y[val_idx], "val_pred": val_pred,
+        "test_idx": test_idx, "test_true": y[test_idx], "test_pred": test_pred,
+    }
+    return row, predictions
+
+
+def predictions_dir(results_csv: Path) -> Path:
+    """Where a results CSV's per-run predictions live: `<csv name>_predictions/`."""
+    return results_csv.with_name(results_csv.stem + "_predictions")
 
 
 def print_summary(df: pd.DataFrame) -> None:
@@ -383,12 +426,16 @@ def main(argv: list[str] | None = None) -> None:
 
     graphs = build_drug_graphs()
     assert_fingerprint_population_parity(graphs)
-    gathered, fingerprints, codes, y, groups, batched, _, _ = load_pairs(graphs)
-    data = (gathered, fingerprints, codes, y, groups)
+    gathered, fingerprints, codes, y, groups, batched, _, y_used = load_pairs(graphs)
+    data = (gathered, fingerprints, codes, y, groups, build_pair_features(y_used).matrix)
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
+    prediction_dir = predictions_dir(args.out)
+    prediction_dir.mkdir(parents=True, exist_ok=True)
     for config_id, protocol, seed in todo:
-        row = run_one(config_id, protocol, data, batched, threshold, device, seed, args.max_epochs)
+        row, predictions = run_one(config_id, protocol, data, batched, threshold, device,
+                                   seed, args.max_epochs)
+        # Predictions first: a row in the CSV then always has its predictions.
+        np.savez_compressed(prediction_dir / f"{config_id}__{protocol}__seed{seed}.npz", **predictions)
         pd.DataFrame([row]).to_csv(args.out, mode="a", header=not args.out.exists(), index=False)
 
     print("\n" + "=" * 100)
