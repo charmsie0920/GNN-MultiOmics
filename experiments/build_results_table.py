@@ -71,6 +71,9 @@ ENSEMBLE_CSV = Path("experiments/08_ensemble_refinement/ensemble_results.csv")
 # and include random-split rows that must never be ranked against them.
 ALIGNMENT_CSV = Path("experiments/14_benchmark_alignment/benchmark_alignment_results.csv")
 ABLATION_CSV = Path("src/final_model/results/ablation_results.csv")
+# Phase 3 gate: `base` re-run with saved predictions beside `base+pair_features`.
+# Kept apart from the ladder CSV so its `base` rows are not counted twice.
+PAIR_GATE_CSV = Path("src/final_model/results/pair_gate_results.csv")
 OUTPUT = Path("docs/results.md")
 
 METRICS = ["test_rmse", "test_mae", "test_r2", "test_pcc", "test_scc", "test_auc", "test_f1"]
@@ -207,6 +210,7 @@ def main() -> None:
     )
     alignment_rows = seed_summary_rows(ALIGNMENT_CSV, drug_floor)
     ablation_rows = seed_summary_rows(ABLATION_CSV, drug_floor)
+    pair_gate_rows = seed_summary_rows(PAIR_GATE_CSV, drug_floor)
 
     ens = pd.read_csv(ENSEMBLE_CSV) if ENSEMBLE_CSV.exists() else pd.DataFrame()
     ens_rows = "\n".join(
@@ -297,6 +301,18 @@ grouped rows.
 
 {seed_header}
 {ablation_rows}
+
+### Phase 3: pair-feature gate
+
+`base` re-run beside `base+pair_features` (hand-built target-vs-mutation
+features into the predictor), same process and seeds
+([`src/final_model/pair_gate_report.py`](../src/final_model/pair_gate_report.py)).
+A drug's target is directly mutated in only 1.26% of pairs, so all-pairs RMSE
+cannot move by more than about 0.005; the gate is read on the subsets in
+[`src/ABLATION.md`](../src/ABLATION.md) section 6f, not on this table.
+
+{seed_header}
+{pair_gate_rows}
 
 ### Phase 0: MoGraphDRP alignment (random split)
 

@@ -241,15 +241,64 @@ such; Mut_CNV has hurt flat models before (E32 vs E04), so base may be weak.
   model has 3,184,257 (`full`: 4,270,706).
 
 ### Phase 3 — Cheap gate for the pair-specific idea
-- [ ] Precompute per-pair features from `src/graph/hetero_graph.pt`: target
-      directly mutated (0/1), min PPI hops between mutated set and target set,
-      count of mutated proteins within 1 hop of a target, plus has-target and
+
+**Status: run 2026-10-04, gate not passed. Phase 4 is on hold until the team
+reassesses** (see "Open questions").
+
+- [x] Precompute per-pair features from `src/graph/hetero_graph.pt`
+      (`src/data/pair_features.py`): target directly mutated (0/1),
+      1 / (1 + min PPI hops) between mutated set and target set, log count of
+      mutated proteins within 1 hop of a target, plus has-target and
       has-mutation flags.
-- [ ] Append them to the head input behind a flag; run 3 seeds.
-- [ ] Report RMSE on all pairs and separately on pairs whose drug has a target.
+- [x] Append them to the head input behind a flag: component `pair_features`
+      (`pair_module="features"`), model `PairGraphDRP` in
+      `src/models/pair_graph_drp.py` (subclass of the frozen base; only the
+      first predictor layer is widened). 5 seeds (42-46), with `base` re-run
+      beside it, into `src/final_model/results/pair_gate_results.csv`.
+- [x] Report RMSE on all pairs and separately on pairs whose drug has a target
+      (`src/final_model/pair_gate_report.py`), plus the direct-hit subset.
 
 **Done when:** we know whether the signal exists. If there is no gain even on
 the has-target subset, stop and reassess before building Phase 4.
+
+**Why the gate is read on a subset.** A target is directly mutated in 1.26% of
+pairs (train 989, val 213, test 211), so all-pairs RMSE cannot move by more
+than about 0.005. Rule fixed before the run: direct-hit RMSE better on every
+seed on validation, and a test bootstrap interval that excludes 0.
+
+**Result (2026-10-04, grouped split, commit `cc303ee`, 10 runs, 98 min).**
+Seeds 42-44 first; 45-46 added the same day to settle the direct-hit result,
+so 5 seeds per arm. Test fold; intervals are a paired bootstrap over test cell
+lines and a t-interval over the per-seed differences:
+
+| Subset | Pairs | Floor | `base` | `base+pair_features` | Delta | Seeds better | 95% CI, cell lines | 95% CI, seeds |
+|---|---|---|---|---|---|---|---|---|
+| all | 16,840 | 1.4889 | 1.3252 +/- 0.0119 | 1.3216 +/- 0.0161 | -0.0035 | 3 / 5 | -0.016 to +0.009 | -0.012 to +0.005 |
+| drug has a target | 12,119 | 1.4494 | 1.2632 +/- 0.0163 | 1.2568 +/- 0.0170 | -0.0064 | 4 / 5 | -0.022 to +0.009 | -0.020 to +0.007 |
+| drug has no target (control) | 4,721 | 1.5857 | 1.4722 +/- 0.0098 | 1.4751 +/- 0.0167 | +0.0028 | 3 / 5 | -0.011 to +0.018 | -0.014 to +0.020 |
+| target directly mutated | 211 | 1.9609 | 1.7157 +/- 0.1212 | 1.5771 +/- 0.1528 | -0.1386 | 4 / 5 | -0.304 to +0.067 | -0.374 to +0.097 |
+| nearest mutation 1 hop away | 8,688 | 1.4699 | 1.2924 +/- 0.0149 | 1.2899 +/- 0.0164 | -0.0025 | 3 / 5 | -0.020 to +0.014 | -0.010 to +0.005 |
+| nearest mutation 2+ hops away | 3,051 | 1.3578 | 1.1455 +/- 0.0147 | 1.1421 +/- 0.0120 | -0.0034 | 3 / 5 | -0.017 to +0.010 | -0.019 to +0.013 |
+
+- **No gain on all pairs or on the has-target subset** (-0.0064, inside both
+  intervals). `base+pair_features` is tested-and-rejected on the headline
+  metric.
+- **`base` is biased on direct-hit pairs:** it predicts ln(IC50) about 0.4 too
+  high on every seed (test +0.404, val +0.454). The features cut that to
+  +0.028 / +0.097, on all 5 seeds and both folds.
+- **The direct-hit RMSE gain is likely but not established.** Better on 4/5
+  seeds on both folds (seed 43 worse on both). Test -0.139, both intervals
+  include 0. Validation -0.236, cell-line interval -0.357 to -0.094, seed
+  interval -0.518 to +0.047. The rule is not met. With 3 seeds the test delta
+  was -0.046; the two added seeds both improved.
+- **Nothing at 1 hop or more**, no different from the no-target control. The
+  hand-built PPI proximity features add nothing; any signal is in "a target
+  is itself mutated".
+- The `base` re-run matched the Phase 2 rows exactly on seeds 42-44, so
+  same-machine reruns are reproducible. The gate's 5-seed `base` is
+  1.3252 +/- 0.0119 (Phase 2, 3 seeds: 1.3232 +/- 0.0105).
+- `full` is now pinned to the five Phase 2 components; runs save their
+  validation and test predictions to `<csv name>_predictions/`.
 
 ### Phase 4 — Pair-specific attention module
 New file `src/models/pair_graph_drp.py`; reuse encoders from
@@ -308,6 +357,10 @@ lines' edges in the graph is not leakage; say so in the report.
 | `src/graph/hetero_graph.pt` | graph: 532 cell lines, 498 drugs, 16,214 proteins |
 | `src/final_model/run_ablation.py` | the ablation ladder; all final experiments run from here |
 | `src/final_model/results/ablation_results.csv` | ladder results, one row per run |
+| `src/data/pair_features.py` | per-pair target-vs-mutation features and the gate's row subsets |
+| `src/models/pair_graph_drp.py` | `PairGraphDRP`: frozen base + a per-pair vector into the predictor |
+| `src/final_model/pair_gate_report.py` | Phase 3 subset RMSE and paired bootstrap from saved predictions |
+| `src/final_model/results/pair_gate_results*.csv` | Phase 3 gate runs, subset metrics, paired deltas |
 | `experiments/14_benchmark_alignment/` | Phase 0 reproduction only (random split) |
 | `experiments/15_diagnostics/` | why the old graph model underperforms |
 | `docs/09_split_protocol_comparison.md` | protocol vs architecture gap |
@@ -318,6 +371,31 @@ lines' edges in the graph is not leakage; say so in the report.
 
 ## Open questions
 
+- **Phase 4 go / no-go (open since 2026-10-04).** The Phase 3 gate did not
+  pass over 5 seeds: no gain on has-target pairs, nothing from PPI proximity,
+  and a direct-hit effect (base bias of about +0.4 removed on every seed;
+  RMSE better on 4/5 seeds, test interval includes 0) confined to 1.26% of
+  pairs. Options: drop the PPI attention module and report the pair idea as
+  tested-and-rejected; or narrow it to target-mutation pairs and report on
+  that subset only.
+  **Proposed, not decided:** build Phase 4 staged. First the zero-layer
+  version only (protein embeddings, target tokens attending to
+  mutated-protein tokens, no message passing), scored with
+  `pair_gate_report.py` against `base` and `base+pair_features` over 5 seeds;
+  the bar is beating the flag on direct-hit pairs, not moving overall RMSE.
+  Then the 1- and 2-layer versions as the depth ablation, expected to show no
+  difference. Reason to try at all: the direct-hit effect differs by drug
+  (-1.8 to +0.4 z on training rows), which one yes/no flag cannot express,
+  and the gate's hop features were gene-agnostic counts, so they rule out
+  generic proximity, not a specific mutated neighbour mattering for a
+  specific drug. Needs two answers first: whether a tested-and-rejected graph
+  component is acceptable for the report (this file says the GNN "must be
+  shown to matter"), and the deadline.
+- `base+bilinear` instability is still undiagnosed. Seed 42 sat at validation
+  RMSE 3.0-4.1 for most of 200 epochs with PCC 0.85. Hypothesis only: dropout
+  feeding BatchNorm gives a train/eval scale mismatch.
+- Which row Phase 5 builds on (`base+proteomics` on test, `base+std_targets`
+  on validation) is still not decided; Phase 3 attached to `base`.
 - Where is the MoGraphDRP repo on disk, and can it be run on their data under a
   grouped split for a system-level comparison?
 - Report deadline, which decides whether Phase 6 and the leave-drugs-out run fit.

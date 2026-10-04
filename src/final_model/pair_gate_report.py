@@ -17,8 +17,11 @@ on the same rows, and the mean signed error (prediction - truth). A base model
 whose signed error on `direct_hit` is near zero already knows the effect from
 its omics input, and the features have nothing to add.
 
-Each config is then compared with the baseline on the same seeds, with a
-paired bootstrap over cell lines (2,000 resamples) for the difference.
+Each config is then compared with the baseline on the same seeds. Two
+intervals are given for the difference, because they answer different
+questions: a paired bootstrap over cell lines (2,000 resamples, seeds
+averaged) for the choice of held-out cell lines, and a t-interval over the
+per-seed differences for training noise.
 
 Run from the repository root, after the gate run:
     python src/final_model/pair_gate_report.py
@@ -32,6 +35,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from src.data.experiment_utils import (  # noqa: E402
@@ -76,6 +80,14 @@ def bootstrap_delta(sq_err: np.ndarray, sq_err_base: np.ndarray, cells: np.ndarr
     delta = delta[np.isfinite(delta)]
     low, high = np.percentile(delta, [2.5, 97.5])
     return float(low), float(high), float((delta >= 0).mean())
+
+
+def seed_interval(deltas: list[float]) -> tuple[float, float]:
+    """95% t-interval for the mean per-seed difference (training noise only)."""
+    if len(deltas) < 2:
+        return float("nan"), float("nan")
+    half = stats.t.ppf(0.975, len(deltas) - 1) * np.std(deltas, ddof=1) / np.sqrt(len(deltas))
+    return float(np.mean(deltas) - half), float(np.mean(deltas) + half)
 
 
 def main() -> None:
@@ -137,6 +149,7 @@ def main() -> None:
                     np.stack([base[s][mask] ** 2 for s in seeds]),
                     groups[idx][mask], rng,
                 )
+                seed_low, seed_high = seed_interval(deltas)
                 paired_rows.append({
                     "config": config, "baseline": args.baseline, "fold": fold, "subset": subset,
                     "n_pairs": int(mask.sum()), "n_seeds": len(seeds),
@@ -144,6 +157,7 @@ def main() -> None:
                     "seeds_better": int(np.sum(np.array(deltas) < 0)),
                     "per_seed_delta": " / ".join(f"{d:+.4f}" for d in deltas),
                     "ci_low": low, "ci_high": high, "p_delta_ge_0": p_not_better,
+                    "seed_ci_low": seed_low, "seed_ci_high": seed_high,
                 })
 
     subsets = pd.DataFrame(subset_rows)
@@ -171,12 +185,14 @@ def main() -> None:
 
         for config, block in paired[paired["fold"] == fold].groupby("config", sort=False):
             print(f"\n{config} - {args.baseline}, {fold} (negative = better):")
-            print(f"  {'subset':<12}{'pairs':>7}{'delta':>10}{'better':>8}{'95% CI':>22}{'P(d>=0)':>9}   per seed")
+            print(f"  {'subset':<12}{'pairs':>7}{'delta':>10}{'better':>8}{'95% CI, cell lines':>22}"
+                  f"{'P(d>=0)':>9}{'95% CI, seeds':>22}   per seed")
             for _, r in block.iterrows():
                 ci = f"{r['ci_low']:+.4f} to {r['ci_high']:+.4f}"
+                seed_ci = f"{r['seed_ci_low']:+.4f} to {r['seed_ci_high']:+.4f}"
                 print(f"  {r['subset']:<12}{r['n_pairs']:>7}{r['delta_rmse']:>+10.4f}"
                       f"{str(r['seeds_better']) + '/' + str(r['n_seeds']):>8}{ci:>22}"
-                      f"{r['p_delta_ge_0']:>9.3f}   {r['per_seed_delta']}")
+                      f"{r['p_delta_ge_0']:>9.3f}{seed_ci:>22}   {r['per_seed_delta']}")
 
     print(f"\nSaved -> {subsets_csv}\nSaved -> {paired_csv}")
 
