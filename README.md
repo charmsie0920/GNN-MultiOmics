@@ -9,7 +9,7 @@ Final Year Project (FIT3161, team MCS16), Monash University.
 
 ## Architecture
 
-![alt text](image-1.png)
+![alt text](image.png)
 
 The planned final model has five stages:
 
