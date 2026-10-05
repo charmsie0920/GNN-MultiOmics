@@ -333,11 +333,12 @@ Mean signed error (prediction − measured) on direct-hit pairs, per seed:
 - **Leakage:** mutation and target edges are inputs, not labels. A held-out
   cell line's mutation edges describe it in the same way its expression
   profile does, so their presence in the graph is not leakage.
-- **Decision still open:** whether Phase 4 (attention over the PPI graph) is
-  built. `CLAUDE.md` says to stop and reassess when there is no gain on the
-  has-target subset, which is the case here.
-- **GNN depth ablation** (does message passing matter?): not run, pending the
-  decision above.
+- **Decision (2026-10-05):** Phase 4 is built in two stages. First
+  attention between target and mutated proteins with no message passing,
+  judged against these features on direct-hit pairs. Then 1 and 2 PPI
+  message-passing layers as the depth ablation below. Plan in `CLAUDE.md`.
+- **GNN depth ablation** (does message passing matter?): not run yet; the
+  0-layer row is Stage A of Phase 4.
 
 | Message-passing layers | RMSE (all pairs) | RMSE (pairs with a known target) |
 |---|---|---|
