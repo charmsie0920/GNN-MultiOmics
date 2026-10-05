@@ -23,8 +23,16 @@ questions: a paired bootstrap over cell lines (2,000 resamples, seeds
 averaged) for the choice of held-out cell lines, and a t-interval over the
 per-seed differences for training noise.
 
+The bootstrap draws come from one random stream, in the order the configs
+appear, so the intervals of a comparison depend on which configs are reported
+with it. `--configs` fixes that set: the Phase 3 files are reproduced exactly
+by the first command below, whatever else has since been added to the CSV.
+`--tag` names the output files of any other comparison.
+
 Run from the repository root, after the gate run:
-    python src/final_model/pair_gate_report.py
+    python src/final_model/pair_gate_report.py --configs base base+pair_features
+    python src/final_model/pair_gate_report.py --tag attention_vs_features \\
+        --configs base+pair_features base+pair_attention --baseline base+pair_features
 """
 
 from __future__ import annotations
@@ -96,10 +104,20 @@ def main() -> None:
     parser.add_argument("--results", type=Path, default=GATE_CSV,
                         help="results CSV of the gate run; predictions are read from beside it")
     parser.add_argument("--baseline", default="base", help="config the others are compared with")
+    parser.add_argument("--configs", nargs="+", default=None,
+                        help="configs to report, the baseline among them (default: all in the CSV)")
+    parser.add_argument("--tag", default="",
+                        help="suffix for the two output files, so a second comparison "
+                             "does not overwrite the first")
     args = parser.parse_args()
 
     runs = pd.read_csv(args.results)
     runs = runs[runs["protocol"] == "grouped"]
+    if args.configs is not None:
+        absent = sorted(set(args.configs) - set(runs["config"]))
+        if absent:
+            raise SystemExit(f"no grouped-split rows for {absent} in {args.results}")
+        runs = runs[runs["config"].isin(args.configs)]
     if args.baseline not in set(runs["config"]):
         raise SystemExit(f"no grouped-split '{args.baseline}' rows in {args.results}")
 
@@ -162,8 +180,9 @@ def main() -> None:
 
     subsets = pd.DataFrame(subset_rows)
     paired = pd.DataFrame(paired_rows)
-    subsets_csv = args.results.with_name(args.results.stem + "_subsets.csv")
-    paired_csv = args.results.with_name(args.results.stem + "_paired.csv")
+    suffix = f"_{args.tag}" if args.tag else ""
+    subsets_csv = args.results.with_name(f"{args.results.stem}_subsets{suffix}.csv")
+    paired_csv = args.results.with_name(f"{args.results.stem}_paired{suffix}.csv")
     subsets.to_csv(subsets_csv, index=False)
     paired.to_csv(paired_csv, index=False)
 

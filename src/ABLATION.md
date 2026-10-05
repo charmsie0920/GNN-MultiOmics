@@ -89,7 +89,7 @@ One row per component. "Switch" is the single field it changes in `BASE`.
 | c | Bilinear head | `head=bilinear` | replaces concat of cell and drug vectors | MoGraphDRP §2.3 | TBD |
 | d | Proteomics | `modalities=+Proteomics` | adds a third omics branch | this project | TBD |
 | e | Per-drug target standardisation | `standardize_targets=True` | trains on per-drug z-scores, inverted before scoring | this project | TBD |
-| f | Pair-specific component. Tested form: hand-built pair features. Planned form: PPI GNN + pair-specific attention (not built) | `pair_module=features` | adds 5 per-pair features to the predictor input | this project (novelty component) | the base sees the cell line and the drug separately; nothing tells it whether this cell line's mutated proteins are this drug's targets |
+| f | Pair-specific component. Tested form: hand-built pair features. Built, not run: attention of target proteins over mutated proteins (Phase 4 stage A). Planned: PPI message passing under that attention (stage B) | `pair_module=features` or `pair_module=attention` (alternatives, never combined) | adds 5 per-pair features, or a 64-wide attention vector, to the predictor input | this project (novelty component) | the base sees the cell line and the drug separately; nothing tells it whether this cell line's mutated proteins are this drug's targets |
 
 Known caveats to state honestly in the report:
 
@@ -101,6 +101,12 @@ Known caveats to state honestly in the report:
   (80,213 of 111,799; test 12,119 of 16,840). 169 of the 240 drugs have a
   target and 71 have none. (The "130 drugs with no target" figure counts all
   498 drugs in the graph, most of which are not in these pairs.)
+- **f, attention form:** the graph has no protein features (`protein.x` is
+  all zeros), so each protein is an embedding learned from the response loss
+  alone. Only 634 of the 16,214 proteins are a target or a mutation of any
+  pair (148 targets, 536 mutated, 50 both). 15 of the 251 proteins mutated in
+  test cell lines are mutated in no training cell line, so their embeddings
+  are untrained at test time.
 
 ## 5. Main result — grouped split
 
@@ -254,7 +260,7 @@ how firmly any rung can be ranked from one split.
 - **Cost:** no extra parameters, same training time (0.97×).
 - Earlier single-seed result on HeteroIC50GNN: 1.3449 → 1.2917 (−0.053). That gain does not reproduce on this model over 3 seeds.
 
-### f. Pair-specific component — feature gate run (Phase 3); attention not built
+### f. Pair-specific component — feature gate run (Phase 3); attention built, not run (Phase 4 stage A)
 
 **Gate, 2026-10-04: not passed.** `base+pair_features` appends five hand-built
 features to the predictor input (drug has a target, cell line has a mutation,
@@ -337,6 +343,45 @@ Mean signed error (prediction − measured) on direct-hit pairs, per seed:
   attention between target and mutated proteins with no message passing,
   judged against these features on direct-hit pairs. Then 1 and 2 PPI
   message-passing layers as the depth ablation below. Plan in `CLAUDE.md`.
+
+**Stage A, `base+pair_attention`: built 2026-10-05, not run.** No result yet;
+this is what the rung is, so the numbers can be read against it when it runs.
+
+- **What it adds:** each protein is a 64-wide learned embedding. A drug's
+  target proteins (up to 7) are the queries and the cell line's mutated
+  proteins (up to 108, median 6) the keys and values of one 4-head attention
+  layer. The attended targets are mean-pooled to one 64-wide vector per pair,
+  concatenated with the base's interaction vector before the predictor. No
+  message passing, so it is not a GNN.
+- **Empty sets:** a drug with no target (71 of 240) queries with a learned
+  "no target" token. A learned "no mutation" token is a key for every cell
+  line, not only the 6 with no mutation: attention weights sum to 1, so a
+  target with no relevant mutation needs somewhere to attend.
+- **What it can add over the features:** which protein is mutated. Drug
+  specificity alone is not new: the predictor already sees the direct-hit
+  flag beside the drug vector.
+- **Not built in:** nothing tells the module that a target and a mutated
+  protein are the same protein. Both read the same embedding table, so it can
+  learn that, from 989 direct-hit training pairs. Whether it did is checked
+  from the saved weights after the run.
+- **Direct hits are concentrated:** 85 of the 240 drugs have any; drug `1931`
+  has 372 of the 1,413; the median such drug has 6 in the training fold.
+- **Cost:** +1,087,232 parameters (4,271,489 total): 1,037,824 in the
+  embedding table, 16,640 in the attention layer, 32,768 in the widened
+  predictor. At most 636 embedding rows (40,704 values) can receive a
+  gradient; the rest of the table is unused until stage B. Timed over 3
+  epochs on the GTX 1650: 5.4 s per epoch against 2.8 s for `base` (1.9×),
+  about 18 min per 200-epoch run; peak GPU memory 227 MiB.
+- **Pass rule, fixed before the run:** on direct-hit pairs, better than
+  `base+pair_features` on at least 4 of 5 seeds on validation, with the
+  validation cell-line interval excluding 0; and no worse than `base` on all
+  pairs beyond the ~0.03 band. Test is reported after, not used to decide.
+- **Checks passed before the run:** 1-epoch CPU `base` (val 2.688133 / test
+  2.747617) and `base+pair_features` (2.554799 / 2.649105) are unchanged by
+  the new code; the Phase 3 feature matrix is byte-identical; the padded
+  target and mutation sets reproduce the Phase 3 direct-hit flag on all
+  111,799 rows; the report regenerates the two Phase 3 CSVs exactly.
+
 - **GNN depth ablation** (does message passing matter?): not run yet; the
   0-layer row is Stage A of Phase 4.
 
@@ -348,7 +393,7 @@ Mean signed error (prediction − measured) on direct-hit pairs, per seed:
 
 Source: `src/final_model/results/pair_gate_results.csv`,
 `pair_gate_results_subsets.csv`, `pair_gate_results_paired.csv`; produced by
-`src/final_model/pair_gate_report.py`.
+`src/final_model/pair_gate_report.py --configs base base+pair_features`.
 
 ## 7. Do the components combine?
 
@@ -529,5 +574,10 @@ Phase 3 gate (run 2026-10-04, same machine, commit `cc303ee`; seeds 42-44
 python src/data/pair_features.py
 python src/final_model/run_ablation.py --configs base base+pair_features \
   --protocols grouped --seeds 42 43 44 45 46 --out src/final_model/results/pair_gate_results.csv
-python src/final_model/pair_gate_report.py
+python src/final_model/pair_gate_report.py --configs base base+pair_features
 ```
+
+`--configs` was added on 2026-10-05. The report's bootstrap draws depend on
+which configs are reported together, so naming the two Phase 3 configs keeps
+these files reproducible after other rungs are added to the same CSV
+(checked: byte-identical output).

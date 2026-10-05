@@ -9,19 +9,22 @@ exploratory work stays in `experiments/` and is not edited from this folder;
 | `run_ablation.py` | Base + one component at a time; trains, evaluates, appends results |
 | `results/ablation_results.csv` | One row per finished run (created on first run) |
 | `results/<csv name>_predictions/` | Validation and test predictions of each run, saved since Phase 3 |
-| `pair_gate_report.py` | Phase 3 gate: subset RMSE and paired bootstrap from saved predictions |
-| `results/pair_gate_results.csv` | Phase 3 gate runs (`base` re-run and `base+pair_features`) |
+| `results/<csv name>_checkpoints/` | Best-epoch weights of runs with the attention module (17 MB each, committed) |
+| `pair_gate_report.py` | Subset RMSE and paired bootstrap from saved predictions (`--configs`, `--baseline`, `--tag`) |
+| `results/pair_gate_results.csv` | Pair-module runs: `base` re-run and `base+pair_features` (Phase 3); `base+pair_attention` is added by Phase 4 stage A |
 
 The model itself is the frozen baseline `src/models/mographdrp_aligned.py`,
 imported, never copied. Training follows Phase 0: Adam, lr 1e-4, no weight
 decay, 200 epochs at a constant rate, checkpoint on best validation RMSE.
 
-New model components (e.g. the PPI GNN with pair-specific attention, planned
-as `src/models/pair_graph_drp.py`) go in `src/models/` beside the base, and are
-registered in `COMPONENTS` in `run_ablation.py`: one entry overriding one new `BASE` field,
+New model components go in `src/models/` beside the base, and are registered
+in `COMPONENTS` in `run_ablation.py`: one entry overriding one `BASE` field,
 threaded into `run_one`. Its `base+<name>` rung follows automatically. `full`
 is pinned to the five Phase 2 components, so its existing rows keep their
-meaning.
+meaning. The pair-specific component is `src/models/pair_graph_drp.py`, in two
+alternative forms that cannot be combined: `pair_features` (hand-built
+features) and `pair_attention` (attention of a drug's target proteins over a
+cell line's mutated proteins).
 
 Shared code is imported, not copied: data loading, splits and metrics from
 `src/data/experiment_utils.py`, target scaling from

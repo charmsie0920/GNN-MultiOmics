@@ -132,7 +132,9 @@ neither fires), checkpoint on best validation RMSE. The earlier copy
 
 **To add a component** (e.g. the pair module): add one entry to `COMPONENTS`
 that overrides one new `BASE` field, and thread that field into `run_one`.
-Its `base+<name>` rung follows automatically. `full` does not: since
+Its `base+<name>` rung follows automatically. Since 2026-10-05 two components
+may set the same field when they are alternatives (`pair_features`,
+`pair_attention`); a config combining them is refused. `full` does not: since
 2026-10-04 it is pinned to the five Phase 2 components (`PHASE2_COMPONENTS`),
 so adding a component cannot change what the existing `full` rows mean. The
 final model gets its own name when Phase 5 defines it.
@@ -337,36 +339,79 @@ frozen base and widens only the first predictor layer). Reuse
 `src/data/pair_features.py` for the graph loading and ID mapping, and keep
 `src/models/mographdrp_aligned.py` untouched.
 
-- [ ] Protein embeddings: `nn.Embedding(16214, d)`, small `d` (e.g. 64) for
-      the 4 GB GPU.
-- [ ] Precompute padded index tensors with masks: mutated proteins per cell
-      line (max 108, median 6), target proteins per drug (max 7). Map by node
-      IDs, never by position (the graph has 498 drugs, the pairs use 240).
-- [ ] Cross-attention: drug target tokens as queries, cell mutated-protein
+**Built 2026-10-05.** Not run for results yet.
+
+- [x] Protein embeddings: `nn.Embedding(16216, 64)` in `PairAttention`, the
+      16,214 proteins plus two learned "none" tokens.
+- [x] Padded index tensors with masks: `build_pair_sets` in
+      `src/data/pair_features.py`. Targets 240 x 7, mutated proteins
+      531 x 108 (median 6), mapped by node ID. Checked row for row against
+      the Phase 3 direct-hit flag on all 111,799 pairs.
+- [x] Cross-attention: drug target tokens as queries, cell mutated-protein
       tokens as keys/values, masked mean-pool over targets to one pair vector.
-- [ ] Empty sets (71 of the 240 training drugs have no target, 6 cell lines
-      have no mutation): add a learned "none" token so no row is fully masked
-      (`nn.MultiheadAttention` returns NaN on an all-masked row).
-- [ ] Concatenate the pair vector with the base's interaction vector before
-      the predictor (`PairGraphDRP.forward` already does this for the features).
-- [ ] Return the attention weights on request; Phase 6 (BRAF test) needs them.
-- [ ] Register in `run_ablation.py`. The assert there requires each component
-      to own a different `BASE` field, but `pair_features` / `pair_attention`
-      share `pair_module`, and the depth variants share a layers field. They
-      are alternatives, never combined, so allow mutually exclusive groups
-      rather than inventing one field per variant.
-- [ ] Smoke test in `__main__` like the existing module: shapes, finite output,
-      no NaN with empty target or mutation sets, gradients reach the protein
-      embeddings, and output changes when the target set changes with the drug
-      fingerprint held fixed.
-- [ ] 1-epoch CPU check that `base` still gives val 2.688133 / test 2.747617
-      (the Phase 3 check), so the base path is unchanged.
+      One `nn.MultiheadAttention` layer, 4 heads, attention dropout 0.
+- [x] Empty sets: a drug with no target (71 of 240) queries with a "no
+      target" token. The "no mutation" token is a key for **every** cell line,
+      not only the 6 with no mutation: softmax weights sum to 1, so a target
+      with no relevant mutation needs somewhere to attend.
+- [x] Concatenate the pair vector with the base's interaction vector before
+      the predictor.
+- [x] Attention weights on request:
+      `PairGraphDRP.attention_weights(cell_codes, drug_codes)`. Attention runs
+      also save their best-epoch weights to `<csv name>_checkpoints/` (17 MB
+      per run, committed with the results), because attention cannot be recovered from saved
+      predictions and Phase 6 needs the trained models.
+- [x] Registered in `run_ablation.py` as `pair_attention`. Components that set
+      the same `BASE` field are alternatives: each is its own rung, and
+      `resolve_config` refuses a config that combines two of them. Stage B
+      variants fit this without a new mechanism.
+- [x] Smoke test in `__main__` (`python -m src.models.pair_graph_drp`): shapes,
+      finite output in train and eval mode, no NaN with an empty target set,
+      an empty mutation set or both, weights sum to 1 and are 0 on padding,
+      gradients reach exactly the proteins in the batch and both "none"
+      tokens, and output changes when only the target set or only the mutated
+      set changes.
+- [x] 1-epoch CPU check: `base` still gives val 2.688133 / test 2.747617.
+      `base+pair_features` gives 2.554799 / 2.649105 before and after (second
+      reference, recorded 2026-10-05). The Phase 3 feature matrix is
+      byte-identical after the refactor.
+
+**What the graph gives the module (measured 2026-10-05):**
+
+- `protein.x` is all zeros: there are no protein features. Embeddings are
+  learned from the response loss alone.
+- Only 634 of the 16,214 proteins are a target or a mutation of any pair
+  (148 targets, 536 mutated, 50 both). In Stage A the other rows of the
+  embedding table never receive a gradient; the table stays full size so
+  Stage B changes only the layers. Report both counts: +1,087,232 parameters,
+  at most 40,704 of the embedding's 1,037,824 trained.
+- 15 of the 251 proteins mutated in test cell lines are mutated in no training
+  cell line (102 of the 501 training ones are seen in one cell line only).
+  Their tokens are untrained at test time. A Stage A limitation to state.
+- Direct hits are concentrated: 85 drugs have any, drug `1931` has 372 of the
+  1,413, and the median such drug has 6 in the training fold.
+- Nothing tells the module that a target and a mutated protein are the same
+  protein; it has to learn that from 989 training direct hits. Check it from
+  the saved weights after the run, before interpreting a failure.
+- On the rationale above: the predictor already sees the direct-hit flag
+  beside the drug vector, so `base+pair_features` can express a drug-specific
+  effect. What attention adds is which protein is mutated.
+
+**Speed:** look tokens up with `F.embedding(index, states)`, not
+`states[index]`. The indexing form's backward pass cost 7.6 ms a step on this
+GPU against 0.8 ms, and made the rung 3.7x slower than `base`. Stage B must
+keep the `F.embedding` form when `protein_states()` returns message-passed
+states.
 
 #### Stage A — attention over raw protein embeddings, no message passing
 
-- [ ] Config `base+pair_attention` (`pair_module="attention"`, 0 layers).
+- [x] Config `base+pair_attention` (`pair_module="attention"`, 0 layers).
+      4,271,489 parameters. Timed over 3 epochs on the GTX 1650: 5.4 s per
+      epoch (`base` 2.8 s), so about 18 min per run and 1.5 h for 5 seeds;
+      peak GPU memory 227 MiB.
 - [ ] Run 5 seeds (42-46) into the gate CSV, so `base` and
-      `base+pair_features` are skipped and reused:
+      `base+pair_features` are skipped and reused. Commit first: the runbook
+      needs a clean tree at one commit.
 
 ```
 setsid nohup systemd-inhibit --what=sleep:idle --why="Phase 4 stage A" \
@@ -376,11 +421,23 @@ setsid nohup systemd-inhibit --what=sleep:idle --why="Phase 4 stage A" \
   > phase4_stage_a.log 2>&1 < /dev/null &
 ```
 
-- [ ] Report against both baselines:
-      `python src/final_model/pair_gate_report.py` (vs `base`) and
-      `--baseline base+pair_features` (vs the flag). The report writes to
-      fixed file names, so save or rename the first pair of CSVs before the
-      second call, or add an output-suffix option first.
+- [ ] Report against both baselines. `--tag` names the output files and
+      `--configs` fixes which configs share the bootstrap's random stream, so
+      neither call touches the committed Phase 3 files. Those are reproduced
+      by `--configs base base+pair_features` (checked byte-identical
+      2026-10-05). Without `--configs`, the third config shifts every
+      bootstrap draw and the published Phase 3 intervals change.
+
+```
+python src/final_model/pair_gate_report.py --tag attention_vs_features \
+  --configs base+pair_features base+pair_attention --baseline base+pair_features
+python src/final_model/pair_gate_report.py --tag attention_vs_base \
+  --configs base base+pair_attention
+```
+
+- [ ] Before reading the result: from the checkpoints, check that on
+      direct-hit pairs the target's attention goes to the matching mutated
+      protein rather than to the "no mutation" token.
 - [ ] **Stage A passes if**, on direct-hit pairs, `base+pair_attention` beats
       `base+pair_features` on at least 4 of 5 seeds on validation, with the
       validation cell-line interval excluding 0. Test is reported after, not
@@ -397,10 +454,17 @@ then optional; run it only if the report needs a measured GNN result anyway
 
 - [ ] 1 and 2 `SAGEConv` layers over the `interacts_with` edges only, computed
       once per step (full-batch), feeding the same Stage A attention. Configs,
-      e.g., `base+pair_attention_gnn1` and `base+pair_attention_gnn2`.
+      e.g., `base+pair_attention_gnn1` and `base+pair_attention_gnn2`. The
+      entry point is `PairAttention.protein_states()`: it returns the raw
+      embeddings now and is the only method the layers need to change.
 - [ ] Time it first on the real training loop (as in the Phase 2 runbook)
       before launching 10 runs; message passing on every step may be much
-      slower than Stage A.
+      slower than Stage A. Estimate from a benchmark of the module alone
+      (2026-10-05, `SAGEConv(64, 64)` + ReLU over the 473,860 edges, batch
+      128): 4.7 / 14.7 / 24.9 ms per training step for 0 / 1 / 2 layers, peak
+      GPU memory under 200 MiB. That is about 12 s per epoch and 40 min per
+      run for 1 layer, 19 s and 60 min for 2: **about 8.5 h for the 10 runs**
+      (Stage A: 1.5 h for 5). Not a timing of the real loop.
 - [ ] 5 seeds each, same CSV, same report. Compare with Stage A (0 layers) on
       direct-hit and has-target pairs, using `--baseline base+pair_attention`.
 - [ ] Fill the depth-ablation table in `src/ABLATION.md` section 6f. Only the
@@ -440,10 +504,11 @@ lines' edges in the graph is not leakage; say so in the report.
 | `src/graph/hetero_graph.pt` | graph: 532 cell lines, 498 drugs, 16,214 proteins |
 | `src/final_model/run_ablation.py` | the ablation ladder; all final experiments run from here |
 | `src/final_model/results/ablation_results.csv` | ladder results, one row per run |
-| `src/data/pair_features.py` | per-pair target-vs-mutation features and the gate's row subsets |
-| `src/models/pair_graph_drp.py` | `PairGraphDRP`: frozen base + a per-pair vector into the predictor |
-| `src/final_model/pair_gate_report.py` | Phase 3 subset RMSE and paired bootstrap from saved predictions |
+| `src/data/pair_features.py` | per-pair target-vs-mutation features, the gate's row subsets, and the padded target / mutation sets (`build_pair_sets`) |
+| `src/models/pair_graph_drp.py` | `PairGraphDRP`: frozen base + a per-pair vector into the predictor, from features or from `PairAttention` |
+| `src/final_model/pair_gate_report.py` | subset RMSE and paired bootstrap from saved predictions (`--configs`, `--baseline`, `--tag`) |
 | `src/final_model/results/pair_gate_results*.csv` | Phase 3 gate runs, subset metrics, paired deltas |
+| `src/final_model/results/*_checkpoints/` | best-epoch weights of attention runs, 17 MB each; committed with the results |
 | `experiments/14_benchmark_alignment/` | Phase 0 reproduction only (random split) |
 | `experiments/15_diagnostics/` | why the old graph model underperforms |
 | `docs/09_split_protocol_comparison.md` | protocol vs architecture gap |
