@@ -11,7 +11,9 @@ exploratory work stays in `experiments/` and is not edited from this folder;
 | `results/<csv name>_predictions/` | Validation and test predictions of each run, saved since Phase 3 |
 | `results/<csv name>_checkpoints/` | Best-epoch weights of runs with the attention module (17 MB each, committed) |
 | `pair_gate_report.py` | Subset RMSE and paired bootstrap from saved predictions (`--configs`, `--baseline`, `--tag`) |
-| `results/pair_gate_results.csv` | Pair-module runs: `base` re-run and `base+pair_features` (Phase 3); `base+pair_attention` is added by Phase 4 stage A |
+| `pair_attention_check.py` | Whether the trained attention finds a mutated target, against untrained modules; reads the checkpoints |
+| `results/pair_gate_results.csv` | Pair-module runs: `base` re-run and `base+pair_features` (Phase 3), `base+pair_attention` (Phase 4 stage A) |
+| `results/pair_gate_results_*.csv` | Subset metrics and paired deltas of those runs; the `_attention_*` files are Stage A |
 
 The model itself is the frozen baseline `src/models/mographdrp_aligned.py`,
 imported, never copied. Training follows Phase 0: Adam, lr 1e-4, no weight

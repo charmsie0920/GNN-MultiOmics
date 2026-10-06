@@ -104,19 +104,25 @@ grouped rows.
 | `base+cross_attention` | grouped | GE+Mut_CNV | 3 | 1.4144 ± 0.0040 | +0.0912 | +0.0744 | 0.8608 |
 | `base+bilinear` | grouped | GE+Mut_CNV | 3 | 1.8343 ± 0.4946 | +0.5111 | -0.3455 | 0.8545 |
 
-### Phase 3: pair-feature gate
+### Phases 3 and 4: the pair-specific component
 
-`base` re-run beside `base+pair_features` (hand-built target-vs-mutation
-features into the predictor), same process and seeds
-([`src/final_model/pair_gate_report.py`](../src/final_model/pair_gate_report.py)).
-A drug's target is directly mutated in only 1.26% of pairs, so all-pairs RMSE
-cannot move by more than about 0.005; the gate is read on the subsets in
-[`src/ABLATION.md`](../src/ABLATION.md) section 6f, not on this table.
+`base` re-run beside the two forms of the pair component, same machine and
+seeds: `base+pair_features` (Phase 3, hand-built target-vs-mutation features
+into the predictor) and `base+pair_attention` (Phase 4 stage A, attention of
+a drug's target proteins over a cell line's mutated proteins, no message
+passing). A drug's target is directly mutated in only 1.26% of pairs, so a
+gain there cannot improve all-pairs RMSE by more than about 0.005; both are
+read on the subsets in [`src/ABLATION.md`](../src/ABLATION.md) section 6f
+([`src/final_model/pair_gate_report.py`](../src/final_model/pair_gate_report.py)),
+not on this table. The attention rung is worse than `base` on all pairs and
+is reported as tested-and-rejected as configured. PPI message passing under
+that attention (stage B) was skipped and has no row.
 
 | Config | Split | Omics | Seeds | Test RMSE (mean ± std) | Δ vs base | Gain over per-drug mean | PCC |
 |---|---|---|---|---|---|---|---|
 | `base+pair_features` | grouped | GE+Mut_CNV | 5 | 1.3216 ± 0.0161 | -0.0035 | +0.1673 | 0.8804 |
 | `base` | grouped | GE+Mut_CNV | 5 | 1.3252 ± 0.0119 | +0.0000 | +0.1637 | 0.8793 |
+| `base+pair_attention` | grouped | GE+Mut_CNV | 5 | 1.3861 ± 0.0142 | +0.0609 | +0.1028 | 0.8677 |
 
 ### Phase 0: MoGraphDRP alignment (random split)
 

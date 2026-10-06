@@ -36,7 +36,7 @@ These must be identical for every rung, otherwise a delta is not attributable.
 | Epochs / early stopping | 200 epochs, **no early stopping** (Phase 0 frozen base) |
 | LR schedule | **constant** (Phase 0 frozen base) |
 | Checkpoint | best validation RMSE, in ln(IC50) units |
-| Seeds | 42, 43, 44 (3 per row); the Phase 3 gate rows use 42-46 (5 per arm) |
+| Seeds | 42, 43, 44 (3 per row); the Phase 3 gate and Phase 4 stage A rows use 42-46 (5 per arm) |
 | Hardware | all 24 runs on one GTX 1650, one process, commit `66205f8` |
 | Metrics | RMSE, MAE, R², PCC, SCC; AUC and F1 at the shared median threshold |
 
@@ -89,7 +89,7 @@ One row per component. "Switch" is the single field it changes in `BASE`.
 | c | Bilinear head | `head=bilinear` | replaces concat of cell and drug vectors | MoGraphDRP §2.3 | TBD |
 | d | Proteomics | `modalities=+Proteomics` | adds a third omics branch | this project | TBD |
 | e | Per-drug target standardisation | `standardize_targets=True` | trains on per-drug z-scores, inverted before scoring | this project | TBD |
-| f | Pair-specific component. Tested form: hand-built pair features. Built, not run: attention of target proteins over mutated proteins (Phase 4 stage A). Planned: PPI message passing under that attention (stage B) | `pair_module=features` or `pair_module=attention` (alternatives, never combined) | adds 5 per-pair features, or a 64-wide attention vector, to the predictor input | this project (novelty component) | the base sees the cell line and the drug separately; nothing tells it whether this cell line's mutated proteins are this drug's targets |
+| f | Pair-specific component. Two tested forms: hand-built pair features (no effect), and attention of target proteins over mutated proteins (Phase 4 stage A, rejected as configured). Skipped, decided 2026-10-06: PPI message passing under that attention (stage B) | `pair_module=features` or `pair_module=attention` (alternatives, never combined) | adds 5 per-pair features, or a 64-wide attention vector, to the predictor input | this project (novelty component) | the base sees the cell line and the drug separately; nothing tells it whether this cell line's mutated proteins are this drug's targets |
 
 Known caveats to state honestly in the report:
 
@@ -123,14 +123,16 @@ test fold, grouped split.
 | `base+proteomics` | d | 1.2930 ± 0.0169 | −0.0302 | borderline | 0.8871 | 0.7810 | +0.1959 | 3,316,225 | 582 |
 | `base+std_targets` | e | 1.3108 ± 0.0195 | −0.0124 | no | 0.8866 | 0.7749 | +0.1781 | 3,184,257 | 525 |
 | `base+pair_features` | f (features only) | 1.3216 ± 0.0161 (5 seeds) | −0.0035 | no | 0.8804 | 0.7712 | +0.1673 | 3,186,817 | 592 |
+| `base+pair_attention` | f (attention, no message passing) | 1.3861 ± 0.0142 (5 seeds) | +0.0609 | yes, worse | 0.8677 | 0.7483 | +0.1028 | 4,271,489 | 1,041 |
 | `aligned` | b + c | 1.3416 ± 0.0088 | +0.0184 | no | 0.8751 | 0.7642 | +0.1473 | 3,528,562 | 1,254 |
 | `full` | a-e | 1.3394 ± 0.0081 | +0.0162 | no | 0.8789 | 0.7650 | +0.1495 | 4,270,706 | 2,309 |
 
 Negative Δ means better than base. Fit is the mean training time per run.
 `base+pair_features` comes from the Phase 3 gate run
-(`pair_gate_results.csv`) with 5 seeds (42-46). Its Δ is against the gate's
-own 5-seed `base`, 1.3252 ± 0.0119; on seeds 42-44 that re-run matched the
-`base` row above exactly. Subset results are in section 6f.
+(`pair_gate_results.csv`) with 5 seeds (42-46), and `base+pair_attention`
+from the Phase 4 stage A run in the same CSV and seeds. Their Δ is against
+the gate's own 5-seed `base`, 1.3252 ± 0.0119; on seeds 42-44 that re-run
+matched the `base` row above exactly. Subset results are in section 6f.
 
 **Headline:** no component clearly beats `base`. Proteomics is the only one
 that is better on every seed, and its mean gain (0.0302) sits on the edge of
@@ -260,7 +262,7 @@ how firmly any rung can be ranked from one split.
 - **Cost:** no extra parameters, same training time (0.97×).
 - Earlier single-seed result on HeteroIC50GNN: 1.3449 → 1.2917 (−0.053). That gain does not reproduce on this model over 3 seeds.
 
-### f. Pair-specific component — feature gate run (Phase 3); attention built, not run (Phase 4 stage A)
+### f. Pair-specific component — features: no effect (Phase 3); attention: tested-and-rejected as configured (Phase 4 stage A); message passing: skipped (stage B)
 
 **Gate, 2026-10-04: not passed.** `base+pair_features` appends five hand-built
 features to the predictor input (drug has a target, cell line has a mutation,
@@ -343,9 +345,118 @@ Mean signed error (prediction − measured) on direct-hit pairs, per seed:
   attention between target and mutated proteins with no message passing,
   judged against these features on direct-hit pairs. Then 1 and 2 PPI
   message-passing layers as the depth ablation below. Plan in `CLAUDE.md`.
+- **Decision (2026-10-06):** the first stage failed (below), and the second
+  stage (message passing) is skipped for now. It was not built or run.
 
-**Stage A, `base+pair_attention`: built 2026-10-05, not run.** No result yet;
-this is what the rung is, so the numbers can be read against it when it runs.
+**Stage A, `base+pair_attention`: run 2026-10-05, failed its pass rule —
+tested-and-rejected as configured.** 5 seeds (42-46), commit `9c7ba4f`, in
+the gate CSV beside the Phase 3 rows, which were reused, not re-run.
+
+- **Result (all pairs):** 1.3861 ± 0.0142 against `base` at 1.3252 ± 0.0119:
+  Δ **+0.0609**, worse on 5 seeds of 5, beyond the ~0.03 band (cell-line
+  interval +0.026 to +0.095, seed interval +0.032 to +0.089). Validation:
+  1.3481 ± 0.0269 against 1.2961 ± 0.0059 (+0.0519, worse on 5 of 5).
+  Gain over the per-drug mean floor (1.4889): +0.1028, against +0.1637 for
+  `base`.
+- **Pass rule, both conditions failed:**
+  - Direct-hit pairs, validation, against `base+pair_features`: Δ +0.131,
+    better on 1 seed of 5, cell-line interval +0.050 to +0.212. Worse, not
+    better.
+  - All pairs against `base`: +0.061, outside the band.
+
+Test fold, mean ± std over 5 seeds, against `base`. Intervals as in the
+Phase 3 table:
+
+| Subset | Pairs | Per-drug mean | `base` | `base+pair_attention` | Δ | Seeds better | 95% CI, cell lines | 95% CI, seeds |
+|---|---|---|---|---|---|---|---|---|
+| all | 16,840 | 1.4889 | 1.3252 ± 0.0119 | 1.3861 ± 0.0142 | +0.0609 | 0 / 5 | +0.026 to +0.095 | +0.032 to +0.089 |
+| drug has a target | 12,119 | 1.4494 | 1.2632 ± 0.0163 | 1.3327 ± 0.0214 | +0.0695 | 0 / 5 | +0.035 to +0.104 | +0.027 to +0.112 |
+| drug has no target (control) | 4,721 | 1.5857 | 1.4722 ± 0.0098 | 1.5143 ± 0.0120 | +0.0421 | 0 / 5 | −0.001 to +0.088 | +0.034 to +0.050 |
+| **target directly mutated** | 211 | 1.9609 | 1.7157 ± 0.1212 | 1.6164 ± 0.1369 | −0.0993 | 3 / 5 | −0.306 to +0.104 | −0.336 to +0.137 |
+| nearest mutation 1 hop away | 8,688 | 1.4699 | 1.2924 ± 0.0149 | 1.3630 ± 0.0343 | +0.0706 | 0 / 5 | +0.037 to +0.102 | +0.013 to +0.129 |
+| nearest mutation 2+ hops away | 3,051 | 1.3578 | 1.1455 ± 0.0147 | 1.1997 ± 0.0078 | +0.0541 | 0 / 5 | +0.015 to +0.092 | +0.032 to +0.076 |
+
+Direct-hit pairs, RMSE per seed (42 / 43 / 44 / 45 / 46), attention against
+the features:
+
+| Fold | Pairs | `base+pair_features` | `base+pair_attention` | Δ per seed | Mean Δ | 95% CI, cell lines | 95% CI, seeds |
+|---|---|---|---|---|---|---|---|
+| val (decides) | 213 | 1.276 / 1.591 / 1.366 / 1.362 / 1.293 | 1.562 / 1.711 / 1.291 / 1.551 / 1.428 | +0.286 / +0.121 / −0.076 / +0.189 / +0.135 | +0.131 | +0.050 to +0.212 | −0.034 to +0.296 |
+| test | 211 | 1.496 / 1.838 / 1.539 / 1.565 / 1.446 | 1.763 / 1.704 / 1.417 / 1.650 / 1.547 | +0.267 / −0.134 / −0.122 / +0.085 / +0.100 | +0.039 | −0.119 to +0.236 | −0.170 to +0.249 |
+
+Mean signed error (prediction − measured) on direct-hit pairs, mean over 5
+seeds (per-seed values in `pair_gate_results_subsets_attention_vs_base.csv`):
+
+| Fold | `base` | `base+pair_features` | `base+pair_attention` |
+|---|---|---|---|
+| test | +0.404 | +0.028 | +0.160 |
+| val | +0.454 | +0.097 | +0.294 |
+
+Did the attention find the mutated target? For each target that is itself
+mutated in the cell line, the attention it gives to the key that is the same
+protein, mean over the 4 heads (`pair_attention_check.py`; trained = the 5
+saved checkpoints, untrained = 20 random initialisations):
+
+| Fold | Chance (1 / keys) | Untrained | Trained | Matching key ranked first, untrained | Trained |
+|---|---|---|---|---|---|
+| train (989 pairs) | 0.127 | 0.127 ± 0.010 | 0.145 ± 0.015 | 0.123 ± 0.076 | 0.214 ± 0.068 |
+| val (213) | 0.126 | 0.125 ± 0.012 | 0.147 ± 0.017 | 0.110 ± 0.091 | 0.238 ± 0.095 |
+| test (211) | 0.148 | 0.148 ± 0.013 | 0.167 ± 0.008 | 0.146 ± 0.090 | 0.208 ± 0.055 |
+
+- **Interpretation:**
+  - The rung makes the model worse everywhere except on direct-hit pairs,
+    including on pairs whose drug has no target (+0.042, 0 of 5 seeds
+    better), where the query is one constant token. The loss is therefore
+    not about target-mutation matching.
+  - It overfits early: best epoch 24 / 13 / 24 / 15 / 15, against
+    122 / 111 / 72 / 22 / 67 for `base`. Validation RMSE varies more between
+    seeds (std 0.027 against 0.006).
+  - On direct-hit pairs it is between `base` and the features: it removes
+    part of the base's bias (+0.40 to +0.16 on test) where the features
+    remove nearly all of it (+0.03). Against `base` its RMSE there is −0.099
+    on test (3 of 5 seeds, both intervals include 0) and −0.105 on
+    validation (3 of 5; cell-line interval −0.186 to −0.005, seed interval
+    includes 0).
+  - **The attention did not learn the match.** A mutated target gives the
+    matching key 0.145-0.167 of its attention, about 0.02 above chance and
+    above an untrained module, and ranks it first on 21-24% of occasions.
+    The checkpoint is taken at the best validation epoch, which came after
+    13-24 epochs.
+- **What this does and does not show:** this module, trained this way, is
+  rejected. It is not evidence about pair-specific attention as an idea:
+  the attention never found the mutated target, so the idea was not put to
+  the test. The five hand-built features remain the better form of
+  component f on every subset.
+- **Why it did not learn, and why it hurts** (diagnosed 2026-10-05 from the
+  5 checkpoints and the saved predictions; ad-hoc analysis, no committed
+  script yet):
+  - The attention stayed close to uniform: its entropy is 0.963 of the
+    maximum, against 0.987 for untrained modules.
+  - The embeddings barely moved from their random start. Mean row norm is
+    7.96 for the proteins in use and 7.97 for rows that never receive a
+    gradient. They start at unit variance, the learning rate is 1e-4, and
+    the checkpoint is taken after 13-24 epochs.
+  - The signal that would teach the match is 1.27% of training pairs, about
+    1.6 pairs per batch of 128.
+  - So the pair vector is close to an average of fixed random vectors for
+    the cell line's mutated proteins. Over all 531 × 240 (cell line, drug)
+    combinations, 54% of its variance depends on the cell line alone, 31% on
+    the drug alone and 16% on the pair (untrained: 84% / 5% / 11%). It acts
+    as a random fingerprint of the cell line, not as a pair-specific signal.
+  - The predictor fits that fingerprint, which cannot transfer to held-out
+    cell lines: 61 of the 80 test cell lines are worse than under `base`,
+    more so for cell lines with few mutations (Spearman −0.26 between the
+    loss and the mutation count, p 0.018). Validation then peaks early and
+    the checkpoint is taken before the attention has learned anything.
+  - That the predictor is fitting training cell lines is inferred from the
+    points above; training-fold predictions were not saved, so it was not
+    measured directly.
+- **Limits of this test:** 5 seeds, one fixed split, 211-213 direct-hit
+  pairs; no tuning of the embedding width, dropout or weight decay (attention
+  dropout 0, weight decay 0, as the frozen base); validation and test subsets
+  were read in the same report, with the rule read on validation.
+
+What the rung is:
 
 - **What it adds:** each protein is a 64-wide learned embedding. A drug's
   target proteins (up to 7) are the queries and the cell line's mutated
@@ -362,16 +473,16 @@ this is what the rung is, so the numbers can be read against it when it runs.
   flag beside the drug vector.
 - **Not built in:** nothing tells the module that a target and a mutated
   protein are the same protein. Both read the same embedding table, so it can
-  learn that, from 989 direct-hit training pairs. Whether it did is checked
-  from the saved weights after the run.
+  learn that, from 989 direct-hit training pairs. It did not (table above).
 - **Direct hits are concentrated:** 85 of the 240 drugs have any; drug `1931`
   has 372 of the 1,413; the median such drug has 6 in the training fold.
 - **Cost:** +1,087,232 parameters (4,271,489 total): 1,037,824 in the
   embedding table, 16,640 in the attention layer, 32,768 in the widened
   predictor. At most 636 embedding rows (40,704 values) can receive a
-  gradient; the rest of the table is unused until stage B. Timed over 3
-  epochs on the GTX 1650: 5.4 s per epoch against 2.8 s for `base` (1.9×),
-  about 18 min per 200-epoch run; peak GPU memory 227 MiB.
+  gradient; the rest of the table is unused (stage B, which would have used
+  it, was skipped). Training time
+  1.81× `base` (1,041 s against 576 s per run, 5 runs in 87 min on the
+  GTX 1650); peak GPU memory 227 MiB.
 - **Pass rule, fixed before the run:** on direct-hit pairs, better than
   `base+pair_features` on at least 4 of 5 seeds on validation, with the
   validation cell-line interval excluding 0; and no worse than `base` on all
@@ -382,18 +493,35 @@ this is what the rung is, so the numbers can be read against it when it runs.
   target and mutation sets reproduce the Phase 3 direct-hit flag on all
   111,799 rows; the report regenerates the two Phase 3 CSVs exactly.
 
-- **GNN depth ablation** (does message passing matter?): not run yet; the
-  0-layer row is Stage A of Phase 4.
+- **GNN depth ablation** (does message passing matter?): the 0-layer row is
+  Stage A. **The 1- and 2-layer rows (Stage B) were skipped, decided
+  2026-10-06.** Not built, not run. Reasons: message passing would sit under
+  an attention that did not learn, so a null result would say little about
+  the PPI graph; and the 10 runs were estimated at about 8.5 h of GPU time.
+  It is reopened only if the supervisor requires a measured message-passing
+  rung.
+- **What this leaves unanswered:** no trained rung in this ladder uses the
+  STRING network with message passing, so the depth ablation is a single
+  row. The evidence on the PPI graph is indirect: the Phase 3 hop features
+  (no effect at one hop or more, 5 seeds) and `HeteroIC50GNN` as a compared
+  baseline (section 10). This does not show that message passing fails; it
+  was not tested here.
 
 | Message-passing layers | RMSE (all pairs) | RMSE (pairs with a known target) |
 |---|---|---|
-| 0 (attention on raw embeddings, no GNN) | not run | not run |
-| 1 | not run | not run |
-| 2 | not run | not run |
+| 0 (attention on raw embeddings, no GNN) | 1.3861 ± 0.0142 | 1.3327 ± 0.0214 |
+| 1 | not run (skipped) | not run (skipped) |
+| 2 | not run (skipped) | not run (skipped) |
 
-Source: `src/final_model/results/pair_gate_results.csv`,
-`pair_gate_results_subsets.csv`, `pair_gate_results_paired.csv`; produced by
-`src/final_model/pair_gate_report.py --configs base base+pair_features`.
+For reference on the same rows: `base` 1.3252 ± 0.0119 / 1.2632 ± 0.0163,
+`base+pair_features` 1.3216 ± 0.0161 / 1.2568 ± 0.0170.
+
+Source: `src/final_model/results/pair_gate_results.csv`. Phase 3:
+`pair_gate_results_subsets.csv`, `pair_gate_results_paired.csv`. Stage A:
+the same two names with `_attention_vs_base` and `_attention_vs_features`,
+and `pair_gate_results_attention_check.csv`. Produced by
+`src/final_model/pair_gate_report.py` and
+`src/final_model/pair_attention_check.py` (commands in section 15).
 
 ## 7. Do the components combine?
 
@@ -438,8 +566,14 @@ rarely equals the gain of the full model.
     as the final model on these numbers.
 - **Components dropped and why:** a (+0.0912, hurts), b (+0.0087, no effect),
   c (+0.5111, hurts and unstable as configured), e (−0.0124, no effect), f as
-  hand-built features (−0.0035, no effect on all pairs). d (−0.0302) is
+  hand-built features (−0.0035, no effect on all pairs), f as attention
+  without message passing (+0.0609, hurts as configured). d (−0.0302) is
   borderline.
+- **Not tested:** f with PPI message passing (stage B, skipped 2026-10-06).
+  The final model therefore cannot claim a graph component from this ladder.
+- **Status (2026-10-06):** choosing the configuration is the next step and
+  blocks the full ablation (Phase 5 in `CLAUDE.md`). A candidate not yet run
+  is a growth-rate covariate (section 11).
 - **Final test RMSE / PCC / R²:** TBD once the configuration is chosen.
 - **Gain over the per-drug mean floor:** every stable rung beats 1.4889; the
   largest gain is `base+proteomics` at +0.1959. `base` itself is +0.1657.
@@ -497,12 +631,44 @@ Same 111,799 pairs, same grouped split. TBD seeds each.
 | RF | TBD | TBD | |
 | MLP | TBD | TBD | |
 | CrossAttention (E10) | 1.3029 ± 0.0126 | TBD | 5 seeds, [13](../docs/13_seed_variance_results.md) |
-| HeteroIC50GNN (E11) | TBD | TBD | single run 1.3301 |
+| HeteroIC50GNN (E11) | TBD | TBD | single run 1.3301. Needs 3-5 seeds: with stage B skipped it is the only trained GNN in the report |
 | `aligned` (MoGraphDRP-style) | 1.3416 ± 0.0088 | 0.8751 | 3 seeds, GE+Mut_CNV, this study |
 | `base` (this ladder) | 1.3232 ± 0.0105 | 0.8797 | 3 seeds, this study |
 | **Final model** | TBD | TBD | |
 
 ## 11. Further checks (fill if run)
+
+### Where `base`'s remaining error is (2026-10-05)
+
+Exploratory, from the saved predictions of the 5 `base` runs in the gate CSV.
+Ad-hoc analysis, no committed script yet; nothing here was trained.
+
+- **26% of `base`'s squared error on test (23% on validation) is one constant
+  per cell line:** a held-out cell line is more sensitive or more resistant
+  across all drugs than predicted. The offset has a standard deviation of
+  0.68 ln(IC50) units and is the same across seeds (correlation 0.95), so it
+  is systematic. Removing it exactly would take test RMSE from 1.3252 to
+  1.1367. A per-drug constant is 6% of the error.
+- For scale: a pair-specific component that only acts on direct-hit pairs
+  (1.26% of pairs) cannot move all-pairs RMSE by more than about 0.005.
+- `base` already predicts 46% (test) to 61% (validation) of the variance of
+  a cell line's general sensitivity level.
+
+Candidate explanations of that per-cell-line offset, each fitted on one set
+of 80 held-out cell lines and applied to the other 80:
+
+| Candidate | Result | Reading |
+|---|---|---|
+| Doubling time (GDSC `growth_rate_20220907.csv`, one number per cell line, known for 524 of 531) | Spearman +0.41 / +0.50 with the offset (val / test). One slope on log doubling time: test 1.3252 → 1.2962 (−0.029, 5 of 5 seeds), validation 1.2961 → 1.2790 (−0.017, 5 of 5) | slow-growing cell lines are more resistant than `base` predicts; `base`'s omics predict doubling time only weakly (correlation 0.36 on held-out lines) |
+| Tissue, cancer type, growth properties | corrections made RMSE worse in both directions (+0.003 to +0.018) | do not transfer between sets of cell lines |
+| Omics PCs (GE, Mut_CNV, proteomics; ridge) | −0.004 to +0.039 | the offset is not linearly predictable from the model's own inputs |
+| Expression of the drug's own target genes, against `base`'s per-pair error (293 drug-target pairs, 20 draws of random genes as the null) | mean absolute Spearman 0.094 / 0.103 against 0.093 / 0.097 for random genes; per-drug ridge +0.001 / +0.004 | no signal beyond random genes |
+
+- **Doubling time is the only candidate with out-of-sample support.** It is
+  a post-hoc linear correction here, at the edge of the ~0.03 band; it only
+  counts once it is run as a ladder rung. It is an assay covariate, not an
+  omics layer, and a known confound of IC50 (cite the growth-rate inhibition
+  literature if used). Not run, not decided.
 
 - **Leave-drugs-out** (unseen compounds, no standardisation): TBD vs the MLP's 1.8516 in [10](../docs/10_leave_drugs_out_results.md).
 - **Interpretability:** does attention on BRAF track measured sensitivity against untrained models? TBD, see [15](../docs/15_interpretability_validation_results.md).
@@ -520,7 +686,8 @@ Tick the ones that apply and add numbers.
 - [ ] Only 532 of GDSC2's 969 cell lines (tri-omics-complete subset).
 - [x] Component a is degenerate as built (see §4).
 - [x] Component f covers 71.75% of pairs (169 of 240 drugs have a known target).
-- [x] Component f was tested only as hand-built features. Its one subset with any signal (a target is directly mutated) is 1.26% of pairs, 211 on the test fold. The gain there is better on 4 of 5 seeds, but its test intervals include 0.
+- [x] Component f was tested as hand-built features and as attention without message passing; PPI message passing (stage B) was skipped (decided 2026-10-06), so no trained rung in the ladder is a GNN and the PPI graph is tested only indirectly (Phase 3 hop features; `HeteroIC50GNN` as a compared baseline). The one subset with any signal (a target is directly mutated) is 1.26% of pairs, 211 on the test fold. The features' gain there is better on 4 of 5 seeds, but its test intervals include 0.
+- [x] The attention form of f was rejected as configured, with no tuning (embedding width 64, no dropout on the attention, no weight decay). Its attention did not learn to find the mutated target (0.02 above chance), so the result does not test the idea itself. The graph has no protein features; 15 of the 251 proteins mutated in test cell lines appear in no training cell line.
 - [x] The subset bootstrap resamples cell lines only; training noise is covered separately by a t-interval over 5 seeds.
 - [x] The benchmark comparison is against a reimplementation, not the authors' code on their data.
 
@@ -551,7 +718,14 @@ final configuration exist.
 > model over-predicted ln(IC50) by about 0.4 on the 1.3% of pairs where a
 > target is itself mutated, and the features removed most of that bias on
 > every seed. RMSE on those pairs fell from 1.72 to 1.58 (better on 4 of 5
-> seeds), a difference whose 95% interval still includes zero.
+> seeds), a difference whose 95% interval still includes zero. Replacing the
+> features with learned attention between each drug's target proteins and
+> each cell line's mutated proteins made the model worse overall
+> (1.3861 ± 0.0142, +0.061, all 5 seeds) and no better than the features on
+> the directly-mutated pairs. The trained attention gave a mutated target's
+> own protein only 0.02 more weight than chance, so this result rejects the
+> module as built rather than the idea. Message passing over the PPI network
+> beneath that attention was not run.
 
 ## 15. Reproduction
 
@@ -581,3 +755,22 @@ python src/final_model/pair_gate_report.py --configs base base+pair_features
 which configs are reported together, so naming the two Phase 3 configs keeps
 these files reproducible after other rungs are added to the same CSV
 (checked: byte-identical output).
+
+Phase 4 stage A (run 2026-10-05, same machine, commit `9c7ba4f`, 15:48 to
+17:14, 5 runs; the 10 Phase 3 rows were skipped and reused):
+
+```
+python -m src.models.pair_graph_drp
+python src/final_model/run_ablation.py --configs base base+pair_features base+pair_attention \
+  --protocols grouped --seeds 42 43 44 45 46 --out src/final_model/results/pair_gate_results.csv
+python src/final_model/pair_gate_report.py --tag attention_vs_features \
+  --configs base+pair_features base+pair_attention --baseline base+pair_features
+python src/final_model/pair_gate_report.py --tag attention_vs_base \
+  --configs base base+pair_attention
+python src/final_model/pair_attention_check.py
+```
+
+The last command reads the trained weights in
+`results/pair_gate_results_checkpoints/` (17 MB per run). It was written
+after the run was launched and is not part of commit `9c7ba4f`; it only
+reads the checkpoints.

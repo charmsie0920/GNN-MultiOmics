@@ -71,7 +71,8 @@ ENSEMBLE_CSV = Path("experiments/08_ensemble_refinement/ensemble_results.csv")
 # and include random-split rows that must never be ranked against them.
 ALIGNMENT_CSV = Path("experiments/14_benchmark_alignment/benchmark_alignment_results.csv")
 ABLATION_CSV = Path("src/final_model/results/ablation_results.csv")
-# Phase 3 gate: `base` re-run with saved predictions beside `base+pair_features`.
+# Phase 3 gate and Phase 4 stage A: `base` re-run with saved predictions beside
+# `base+pair_features` and `base+pair_attention`.
 # Kept apart from the ladder CSV so its `base` rows are not counted twice.
 PAIR_GATE_CSV = Path("src/final_model/results/pair_gate_results.csv")
 OUTPUT = Path("docs/results.md")
@@ -302,14 +303,19 @@ grouped rows.
 {seed_header}
 {ablation_rows}
 
-### Phase 3: pair-feature gate
+### Phases 3 and 4: the pair-specific component
 
-`base` re-run beside `base+pair_features` (hand-built target-vs-mutation
-features into the predictor), same process and seeds
-([`src/final_model/pair_gate_report.py`](../src/final_model/pair_gate_report.py)).
-A drug's target is directly mutated in only 1.26% of pairs, so all-pairs RMSE
-cannot move by more than about 0.005; the gate is read on the subsets in
-[`src/ABLATION.md`](../src/ABLATION.md) section 6f, not on this table.
+`base` re-run beside the two forms of the pair component, same machine and
+seeds: `base+pair_features` (Phase 3, hand-built target-vs-mutation features
+into the predictor) and `base+pair_attention` (Phase 4 stage A, attention of
+a drug's target proteins over a cell line's mutated proteins, no message
+passing). A drug's target is directly mutated in only 1.26% of pairs, so a
+gain there cannot improve all-pairs RMSE by more than about 0.005; both are
+read on the subsets in [`src/ABLATION.md`](../src/ABLATION.md) section 6f
+([`src/final_model/pair_gate_report.py`](../src/final_model/pair_gate_report.py)),
+not on this table. The attention rung is worse than `base` on all pairs and
+is reported as tested-and-rejected as configured. PPI message passing under
+that attention (stage B) was skipped and has no row.
 
 {seed_header}
 {pair_gate_rows}

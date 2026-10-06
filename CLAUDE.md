@@ -13,7 +13,12 @@ phase finishes or a decision changes.
 - **Novelty component:** pair-specific cross-attention between a drug's target
   proteins and a cell line's driver-mutated proteins over the STRING PPI graph.
   Since 2026-10-05 it is built and tested in two stages: the attention first,
-  then the PPI message passing as its own rung (Phase 4).
+  then the PPI message passing as its own rung (Phase 4). Stage A (attention
+  alone) failed its pass rule on 2026-10-05: worse than `base` on all pairs,
+  and the attention did not learn to find a mutated target. The component as
+  built is not supported by the results; see Phase 4. Stage B (the message
+  passing) is skipped for now (decided 2026-10-06), so the ladder has no
+  trained rung that uses the PPI topology.
 - **Closest prior work: MIDI** (bioRxiv 2025.03.31.646490). It already uses
   drug-target knowledge with attention over genes and tests mutated vs
   wild-type cell lines. Do not claim to be first at either. Ours differs by
@@ -41,6 +46,20 @@ phase finishes or a decision changes.
 Each row must be a switch and a row in the ablation table. A component that
 does not beat the noise band is reported as tested-and-rejected, not kept to
 make the model look different. MoGraphDRP is cited as the base architecture.
+
+**How the table stands against the results (2026-10-06).** It is the
+intended design, not what the ablation supports:
+
+- Omics: proteomics is borderline (-0.030, 3 of 3 seeds), the only gain.
+- Biological prior: no supporting rung. Hop features had no effect; pair
+  attention was rejected; message passing (Stage B) was not run.
+- Cell-drug interaction: bilinear is rejected as configured; pair attention
+  is rejected as configured.
+- Target scaling: no effect (-0.012).
+- Evaluation: done as described (grouped split, seeds, floor).
+- Interpretability: on hold, see Phase 6.
+
+The table is rewritten once the final configuration is chosen.
 
 ## Rules for every experiment
 
@@ -73,6 +92,18 @@ make the model look different. MoGraphDRP is cited as the base architecture.
   incrementally.
 
 ## Tasks
+
+**Where things stand (2026-10-06).** Phases 0-3 are done. Phase 4: Stage A
+was run and pair attention is tested-and-rejected as configured; **Stage B is
+skipped for now** (decided 2026-10-06). Next is Phase 5, and it needs three
+decisions first, all in "Open questions":
+
+1. The final configuration: which rungs make up "Base + everything". Only
+   `base+proteomics` has a consistent gain so far.
+2. Whether to run the `growth_rate` rung (candidate, not run).
+3. What the report's graph result is, now that the ladder has no trained
+   rung with message passing. Planned answer: `HeteroIC50GNN` with 3-5 seeds
+   as a compared baseline (Phase 5).
 
 ### Phase 0 — Validate the base (passed 2026-10-01)
 - [x] Run `benchmark_alignment.py` for `aligned` under the random split,
@@ -307,6 +338,11 @@ lines and a t-interval over the per-seed differences:
 
 ### Phase 4 — Pair-specific attention module (staged; decided 2026-10-05)
 
+**Status: Stage A built and run 2026-10-05, pass rule failed; pair attention
+is tested-and-rejected as configured. Stage B skipped for now (decided
+2026-10-06): not built, not run.** Phase 4 is closed unless Stage B is
+reopened.
+
 **Decision (2026-10-05): build Phase 4 in two stages, not all at once.**
 Phase 3 found signal where a drug's target is itself mutated, but none from
 generic PPI proximity. So the attention between target and mutated proteins
@@ -409,9 +445,10 @@ states.
       4,271,489 parameters. Timed over 3 epochs on the GTX 1650: 5.4 s per
       epoch (`base` 2.8 s), so about 18 min per run and 1.5 h for 5 seeds;
       peak GPU memory 227 MiB.
-- [ ] Run 5 seeds (42-46) into the gate CSV, so `base` and
+- [x] Run 5 seeds (42-46) into the gate CSV, so `base` and
       `base+pair_features` are skipped and reused. Commit first: the runbook
-      needs a clean tree at one commit.
+      needs a clean tree at one commit. Done 2026-10-05 at `9c7ba4f`,
+      17.2 min per run.
 
 ```
 setsid nohup systemd-inhibit --what=sleep:idle --why="Phase 4 stage A" \
@@ -421,7 +458,7 @@ setsid nohup systemd-inhibit --what=sleep:idle --why="Phase 4 stage A" \
   > phase4_stage_a.log 2>&1 < /dev/null &
 ```
 
-- [ ] Report against both baselines. `--tag` names the output files and
+- [x] Report against both baselines. `--tag` names the output files and
       `--configs` fixes which configs share the bootstrap's random stream, so
       neither call touches the committed Phase 3 files. Those are reproduced
       by `--configs base base+pair_features` (checked byte-identical
@@ -435,22 +472,84 @@ python src/final_model/pair_gate_report.py --tag attention_vs_base \
   --configs base base+pair_attention
 ```
 
-- [ ] Before reading the result: from the checkpoints, check that on
+- [x] Before reading the result: from the checkpoints, check that on
       direct-hit pairs the target's attention goes to the matching mutated
-      protein rather than to the "no mutation" token.
-- [ ] **Stage A passes if**, on direct-hit pairs, `base+pair_attention` beats
+      protein rather than to the "no mutation" token
+      (`python src/final_model/pair_attention_check.py`).
+- [x] **Stage A passes if**, on direct-hit pairs, `base+pair_attention` beats
       `base+pair_features` on at least 4 of 5 seeds on validation, with the
       validation cell-line interval excluding 0. Test is reported after, not
       used to decide. It must also be no worse than `base` on all pairs beyond
       the ~0.03 band. Also report the has-target and hop subsets: a gain there
       would be the first evidence beyond direct hits.
-- [ ] Write it up in `src/ABLATION.md` section 6f in the same session.
+- [x] Write it up in `src/ABLATION.md` section 6f in the same session.
 
-**If Stage A fails:** report pair attention as tested-and-rejected. Stage B is
-then optional; run it only if the report needs a measured GNN result anyway
-(see "Open questions").
+**Result (2026-10-05, grouped split, commit `9c7ba4f`, 5 runs, 87 min,
+15:48 to 17:14): Stage A failed both conditions. `base+pair_attention` is
+tested-and-rejected as configured.** Floor 1.4889. Test fold unless stated:
 
-#### Stage B — PPI message passing (the GNN depth ablation)
+| Subset | Pairs | `base` | `base+pair_features` | `base+pair_attention` | Δ vs `base` | Seeds better | 95% CI, cell lines |
+|---|---|---|---|---|---|---|---|
+| all | 16,840 | 1.3252 +/- 0.0119 | 1.3216 +/- 0.0161 | 1.3861 +/- 0.0142 | +0.0609 | 0 / 5 | +0.026 to +0.095 |
+| drug has a target | 12,119 | 1.2632 +/- 0.0163 | 1.2568 +/- 0.0170 | 1.3327 +/- 0.0214 | +0.0695 | 0 / 5 | +0.035 to +0.104 |
+| drug has no target (control) | 4,721 | 1.4722 +/- 0.0098 | 1.4751 +/- 0.0167 | 1.5143 +/- 0.0120 | +0.0421 | 0 / 5 | -0.001 to +0.088 |
+| target directly mutated | 211 | 1.7157 +/- 0.1212 | 1.5771 +/- 0.1528 | 1.6164 +/- 0.1369 | -0.0993 | 3 / 5 | -0.306 to +0.104 |
+| nearest mutation 1 hop away | 8,688 | 1.2924 +/- 0.0149 | 1.2899 +/- 0.0164 | 1.3630 +/- 0.0343 | +0.0706 | 0 / 5 | +0.037 to +0.102 |
+| nearest mutation 2+ hops away | 3,051 | 1.1455 +/- 0.0147 | 1.1421 +/- 0.0120 | 1.1997 +/- 0.0078 | +0.0541 | 0 / 5 | +0.015 to +0.092 |
+
+- **The deciding comparison:** direct-hit pairs on validation, attention
+  against the features: +0.131, better on 1 seed of 5, cell-line interval
+  +0.050 to +0.212. Worse, not better. (Test: +0.039, 2 of 5, interval
+  includes 0.)
+- **Worse than `base` on all pairs** (+0.061, 5 of 5 seeds; validation
+  +0.052), and on every subset except direct hits, including the no-target
+  control. So the loss is not about target-mutation matching.
+- **It overfits early:** best epoch 24 / 13 / 24 / 15 / 15 (`base`:
+  122 / 111 / 72 / 22 / 67).
+- **The attention did not learn the match.** A mutated target gives its own
+  protein 0.145-0.167 of its attention; chance is 0.126-0.148 and untrained
+  modules give the same as chance. It ranks first 21-24% of the time.
+- **So this rejects the module as built, not the idea.** The idea was not
+  tested, because the attention never found the mutated target. Do not write
+  "pair-specific attention does not help".
+- On direct hits the attention sits between `base` and the features: signed
+  error +0.404 / +0.028 / +0.160 on test.
+- **Why (diagnosed 2026-10-05, `src/ABLATION.md` 6f):** the attention stayed
+  near uniform (entropy 0.963 of maximum) and the embeddings barely left
+  their random start (row norm 7.96 used vs 7.97 never-updated; unit-variance
+  init, lr 1e-4, checkpoint at epoch 13-24). The pair vector is then a random
+  fingerprint of the cell line: 54% of its variance is cell-only, 31%
+  drug-only, 16% pair-specific. The predictor fits that fingerprint, 61 of 80
+  test cell lines get worse, and validation peaks before the attention has
+  learned. The match signal is only 1.6 pairs per batch.
+- Cost: +1,087,232 parameters, 1.81x training time (1,041 s vs 576 s).
+
+**Stage A failed, so:** pair attention is reported as tested-and-rejected.
+Stage B was optional under this plan; **decided 2026-10-06: skip it for now**
+(next section).
+
+#### Stage B — PPI message passing (the GNN depth ablation) — skipped for now
+
+**Decision (2026-10-06): not built and not run.** Reasons:
+
+- It would put message passing under an attention that did not learn (near
+  uniform, 0.02 above chance on the match), so a null result would say little
+  about the PPI graph. It would carry Stage A's caveat: it rejects the module,
+  not the idea.
+- About 8.5 h of GPU time for that (estimated).
+- The ablation is valid without it: every built component has its rung.
+
+**What the ablation lacks as a result, to state in the report:**
+
+- No trained rung uses the STRING network with message passing. The 1- and
+  2-layer rows of the depth table stay "not run".
+- "Does the PPI graph matter?" is answered only indirectly: the Phase 3 hop
+  features (no effect, 5 seeds) and `HeteroIC50GNN` as a compared baseline.
+- The "Biological prior" and "Cell-drug interaction" rows of the Direction
+  table are not supported by a passing rung.
+
+**Reopen only if** the supervisor requires a measured message-passing rung.
+The specification below is kept for that case; nothing in it has been done.
 
 - [ ] 1 and 2 `SAGEConv` layers over the `interacts_with` edges only, computed
       once per step (full-batch), feeding the same Stage A attention. Configs,
@@ -474,15 +573,29 @@ Mutation and target edges are inputs, not labels, so having held-out cell
 lines' edges in the graph is not leakage; say so in the report.
 
 ### Phase 5 — Full ablation
-- [ ] Ladder on top of the best Phase 2 row: `+ pair features`,
-      `+ pair attention`, and the full model; 3-5 seeds, both protocols.
-- [ ] Leave-drugs-out run of the full model (`leave_drugs_out_split`), without
-      standardisation.
+**Not started. Blocked on the final configuration** (see "Where things
+stand"). Changed by Phase 4's outcome (2026-10-06):
+
+- [ ] Decide the final configuration first, on validation RMSE, and give it
+      its own name in `run_ablation.py` (`full` stays pinned to Phase 2).
+- [ ] Ladder on top of the best Phase 2 row: `+ pair features` and the final
+      model; 3-5 seeds, both protocols. `+ pair attention` is dropped from
+      this ladder: it is rejected as configured and already has its rung.
+- [ ] Leave-drugs-out run of the final model (`leave_drugs_out_split`),
+      without standardisation.
 - [ ] Subset metrics: has-target vs no-target pairs.
 - [ ] Compared baselines on the same pairs: per-drug mean, RF, MLP,
       cross-attention (E10), `HeteroIC50GNN` (E11), aligned.
+      **`HeteroIC50GNN` now needs 3-5 seeds** (it has a single run, 1.3301):
+      with Stage B skipped it is the report's only trained GNN.
 
 ### Phase 6 — Interpretability on the new model
+
+**On hold (2026-10-06).** The BRAF test was planned on the pair attention's
+weights. Stage A's attention is near uniform, so its weights carry nothing to
+interpret. Run this phase only if the final model has a component whose
+attention or attribution is worth testing; otherwise report it as not done.
+
 - [ ] Repeat the experiment 15 BRAF test using attention weights: does
       attention on BRAF track measured ln(IC50) across BRAF-mutant lines,
       against 50 untrained models, including held-out cell lines?
@@ -507,6 +620,8 @@ lines' edges in the graph is not leakage; say so in the report.
 | `src/data/pair_features.py` | per-pair target-vs-mutation features, the gate's row subsets, and the padded target / mutation sets (`build_pair_sets`) |
 | `src/models/pair_graph_drp.py` | `PairGraphDRP`: frozen base + a per-pair vector into the predictor, from features or from `PairAttention` |
 | `src/final_model/pair_gate_report.py` | subset RMSE and paired bootstrap from saved predictions (`--configs`, `--baseline`, `--tag`) |
+| `src/final_model/pair_attention_check.py` | whether the trained attention finds a mutated target, against untrained modules |
+| `src/final_model/results/pair_gate_results_*attention*.csv` | Stage A subset metrics, paired deltas and the attention check |
 | `src/final_model/results/pair_gate_results*.csv` | Phase 3 gate runs, subset metrics, paired deltas |
 | `src/final_model/results/*_checkpoints/` | best-epoch weights of attention runs, 17 MB each; committed with the results |
 | `experiments/14_benchmark_alignment/` | Phase 0 reproduction only (random split) |
@@ -519,10 +634,34 @@ lines' edges in the graph is not leakage; say so in the report.
 
 ## Open questions
 
-- **Is a tested-and-rejected graph component acceptable for the report?**
-  This file says the GNN "must be shown to matter", and the Phase 3 gate
-  suggests it will not be. A question for the supervisor; it decides whether
-  Stage B of Phase 4 runs if Stage A fails. It does not block Stage A.
+- **Is a report with no passing graph component, and no trained
+  message-passing rung, acceptable?** This file says the GNN "must be shown
+  to matter". The Phase 3 gate found no effect, Stage A of Phase 4 failed
+  (2026-10-05) and Stage B is skipped (2026-10-06). A question for the
+  supervisor. If the answer is no, Stage B is reopened (about 8.5 h of GPU
+  for 10 runs, estimated).
+- **Which rungs make up the final model?** The lecturer's ladder ends in
+  "Base + everything". `full` (the five Phase 2 components) is not better
+  than `base`. Only `base+proteomics` has a consistent gain (-0.030, 3 of 3
+  seeds, at the band edge); two more seeds would bring it to 5. The choice
+  must be made on validation RMSE. Not decided; it blocks Phase 5.
+- **Pair attention: closed as rejected (2026-10-06).** The cause was
+  diagnosed (Phase 4, Stage A result). Any changed version of the module
+  (regularisation, an explicit same-protein signal, a smaller table) would be
+  a new rung with its own name and a pass rule written first, not a retry of
+  `base+pair_attention`. None is planned: direct hits cap its all-pairs gain
+  at about 0.005.
+- **Candidate component: growth rate (not run, not decided).** 26% of
+  `base`'s squared test error is one constant per cell line (sd 0.68, same
+  across seeds), far more than any direct-hit component can reach (0.005).
+  Log doubling time (`data/raw/gdsc/growth_rate_20220907.csv`, 524 of 531
+  cell lines) correlates +0.41 / +0.50 with that offset, and one slope fitted
+  on the other held-out fold cuts test RMSE by 0.029 and validation by 0.017,
+  5 of 5 seeds each. Checked and negative: tissue, cancer type, omics PCs,
+  and expression of the drug's target genes. Details in `src/ABLATION.md`
+  section 11. Open: is an assay covariate that is not an omics layer
+  acceptable to the supervisor? If run, it is one switch (`growth_rate`),
+  5 seeds, about 50 min, with its pass rule written first.
 - `base+bilinear` instability is still undiagnosed. Seed 42 sat at validation
   RMSE 3.0-4.1 for most of 200 epochs with PCC 0.85. Hypothesis only: dropout
   feeding BatchNorm gives a train/eval scale mismatch.
