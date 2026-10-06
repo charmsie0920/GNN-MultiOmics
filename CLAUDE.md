@@ -645,6 +645,22 @@ attention or attribution is worth testing; otherwise report it as not done.
   than `base`. Only `base+proteomics` has a consistent gain (-0.030, 3 of 3
   seeds, at the band edge); two more seeds would bring it to 5. The choice
   must be made on validation RMSE. Not decided; it blocks Phase 5.
+  - **Running (2026-10-06, 23:44, commit `1c00b00`):** seeds 45 and 46 for
+    `base` and `base+proteomics`, into `ablation_results.csv` (4 runs, about
+    40 min, log `final_config_seeds.log`).
+  - **Proposed candidate, not agreed:** `base+proteomics+std_targets`. On
+    validation at 3 seeds, `std_targets` is -0.037 and `proteomics` -0.014,
+    both 3 of 3; every other rung is neutral, harmful or does not carry over
+    to test. The combination has only ever run inside `full`.
+  - **Proposed rule, written before any new seed existed, not agreed:** a
+    component is kept if its rung beats `base` on validation on at least 4 of
+    5 seeds. The combined model is accepted as final if its validation RMSE
+    is no worse than the best kept single rung. Test is reported afterwards,
+    not used to decide.
+  - **Needed to apply it, not launched:** `base+std_targets` seeds 45-46 and
+    `base+proteomics+std_targets` seeds 42-46 (7 runs, about 65 min).
+  - Caveats: validation and test disagree on `std_targets` (test -0.012, 2
+    of 3), and it cannot be used under leave-drugs-out.
 - **Pair attention: closed as rejected (2026-10-06).** The cause was
   diagnosed (Phase 4, Stage A result). Any changed version of the module
   (regularisation, an explicit same-protein signal, a smaller table) would be
