@@ -129,10 +129,16 @@ def seed_summary_rows(path: Path, drug_floor: float) -> str:
             std=("test_rmse", "std"),
             pcc=("test_pcc", "mean"),
         )
-        base = stats.loc["base", "mean"] if "base" in stats.index else None
+        # Rows can have different seed sets (some rungs have 3 seeds, some 5),
+        # so each delta is taken on the seeds the rung shares with `base`.
+        by_seed = block.pivot_table(index="seed", columns="config", values="test_rmse")
         for config, r in stats.sort_values("mean").iterrows():
             std = f"{r['std']:.4f}" if r["n"] > 1 else "—"
-            delta = "—" if base is None else f"{r['mean'] - base:+.4f}"
+            if "base" not in by_seed.columns:
+                delta = "—"
+            else:
+                paired = (by_seed[config] - by_seed["base"]).dropna()
+                delta = f"{paired.mean():+.4f}" if len(paired) else "—"
             gain = f"{drug_floor - r['mean']:+.4f}" if protocol == "grouped" else "n/a"
             lines.append(
                 f"| `{config}` | {protocol} | {r['omics']} | {int(r['n'])} | "
@@ -296,7 +302,10 @@ single number from this table.
 Base + one component at a time on the frozen MoGraphDRP-aligned model
 ([`src/final_model/run_ablation.py`](../src/final_model/run_ablation.py); write-up
 in [`src/ABLATION.md`](../src/ABLATION.md)). Mean ± std over seeds. Negative Δ
-is better than `base`; a Δ smaller than ~{NOISE_THRESHOLD:.2f} is noise. The
+is better than `base`; a Δ smaller than ~{NOISE_THRESHOLD:.2f} is noise. Rows
+have 3 or 5 seeds (the Seeds column); each Δ is taken on the seeds a row
+shares with `base`, so a 3-seed row is compared with `base` on those 3 seeds
+while the `base` row itself shows all of its seeds. The
 random-split rows are a sanity check only and are not comparable to the
 grouped rows.
 

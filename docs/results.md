@@ -89,15 +89,19 @@ single number from this table.
 Base + one component at a time on the frozen MoGraphDRP-aligned model
 ([`src/final_model/run_ablation.py`](../src/final_model/run_ablation.py); write-up
 in [`src/ABLATION.md`](../src/ABLATION.md)). Mean ± std over seeds. Negative Δ
-is better than `base`; a Δ smaller than ~0.03 is noise. The
+is better than `base`; a Δ smaller than ~0.03 is noise. Rows
+have 3 or 5 seeds (the Seeds column); each Δ is taken on the seeds a row
+shares with `base`, so a 3-seed row is compared with `base` on those 3 seeds
+while the `base` row itself shows all of its seeds. The
 random-split rows are a sanity check only and are not comparable to the
 grouped rows.
 
 | Config | Split | Omics | Seeds | Test RMSE (mean ± std) | Δ vs base | Gain over per-drug mean | PCC |
 |---|---|---|---|---|---|---|---|
-| `base+proteomics` | grouped | GE+Mut_CNV+Proteomics | 3 | 1.2930 ± 0.0169 | -0.0302 | +0.1959 | 0.8871 |
-| `base+std_targets` | grouped | GE+Mut_CNV | 3 | 1.3108 ± 0.0195 | -0.0124 | +0.1781 | 0.8866 |
-| `base` | grouped | GE+Mut_CNV | 3 | 1.3232 ± 0.0105 | +0.0000 | +0.1657 | 0.8797 |
+| `base+proteomics+std_targets` | grouped | GE+Mut_CNV+Proteomics | 5 | 1.2797 ± 0.0192 | -0.0455 | +0.2092 | 0.8908 |
+| `base+proteomics` | grouped | GE+Mut_CNV+Proteomics | 5 | 1.2920 ± 0.0125 | -0.0331 | +0.1969 | 0.8864 |
+| `base+std_targets` | grouped | GE+Mut_CNV | 5 | 1.3086 ± 0.0144 | -0.0166 | +0.1803 | 0.8859 |
+| `base` | grouped | GE+Mut_CNV | 5 | 1.3252 ± 0.0119 | +0.0000 | +0.1637 | 0.8793 |
 | `base+mol_graph` | grouped | GE+Mut_CNV | 3 | 1.3319 ± 0.0223 | +0.0087 | +0.1570 | 0.8806 |
 | `full` | grouped | GE+Mut_CNV+Proteomics | 3 | 1.3394 ± 0.0081 | +0.0162 | +0.1495 | 0.8789 |
 | `aligned` | grouped | GE+Mut_CNV | 3 | 1.3416 ± 0.0088 | +0.0184 | +0.1473 | 0.8751 |

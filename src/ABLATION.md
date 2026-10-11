@@ -36,7 +36,7 @@ These must be identical for every rung, otherwise a delta is not attributable.
 | Epochs / early stopping | 200 epochs, **no early stopping** (Phase 0 frozen base) |
 | LR schedule | **constant** (Phase 0 frozen base) |
 | Checkpoint | best validation RMSE, in ln(IC50) units |
-| Seeds | 42, 43, 44 (3 per row); the Phase 3 gate and Phase 4 stage A rows use 42-46 (5 per arm) |
+| Seeds | 42, 43, 44 (3 per row); the Phase 3 gate and Phase 4 stage A rows use 42-46 (5 per arm). Since 2026-10-07 `base`, `base+proteomics`, `base+std_targets` and `base+proteomics+std_targets` also have 42-46 in the ladder CSV |
 | Hardware | all 24 runs on one GTX 1650, one process, commit `66205f8` |
 | Metrics | RMSE, MAE, R², PCC, SCC; AUC and F1 at the shared median threshold |
 
@@ -134,7 +134,68 @@ from the Phase 4 stage A run in the same CSV and seeds. Their Δ is against
 the gate's own 5-seed `base`, 1.3252 ± 0.0119; on seeds 42-44 that re-run
 matched the `base` row above exactly. Subset results are in section 6f.
 
-**Headline:** no component clearly beats `base`. Proteomics is the only one
+### Update 2026-10-07 — five seeds for the candidates, and their combination
+
+Seeds 45 and 46 were added for `base`, `base+proteomics` and
+`base+std_targets`, and the combination `base+proteomics+std_targets` was run
+on seeds 42-46 (11 runs, same machine and CSV, commits `1c00b00` and
+`70c3d13`, whose code is identical). Mean ± std over 5 seeds, grouped split.
+The interval is a t-interval over the five per-seed differences (training
+noise; the split is fixed):
+
+| Config | Fold | RMSE | Δ vs base | Seeds better | 95% CI, seeds | Per-seed Δ (42 / 43 / 44 / 45 / 46) |
+|---|---|---|---|---|---|---|
+| `base` | val | 1.2961 ± 0.0059 | 0 | | | |
+| `base` | test | 1.3252 ± 0.0119 | 0 | | | |
+| `base+proteomics` | val | 1.2796 ± 0.0060 | −0.0166 | 5 / 5 | −0.023 to −0.010 | −0.020 / −0.014 / −0.009 / −0.020 / −0.021 |
+| `base+proteomics` | test | 1.2920 ± 0.0125 | −0.0331 | 5 / 5 | −0.043 to −0.023 | −0.035 / −0.023 / −0.033 / −0.045 / −0.030 |
+| `base+std_targets` | val | 1.2599 ± 0.0074 | −0.0362 | 5 / 5 | −0.042 to −0.030 | −0.032 / −0.037 / −0.042 / −0.040 / −0.030 |
+| `base+std_targets` | test | 1.3086 ± 0.0144 | −0.0166 | 4 / 5 | −0.041 to +0.008 | −0.020 / −0.028 / +0.011 / −0.040 / −0.006 |
+| **`base+proteomics+std_targets`** | val | **1.2454 ± 0.0037** | **−0.0508** | 5 / 5 | −0.058 to −0.044 | −0.055 / −0.052 / −0.043 / −0.057 / −0.048 |
+| **`base+proteomics+std_targets`** | test | **1.2797 ± 0.0192** | **−0.0455** | 5 / 5 | −0.060 to −0.031 | −0.064 / −0.047 / −0.032 / −0.041 / −0.044 |
+
+Test fold, other metrics (mean over 5 seeds):
+
+| Config | PCC | R² | MAE | Gain over per-drug mean (1.4889) | Params | Fit (s) |
+|---|---|---|---|---|---|---|
+| `base` | 0.8793 | 0.7699 | 0.9979 | +0.1637 | 3,184,257 | 546 |
+| `base+proteomics` | 0.8864 | 0.7813 | 0.9683 | +0.1969 | 3,316,225 | 598 |
+| `base+std_targets` | 0.8859 | 0.7757 | 0.9763 | +0.1803 | 3,184,257 | 525 |
+| `base+proteomics+std_targets` | 0.8908 | 0.7854 | 0.9560 | +0.2092 | 3,316,225 | 589 |
+
+- **`base+proteomics+std_targets` is the first configuration that beats
+  `base` beyond the ~0.03 band on both folds**, on every seed, with a seed
+  interval that excludes 0 on both.
+- **The combination against its parts** (paired by seed):
+
+  | Compared with | Fold | Δ | Seeds better | 95% CI, seeds |
+  |---|---|---|---|---|
+  | `base+proteomics` | val | −0.0342 | 5 / 5 | −0.039 to −0.029 |
+  | `base+proteomics` | test | −0.0124 | 3 / 5 | −0.030 to +0.006 |
+  | `base+std_targets` | val | −0.0145 | 5 / 5 | −0.024 to −0.005 |
+  | `base+std_targets` | test | −0.0289 | 5 / 5 | −0.052 to −0.006 |
+
+  It is clearly better than either part on validation. On test it is clearly
+  better than standardisation alone, but **not established as better than
+  proteomics alone** (−0.012, 3 of 5 seeds, interval includes 0).
+- **Standardisation's own test gain is still not established** (−0.017, 4 of
+  5, interval includes 0), although on validation it is the larger of the two
+  effects (−0.036). What it adds on test, it adds on top of proteomics only
+  on some seeds.
+- Best epoch: `base` 122 / 111 / 72 / 22 / 67; proteomics 162 / 180 / 102 /
+  106 / 170; standardisation 14 / 20 / 36 / 38 / 96; the combination 43 / 28
+  / 13 / 189 / 45.
+- **Limits:** the intervals cover training noise only. The split is one fixed
+  set of 80 validation and 80 test cell lines, and no cell-line bootstrap was
+  run (the Phase 2 runs for seeds 42-44 saved no predictions). The
+  combination was chosen after seeing the 3-seed validation results of its
+  parts, with the keep rule written before any new seed existed (below,
+  section 8).
+
+The tables below this point are the original Phase 2 results on 3 seeds, kept
+as run.
+
+**Headline (Phase 2, 3 seeds):** no component clearly beats `base`. Proteomics is the only one
 that is better on every seed, and its mean gain (0.0302) sits on the edge of
 the ~0.03 band. `full` is not better than `base` (+0.0162, worse on all three
 seeds) and is 0.046 worse than `base+proteomics`.
@@ -241,18 +302,41 @@ how firmly any rung can be ranked from one split.
   validated only under the random split (0.978), paired with the molecular
   graph. It was not re-checked against their code for this study.
 
-### d. Proteomics — borderline
-- **Result:** 1.2930 ± 0.0169, Δ −0.0302. Better than base on all 3 seeds
+### d. Proteomics — kept: consistent on both folds, just past the band on test
+- **Result (Phase 2, 3 seeds):** 1.2930 ± 0.0169, Δ −0.0302. Better than base on all 3 seeds
   (−0.035 / −0.023 / −0.033). The mean gain equals the ~0.03 band.
 - **Interpretation:** the only component with a consistent gain. It is not a
   clear pass: one seed (43) is inside the band, and on validation the gain is
   smaller (−0.014).
+- **Five seeds (2026-10-07; seeds 45 and 46 added, run from commit
+  `1c00b00`, same machine and CSV):**
+
+  | Fold | `base` | `base+proteomics` | Δ | Seeds better | 95% CI, seeds | Per-seed Δ (42 / 43 / 44 / 45 / 46) |
+  |---|---|---|---|---|---|---|
+  | validation | 1.2961 ± 0.0059 | 1.2796 ± 0.0060 | −0.0166 | 5 / 5 | −0.023 to −0.010 | −0.020 / −0.014 / −0.009 / −0.020 / −0.021 |
+  | test | 1.3252 ± 0.0119 | 1.2920 ± 0.0125 | −0.0331 | 5 / 5 | −0.043 to −0.023 | −0.035 / −0.023 / −0.033 / −0.045 / −0.030 |
+
+  Better than `base` on every seed on both folds; the seed interval excludes
+  0 on both. On test the mean gain is just past the ~0.03 band (PCC 0.8864
+  against 0.8793, R² 0.7813 against 0.7699, gain over the per-drug mean floor
+  +0.1969 against +0.1637). On validation it is about half that and inside
+  the band. The interval covers training noise only: the split is fixed, and
+  no cell-line bootstrap was possible because the Phase 2 runs (seeds 42-44)
+  saved no predictions. `base` on seeds 45 and 46 reproduced the Phase 3 gate
+  rows exactly.
 - **Why (evidence):** not diagnosed beyond the numbers above.
 - **Cost:** +131,968 parameters, 1.07× training time.
 - Earlier flat-model result to reconcile: Mut_CNV hurt (E32 vs E04 in [results.md](../docs/results.md)). Not tested here: there is no rung without Mut_CNV.
 
-### e. Per-drug target standardisation — tested-and-rejected
-- **Result:** 1.3108 ± 0.0195, Δ −0.0124. Inside the noise band; better than
+### e. Per-drug target standardisation — kept by the validation rule; no established effect on test alone
+- **Five seeds (2026-10-07):** validation 1.2599 ± 0.0074, Δ −0.0362, better
+  on 5 of 5 seeds (seed interval −0.042 to −0.030), beyond the band. Test
+  1.3086 ± 0.0144, Δ −0.0166, better on 4 of 5 (interval −0.041 to +0.008),
+  inside the band. The verdict changed from the 3-seed "tested-and-rejected"
+  because the choice of components is made on validation (section 8); on
+  test alone its effect is still not established. Combined with proteomics
+  it gives the best configuration so far (section 5 update).
+- **Result (Phase 2, 3 seeds):** 1.3108 ± 0.0195, Δ −0.0124. Inside the noise band; better than
   base on 2 seeds of 3, worse on seed 44 (+0.011).
 - **Interpretation:** no measurable effect on test RMSE for this model. It has
   the best validation RMSE of any rung (1.2580, −0.037 vs base), but that gain
@@ -535,6 +619,23 @@ rarely equals the gain of the full model.
 | `full` measured | +0.0162 |
 | Difference, `full` − sum of all five | −0.5523 |
 
+The two kept components, 5 seeds (2026-10-07):
+
+| Quantity | Validation | Test |
+|---|---|---|
+| d alone (`base+proteomics`) | −0.0166 | −0.0331 |
+| e alone (`base+std_targets`) | −0.0362 | −0.0166 |
+| Sum of the two | −0.0528 | −0.0497 |
+| `base+proteomics+std_targets` measured | −0.0508 | −0.0455 |
+| Measured as a share of the sum | 96% | 92% |
+
+- **Proteomics and standardisation are close to additive** on both folds:
+  one changes the inputs, the other the target scale. This is the opposite of
+  `full`, where the same two sit beside three components that hurt or do
+  nothing, and the result is worse than `base`.
+
+The original five-component analysis (Phase 2, 3 seeds):
+
 - The components are **not additive**. The sum is dominated by bilinear's
   +0.51, which does not appear inside `full`: with the molecular graph
   present, the head trains normally (`aligned` +0.0184, `full` +0.0162).
@@ -558,31 +659,67 @@ rarely equals the gain of the full model.
 
 *(report)*
 
-- **Chosen configuration:** not chosen yet. This is a team decision; the
-  evidence from Phase 2 is:
+- **Candidate (2026-10-07): `base+proteomics+std_targets`.** It passes the
+  rule below. Whether it is the final model is the team's decision, not yet
+  made; it has no name of its own in `run_ablation.py` yet.
+  - **Rule, written on 2026-10-06 before any of the new seeds existed:** a
+    component is kept if its rung beats `base` on validation on at least 4 of
+    5 seeds. The combined model is accepted if its validation RMSE is no
+    worse than the best kept single rung. Test is reported afterwards, not
+    used to decide.
+  - **Applied:** proteomics is kept (5 of 5 on validation, −0.0166);
+    standardisation is kept (5 of 5, −0.0362). The combination's validation
+    RMSE is 1.2454 ± 0.0037, better than the best single rung (1.2599), so it
+    is accepted.
+  - **Test, reported after:** 1.2797 ± 0.0192 against `base` 1.3252 ± 0.0119
+    (Δ −0.0455, 5 of 5 seeds, seed interval −0.060 to −0.031), PCC 0.8908,
+    R² 0.7854, gain over the per-drug mean floor +0.2092 (`base` +0.1637).
+  - **What it does not show:** on test it is not established as better than
+    `base+proteomics` alone (−0.012, 3 of 5 seeds). The rule was written
+    after seeing the 3-seed validation results of both parts. One fixed
+    split; intervals cover training noise only.
+  - **Constraint:** standardisation cannot be used under leave-drugs-out, so
+    that run uses `base+proteomics`.
+- **Earlier position (Phase 2, 3 seeds):** not chosen; the evidence then was:
   - best on test: `base+proteomics`, 1.2930 ± 0.0169 (PCC 0.8871, R² 0.7810);
   - best on validation: `base+std_targets`, 1.2580 ± 0.0097 (test 1.3108);
   - `full` (base + a-e) is not better than `base` and should not be presented
     as the final model on these numbers.
 - **Components dropped and why:** a (+0.0912, hurts), b (+0.0087, no effect),
-  c (+0.5111, hurts and unstable as configured), e (−0.0124, no effect), f as
-  hand-built features (−0.0035, no effect on all pairs), f as attention
-  without message passing (+0.0609, hurts as configured). d (−0.0302) is
-  borderline.
+  c (+0.5111, hurts and unstable as configured), f as hand-built features
+  (−0.0035, no effect on all pairs), f as attention without message passing
+  (+0.0609, hurts as configured). **Kept:** d (proteomics) and e
+  (standardisation), see above.
 - **Not tested:** f with PPI message passing (stage B, skipped 2026-10-06).
   The final model therefore cannot claim a graph component from this ladder.
-- **Status (2026-10-06):** choosing the configuration is the next step and
-  blocks the full ablation (Phase 5 in `CLAUDE.md`). A candidate not yet run
-  is a growth-rate covariate (section 11).
-- **Final test RMSE / PCC / R²:** TBD once the configuration is chosen.
+- **Status (2026-10-07):** a candidate exists and passes the rule; confirming
+  it as final and naming it is the next step, and unblocks the full ablation
+  (Phase 5 in `CLAUDE.md`). A further candidate not yet run is a growth-rate
+  covariate (section 11).
+- **Status (2026-10-11): the candidate is not the final model as it stands.**
+  The project objectives require a graph component and the candidate has
+  none. Not yet run: the candidate plus `mol_graph`, plus
+  `mol_graph+pair_features`, plus `mol_graph+pair_attention`, 5 seeds each.
+  Rule written before the runs: a graph-bearing configuration is eligible if
+  its validation RMSE is no more than 0.03 worse than the candidate's
+  (1.2454); among eligible ones the team picks the one that meets the
+  objective; test is reported after. What is already known about the parts,
+  on `base`: `mol_graph` +0.009 test and −0.007 validation (3 seeds, no
+  measurable effect), `pair_features` −0.004 (5 seeds), `pair_attention`
+  +0.061 (5 seeds). A graph component kept on these numbers is kept for the
+  project's scope, not for accuracy, and is reported that way. Commands and
+  the split of the remaining runs across two laptops:
+  [`docs/18_final_runs_runbook.md`](../docs/18_final_runs_runbook.md).
+- **Final test RMSE / PCC / R²:** 1.2797 ± 0.0192 / 0.8908 / 0.7854 if the
+  candidate is confirmed.
 - **Gain over the per-drug mean floor:** every stable rung beats 1.4889; the
-  largest gain is `base+proteomics` at +0.1959. `base` itself is +0.1657.
+  largest gain is the candidate at +0.2092 (`base+proteomics` +0.1969,
+  `base` +0.1637, all on 5 seeds).
 
-Selection must be made on **validation** RMSE; the test numbers above are
-reported after the choice, not used to make it. Not done yet. Note that
-validation and test rank the rungs differently (section 5), so a choice made
-on validation would pick `std_targets`, whose test gain is inside the noise
-band.
+Selection is made on **validation** RMSE; test numbers are reported after the
+choice, not used to make it. Validation and test rank the rungs differently
+(section 5): standardisation is the larger effect on validation and
+proteomics on test.
 
 ## 9. Sanity check against the benchmark — random split
 
@@ -727,6 +864,17 @@ final configuration exist.
 > module as built rather than the idea. Message passing over the PPI network
 > beneath that attention was not run.
 
+Addition from the 5-seed runs of 2026-10-07 (replaces "none improved on the
+base clearly" above once the final model is confirmed):
+
+> With five seeds, adding proteomics improved on the base on every seed
+> (test RMSE 1.2920 ± 0.0125, −0.033), and combining it with per-drug target
+> standardisation gave 1.2797 ± 0.0192 (−0.046, every seed), against 1.4889
+> for a per-drug mean. The two components were chosen on validation RMSE,
+> where the combination was better than either alone; on test it was not
+> clearly better than proteomics alone (−0.012, 3 of 5 seeds). Differences
+> are over training seeds on one fixed split of cell lines.
+
 ## 15. Reproduction
 
 ```
@@ -740,6 +888,22 @@ The second command produced the 24 rows in this file (run 2026-10-03, 15:33 to
 (random split for `base` and `full`) has not been run.
 
 Commit hash of the code that produced the CSV: `66205f8`.
+
+Five-seed rows for the candidates (run 2026-10-06 23:44 to 2026-10-07 01:29,
+same machine and CSV; first command from commit `1c00b00`, second from
+`70c3d13`, which differs only in `CLAUDE.md`; rows already present were
+skipped, so 4 and then 7 runs):
+
+```
+python src/final_model/run_ablation.py --configs base base+proteomics \
+  --protocols grouped --seeds 42 43 44 45 46
+python src/final_model/run_ablation.py \
+  --configs base base+proteomics base+std_targets base+proteomics+std_targets \
+  --protocols grouped --seeds 42 43 44 45 46
+```
+
+The ladder CSV now has 35 rows. These 11 runs also saved predictions, in
+`results/ablation_results_predictions/`; the 24 Phase 2 runs did not.
 
 Phase 3 gate (run 2026-10-04, same machine, commit `cc303ee`; seeds 42-44
 19:42 to 20:40, seeds 45-46 20:57 to 21:36, 10 runs):

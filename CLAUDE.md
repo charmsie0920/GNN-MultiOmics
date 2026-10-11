@@ -47,15 +47,18 @@ Each row must be a switch and a row in the ablation table. A component that
 does not beat the noise band is reported as tested-and-rejected, not kept to
 make the model look different. MoGraphDRP is cited as the base architecture.
 
-**How the table stands against the results (2026-10-06).** It is the
+**How the table stands against the results (2026-10-07).** It is the
 intended design, not what the ablation supports:
 
-- Omics: proteomics is borderline (-0.030, 3 of 3 seeds), the only gain.
+- Omics: proteomics is kept (5 seeds: test -0.033, validation -0.017, 5 of 5
+  on both).
 - Biological prior: no supporting rung. Hop features had no effect; pair
   attention was rejected; message passing (Stage B) was not run.
 - Cell-drug interaction: bilinear is rejected as configured; pair attention
   is rejected as configured.
-- Target scaling: no effect (-0.012).
+- Target scaling: kept on validation (5 seeds: -0.036, 5 of 5). Alone it has
+  no established effect on test (-0.017, 4 of 5); with proteomics it gives
+  the candidate final model.
 - Evaluation: done as described (grouped split, seeds, floor).
 - Interpretability: on hold, see Phase 6.
 
@@ -90,20 +93,49 @@ The table is rewritten once the final configuration is chosen.
 - Hardware is a GTX 1650 (4 GB). Keep the graph full-batch and small; batch-128
   runs are slow, so launch long sweeps in the background and write results
   incrementally.
+- **Two machines since 2026-10-11.** Results are not bit-identical across
+  hardware. Two numbers that are subtracted from each other, or sit in one
+  table, must come from the same machine. A second machine always writes to
+  its own results file (`--out`), never into a CSV that already holds rows
+  from this one: the ladder skips finished rows and would mix them silently.
+  See `docs/18_final_runs_runbook.md`.
 
 ## Tasks
 
-**Where things stand (2026-10-06).** Phases 0-3 are done. Phase 4: Stage A
+**Where things stand (2026-10-11).** Phases 0-3 are done. Phase 4: Stage A
 was run and pair attention is tested-and-rejected as configured; **Stage B is
-skipped for now** (decided 2026-10-06). Next is Phase 5, and it needs three
-decisions first, all in "Open questions":
+skipped for now** (decided 2026-10-06). A candidate exists,
+`base+proteomics+std_targets`, test 1.2797 +/- 0.0192 against `base`
+1.3252 +/- 0.0119 (-0.0455, 5 of 5 seeds), the first configuration past the
+noise band on both folds.
 
-1. The final configuration: which rungs make up "Base + everything". Only
-   `base+proteomics` has a consistent gain so far.
-2. Whether to run the `growth_rate` rung (candidate, not run).
-3. What the report's graph result is, now that the ladder has no trained
-   rung with message passing. Planned answer: `HeteroIC50GNN` with 3-5 seeds
-   as a compared baseline (Phase 5).
+**Decided 2026-10-11: the final model must contain a graph component.** The
+project objectives are not met without one, so the candidate above cannot be
+the final model as it stands: it has none. The remaining runs, their order
+and who runs them are in **`docs/18_final_runs_runbook.md`**:
+
+1. **Graph decision (this laptop, 15 runs, about 5.7 h):** the candidate
+   plus `mol_graph`, plus `mol_graph+pair_features`, plus
+   `mol_graph+pair_attention`, 5 seeds each. Rule written before the runs: a
+   graph-bearing config is eligible if its validation RMSE is no more than
+   0.03 worse than the candidate's (1.2454). Among eligible configs the team
+   picks the one that meets the objective; test is reported after. The
+   chosen config is then named `final` in `run_ablation.py`.
+2. **Teammate's laptop (decided 2026-10-11):** a `base` anchor under the
+   grouped split, `HeteroIC50GNN` with seeds (both target arms), the
+   random-split block, and the leave-drugs-out block. Each block carries its
+   own `base` rows and its own results file, so no delta is ever taken
+   across machines.
+3. **Not built yet:** an `ldo` protocol in `run_ablation.py`, needed before
+   the leave-drugs-out block.
+4. Still open: whether to run the `growth_rate` rung (waiting on the
+   supervisor).
+
+Honest framing to keep: `mol_graph` had no measurable effect on `base`
+(+0.009 test, -0.007 validation, 3 seeds). If it is in the final model, it is
+there because the project needs a graph component, and the report says its
+ablation shows no measurable effect. It is a graph over the drug molecule,
+not over the PPI network.
 
 ### Phase 0 — Validate the base (passed 2026-10-01)
 - [x] Run `benchmark_alignment.py` for `aligned` under the random split,
@@ -275,6 +307,12 @@ such; Mut_CNV has hurt flat models before (E32 vs E04), so base may be weak.
   `base+proteomics`; best on validation is `base+std_targets`. Not decided.
 - `src/ABLATION.md` previously listed `base` at 544,001 parameters; the frozen
   model has 3,184,257 (`full`: 4,270,706).
+- **Updated 2026-10-07 with 5 seeds** for `base`, `base+proteomics` and
+  `base+std_targets`, plus the new rung `base+proteomics+std_targets`: see
+  "Open questions" and `src/ABLATION.md` section 5. Proteomics and
+  standardisation are now kept; the table above is the 3-seed result as run.
+  `docs/results.md` now takes each delta on the seeds a row shares with
+  `base`, because rows have 3 or 5 seeds.
 
 ### Phase 3 — Cheap gate for the pair-specific idea
 
@@ -573,11 +611,15 @@ Mutation and target edges are inputs, not labels, so having held-out cell
 lines' edges in the graph is not leakage; say so in the report.
 
 ### Phase 5 — Full ablation
-**Not started. Blocked on the final configuration** (see "Where things
-stand"). Changed by Phase 4's outcome (2026-10-06):
+**Not started. Waiting on the graph decision** (see "Where things stand" and
+`docs/18_final_runs_runbook.md`, which holds the commands and the split
+between the two laptops). Changed by Phase 4's outcome (2026-10-06) and by
+the requirement for a graph component (2026-10-11):
 
-- [ ] Decide the final configuration first, on validation RMSE, and give it
-      its own name in `run_ablation.py` (`full` stays pinned to Phase 2).
+- [ ] Run the graph decision, choose the final configuration by its rule and
+      give it the name `final` in `run_ablation.py` (`full` stays pinned to
+      Phase 2). `base+proteomics+std_targets` was chosen on validation RMSE on
+      2026-10-07 and is the starting point; it has no graph component.
 - [ ] Ladder on top of the best Phase 2 row: `+ pair features` and the final
       model; 3-5 seeds, both protocols. `+ pair attention` is dropped from
       this ladder: it is rejected as configured and already has its rung.
@@ -628,6 +670,7 @@ attention or attribution is worth testing; otherwise report it as not done.
 | `experiments/15_diagnostics/` | why the old graph model underperforms |
 | `docs/09_split_protocol_comparison.md` | protocol vs architecture gap |
 | `src/ABLATION.md` | ablation write-up; keep it current (see Rules) |
+| `docs/18_final_runs_runbook.md` | the remaining runs: who runs what, on which laptop, commands and output files |
 | `docs/13_seed_variance_results.md` | noise band |
 | `docs/17_midi_review.md` | MIDI vs our novelty component |
 | `docs/CURRENTPLAN.md` | older plan, superseded by this file |
@@ -642,25 +685,42 @@ attention or attribution is worth testing; otherwise report it as not done.
   for 10 runs, estimated).
 - **Which rungs make up the final model?** The lecturer's ladder ends in
   "Base + everything". `full` (the five Phase 2 components) is not better
-  than `base`. Only `base+proteomics` has a consistent gain (-0.030, 3 of 3
-  seeds, at the band edge); two more seeds would bring it to 5. The choice
-  must be made on validation RMSE. Not decided; it blocks Phase 5.
-  - **Running (2026-10-06, 23:44, commit `1c00b00`):** seeds 45 and 46 for
-    `base` and `base+proteomics`, into `ablation_results.csv` (4 runs, about
-    40 min, log `final_config_seeds.log`).
-  - **Proposed candidate, not agreed:** `base+proteomics+std_targets`. On
-    validation at 3 seeds, `std_targets` is -0.037 and `proteomics` -0.014,
-    both 3 of 3; every other rung is neutral, harmful or does not carry over
-    to test. The combination has only ever run inside `full`.
-  - **Proposed rule, written before any new seed existed, not agreed:** a
-    component is kept if its rung beats `base` on validation on at least 4 of
-    5 seeds. The combined model is accepted as final if its validation RMSE
-    is no worse than the best kept single rung. Test is reported afterwards,
-    not used to decide.
-  - **Needed to apply it, not launched:** `base+std_targets` seeds 45-46 and
-    `base+proteomics+std_targets` seeds 42-46 (7 runs, about 65 min).
-  - Caveats: validation and test disagree on `std_targets` (test -0.012, 2
-    of 3), and it cannot be used under leave-drugs-out.
+  than `base`. The choice is made on validation RMSE. A candidate passed
+  the rule on 2026-10-07. **Since 2026-10-11 it is not sufficient: the final
+  model must also contain a graph component** (see "Where things stand").
+  - **Rule, written 2026-10-06 before any new seed existed:** a component is
+    kept if its rung beats `base` on validation on at least 4 of 5 seeds. The
+    combined model is accepted as final if its validation RMSE is no worse
+    than the best kept single rung. Test is reported afterwards, not used to
+    decide. The user approved the runs that apply it; confirming the outcome
+    as the final model is still the team's call.
+  - **Run (2026-10-06 23:44 to 2026-10-07 01:29, commits `1c00b00` and
+    `70c3d13`, identical code):** 11 runs into `ablation_results.csv`, which
+    now has 35 rows. Seeds 45-46 for `base`, `base+proteomics`,
+    `base+std_targets`; seeds 42-46 for `base+proteomics+std_targets`. `base`
+    on 45-46 reproduced the Phase 3 gate rows exactly.
+  - **Result, 5 seeds, floor 1.4889:**
+
+    | Config | Validation | Δ val | Test | Δ test | Seeds better (val / test) |
+    |---|---|---|---|---|---|
+    | `base` | 1.2961 +/- 0.0059 | 0 | 1.3252 +/- 0.0119 | 0 | |
+    | `base+proteomics` | 1.2796 +/- 0.0060 | -0.0166 | 1.2920 +/- 0.0125 | -0.0331 | 5 / 5 |
+    | `base+std_targets` | 1.2599 +/- 0.0074 | -0.0362 | 1.3086 +/- 0.0144 | -0.0166 | 5 / 4 |
+    | `base+proteomics+std_targets` | 1.2454 +/- 0.0037 | -0.0508 | 1.2797 +/- 0.0192 | -0.0455 | 5 / 5 |
+
+  - **Rule applied:** both components are kept (5 of 5 on validation each).
+    The combination's validation RMSE (1.2454) is better than the best single
+    rung (1.2599), so it is accepted. **Candidate final model:
+    `base+proteomics+std_targets`.**
+  - **Caveats to state:** on test the combination is not established as
+    better than `base+proteomics` alone (-0.012, 3 of 5 seeds, interval
+    includes 0); standardisation alone is not established on test either.
+    The intervals cover training noise on one fixed split. The combination
+    was picked after seeing its parts' 3-seed validation results.
+    Standardisation cannot be used under leave-drugs-out, so that run uses
+    `base+proteomics`.
+  - The two components are close to additive (92% of the summed gains on
+    test, 96% on validation).
 - **Pair attention: closed as rejected (2026-10-06).** The cause was
   diagnosed (Phase 4, Stage A result). Any changed version of the module
   (regularisation, an explicit same-protein signal, a smaller table) would be
