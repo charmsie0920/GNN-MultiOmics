@@ -16,6 +16,11 @@ They are not a GNN: no parameters, no message passing. If they carry no
 signal the base model lacks, a learned module over the same edges is unlikely
 to find one, which is what the gate decides before Phase 4 is built.
 
+Phase 4 reads the same two edge types as sets instead of features:
+`build_pair_sets` gives each drug's target proteins and each cell line's
+mutated proteins as padded index tables, for the attention module in
+`src/models/pair_graph_drp.py`.
+
 **Not leakage.** Mutation and target edges are inputs, not labels. A held-out
 cell line's mutations are part of its description in the same way its
 expression profile is, so its edges being in the graph tells the model nothing
@@ -29,7 +34,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Dict, List, NamedTuple
+from typing import Dict, List, NamedTuple, Tuple
 
 import numpy as np
 import pandas as pd
@@ -69,6 +74,34 @@ class PairFeatures(NamedTuple):
     subsets: Dict[str, np.ndarray]   # name -> boolean row mask
 
 
+class PairGraph(NamedTuple):
+    """The graph, with the pair rows' cell lines and drugs matched to its nodes."""
+
+    data: object                         # the HeteroData graph
+    cell_codes: np.ndarray               # (n_pairs,), index into `cell_levels`
+    cell_levels: pd.Index                # sorted cell-line IDs of the pairs
+    drug_codes: np.ndarray               # (n_pairs,), index into `drug_levels`
+    drug_levels: pd.Index                # sorted drug IDs of the pairs
+    targets_of: Dict[str, np.ndarray]    # drug ID -> target protein indices
+    mutated_of: Dict[str, np.ndarray]    # cell-line ID -> mutated protein indices
+
+
+class PairSets(NamedTuple):
+    """Each drug's target proteins and each cell line's mutated proteins, padded.
+
+    What the Phase 4 attention module reads. A pair row picks its drug's row of
+    the target table and its cell line's row of the mutation table.
+    """
+
+    cell_codes: np.ndarray       # (n_pairs,), int64, row of `mutated_index`
+    drug_codes: np.ndarray       # (n_pairs,), int64, row of `target_index`
+    target_index: np.ndarray     # (n_drugs, most targets), protein node index
+    target_mask: np.ndarray      # same shape, True on real entries
+    mutated_index: np.ndarray    # (n_cell_lines, most mutations), protein node index
+    mutated_mask: np.ndarray     # same shape, True on real entries
+    n_proteins: int
+
+
 def _edges_by_source(edge_index: torch.Tensor, source_ids: List[str]) -> Dict[str, np.ndarray]:
     """`{source node id: protein indices}` for one (source -> protein) edge type."""
     grouped: Dict[str, List[int]] = {}
@@ -77,16 +110,15 @@ def _edges_by_source(edge_index: torch.Tensor, source_ids: List[str]) -> Dict[st
     return {k: np.unique(v) for k, v in grouped.items()}
 
 
-def build_pair_features(y_used: pd.DataFrame, graph_path: Path = GRAPH_PATH) -> PairFeatures:
-    """Features for every row of `y_used`, in its row order.
+def _load_pair_graph(y_used: pd.DataFrame, graph_path: Path) -> PairGraph:
+    """Load the graph and match the pair rows' cell lines and drugs to its nodes.
 
-    Cell lines and drugs are matched to graph nodes by their IDs, never by
-    position: the graph holds 498 drugs and the pairs use 240 of them.
+    Matched by node ID, never by position: the graph holds 498 drugs and the
+    pairs use 240 of them.
     """
     data = torch.load(graph_path, weights_only=False)
     cell_ids = [str(c) for c in data["cell_line"].node_ids]
     drug_ids = [str(d) for d in data["drug"].node_ids]
-    n_proteins = data["protein"].x.shape[0]
 
     cell_codes, cell_levels = pd.factorize(y_used[COL_CELL_LINE].astype(str), sort=True)
     drug_codes, drug_levels = pd.factorize(y_used[COL_DRUG].astype(str), sort=True)
@@ -97,9 +129,63 @@ def build_pair_features(y_used: pd.DataFrame, graph_path: Path = GRAPH_PATH) -> 
             f"{len(missing_cells)} cell lines and {len(missing_drugs)} drugs in the pairs "
             f"are not graph nodes, e.g. {sorted(missing_cells)[:3]} {sorted(missing_drugs)[:3]}"
         )
+    return PairGraph(
+        data, cell_codes, cell_levels, drug_codes, drug_levels,
+        targets_of=_edges_by_source(data[TARGETS].edge_index, drug_ids),
+        mutated_of=_edges_by_source(data[MUTATION].edge_index, cell_ids),
+    )
 
-    targets_of = _edges_by_source(data[TARGETS].edge_index, drug_ids)
-    mutated_of = _edges_by_source(data[MUTATION].edge_index, cell_ids)
+
+def pad_index_sets(sets: List[np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
+    """Variable-length index sets -> (index, mask), both (len(sets), longest set).
+
+    Entries are left-aligned; padded slots hold index 0 and are False in the mask.
+    """
+    width = max(1, max(len(s) for s in sets))
+    index = np.zeros((len(sets), width), dtype=np.int64)
+    mask = np.zeros((len(sets), width), dtype=bool)
+    for i, members in enumerate(sets):
+        index[i, :len(members)] = members
+        mask[i, :len(members)] = True
+    return index, mask
+
+
+def build_pair_sets(y_used: pd.DataFrame, graph_path: Path = GRAPH_PATH) -> PairSets:
+    """The protein sets the Phase 4 attention module reads, for the rows of `y_used`.
+
+    `drug_codes` follow the same sorted drug order as the ladder's own drug
+    codes; the ladder asserts that before using them.
+    """
+    graph = _load_pair_graph(y_used, graph_path)
+    empty = np.empty(0, dtype=np.int64)
+    target_index, target_mask = pad_index_sets(
+        [graph.targets_of.get(d, empty) for d in graph.drug_levels])
+    mutated_index, mutated_mask = pad_index_sets(
+        [graph.mutated_of.get(c, empty) for c in graph.cell_levels])
+    used = np.union1d(target_index[target_mask], mutated_index[mutated_mask])
+    print(
+        f"[pair]    targets per drug: up to {target_mask.shape[1]}, "
+        f"{int((~target_mask.any(axis=1)).sum())} of {len(target_mask)} drugs have none  |  "
+        f"mutated proteins per cell line: up to {mutated_mask.shape[1]}, "
+        f"{int((~mutated_mask.any(axis=1)).sum())} of {len(mutated_mask)} have none  |  "
+        f"{len(used)} distinct proteins in either"
+    )
+    return PairSets(
+        graph.cell_codes.astype(np.int64), graph.drug_codes.astype(np.int64),
+        target_index, target_mask, mutated_index, mutated_mask,
+        n_proteins=graph.data["protein"].x.shape[0],
+    )
+
+
+def build_pair_features(y_used: pd.DataFrame, graph_path: Path = GRAPH_PATH) -> PairFeatures:
+    """Features for every row of `y_used`, in its row order.
+
+    Cell lines and drugs are matched to graph nodes by their IDs, never by
+    position: the graph holds 498 drugs and the pairs use 240 of them.
+    """
+    data, cell_codes, cell_levels, drug_codes, drug_levels, targets_of, mutated_of = \
+        _load_pair_graph(y_used, graph_path)
+    n_proteins = data["protein"].x.shape[0]
 
     # Hop counts from every target protein the pairs can reference. STRING
     # lists each interaction in both directions, so the graph is undirected.
@@ -200,4 +286,19 @@ if __name__ == "__main__":
     # to the drug fingerprint the model already has.
     one_drug = y_used[COL_DRUG] == y_used[COL_DRUG][s["direct_hit"]].iloc[0]
     assert len(np.unique(pair.matrix[one_drug.to_numpy()], axis=0)) > 1
+
+    # The padded sets must describe the same graph as the features: a pair is a
+    # direct hit exactly when its target set and its mutated set share a protein.
+    print()
+    sets = build_pair_sets(y_used)
+    shared = np.zeros((len(sets.mutated_index), len(sets.target_index)), dtype=bool)
+    for j, (targets, real) in enumerate(zip(sets.target_index, sets.target_mask)):
+        shared[:, j] = (np.isin(sets.mutated_index, targets[real]) & sets.mutated_mask).any(axis=1)
+    assert np.array_equal(shared[sets.cell_codes, sets.drug_codes], s["direct_hit"]), \
+        "padded sets disagree with the direct-hit feature"
+    drug_has_target = sets.target_mask.any(axis=1)[sets.drug_codes]
+    assert np.array_equal(drug_has_target, s["has_target"])
+    assert np.array_equal(sets.mutated_mask.any(axis=1)[sets.cell_codes],
+                          pair.matrix[:, pair.names.index("has_mutation")] == 1)
+    assert sets.target_index.max() < sets.n_proteins and sets.mutated_index.max() < sets.n_proteins
     print("\nAll pair-feature checks passed.")

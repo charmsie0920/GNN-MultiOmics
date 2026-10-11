@@ -14,7 +14,9 @@ The ladder is **Base + one component at a time**:
 Components are declared once in `COMPONENTS`; adding a new one there adds its
 `base+<name>` rung to the default ladder. `full` is pinned to the components it
 was run with, so a later component cannot change what its rows mean. Any
-combination can be requested by name, e.g. `--configs base+bilinear+proteomics`.
+combination can be requested by name, e.g. `--configs base+bilinear+proteomics`,
+except two alternatives for the same switch (`pair_features` and
+`pair_attention`).
 
 Every configuration can be evaluated under **both** the benchmark's random
 pair split and this project's cell-line-grouped split. The grouped split is the
@@ -34,7 +36,10 @@ constant rate, checkpoint on best validation RMSE.
 Results are appended one row per finished run, so an interrupted sweep loses
 nothing and re-running skips what is already done (`--rerun` to repeat). Each
 run's validation and test predictions are saved beside the CSV, in
-`<csv name>_predictions/`, for subset metrics and paired comparisons.
+`<csv name>_predictions/`, for subset metrics and paired comparisons. Runs with
+the attention module also save their best-epoch weights, in
+`<csv name>_checkpoints/` (about 17 MB each), because attention
+weights cannot be recovered from predictions.
 
 Run from the repository root:
     python "src/final_model/run_ablation.py" --list
@@ -80,7 +85,7 @@ from src.data.experiment_utils import (  # noqa: E402
     print_metric_block,
     random_pair_split,
 )
-from src.data.pair_features import build_pair_features  # noqa: E402
+from src.data.pair_features import build_pair_features, build_pair_sets  # noqa: E402
 from src.data.target_scaling import PerDrugTargetScaler  # noqa: E402
 # The frozen Phase 0 baseline. Imported, never copied: every rung must be built
 # from the exact class whose random-split reproduction was validated.
@@ -131,10 +136,14 @@ COMPONENTS: dict[str, tuple[dict, str]] = {
                     "per-drug standardized ln(IC50) targets"),
     "pair_features": (dict(pair_module="features"),
                       "hand-built target-vs-mutation pair features into the predictor (Phase 3 gate)"),
+    "pair_attention": (dict(pair_module="attention"),
+                       "attention of the drug's target proteins over the cell line's mutated "
+                       "proteins, no message passing (Phase 4 stage A)"),
 }
-# Each component must own a different field, otherwise two of them could not be
-# combined and `base+a` vs `base+b` would not be independent switches.
-assert len({k for override, _ in COMPONENTS.values() for k in override}) == len(COMPONENTS)
+# A component switches fields that exist in BASE. Two components that switch
+# the same field (`pair_features` and `pair_attention`) are alternatives: each
+# is its own rung, and `resolve_config` refuses a config that combines them.
+assert all(k in BASE for override, _ in COMPONENTS.values() for k in override)
 
 # `full` is the model the Phase 2 rows were run with. It is spelled out rather
 # than derived from `COMPONENTS`: a component added later would otherwise
@@ -159,7 +168,15 @@ def resolve_config(config_id: str) -> dict:
             f"or one of {sorted(ALIASES)}; components are {list(COMPONENTS)}"
         )
     cfg = dict(BASE)
+    switched_by: dict[str, str] = {}
     for name in parts[1:]:
+        for field in COMPONENTS[name][0]:
+            if field in switched_by:
+                raise ValueError(
+                    f"config {config_id!r} combines {switched_by[field]!r} and {name!r}, "
+                    f"which are alternatives: both set {field!r}"
+                )
+            switched_by[field] = name
         cfg.update(COMPONENTS[name][0])
     cfg["components"] = "+".join(parts[1:]) or "none"
     return cfg
@@ -211,7 +228,8 @@ def load_pairs(graphs):
 def predict(model, omics, fingerprints, codes, idx, keys, device, pair=None) -> np.ndarray:
     """Raw model output for the rows in `idx` (z-scores when targets are standardized).
 
-    `pair` is the per-pair feature matrix for models that take one, else None.
+    `pair` is what each row gives a pair module: the per-pair feature matrix,
+    or the cell-line codes for attention. None for models without one.
     """
     model.eval()
     preds = []
@@ -240,7 +258,7 @@ def train(model, loader, predict_ln, val_idx, y_va, keys, device, max_epochs) ->
         model.train()
         for *inputs, yb in loader:
             # One tensor per omics key, then fingerprint, drug code and, for
-            # models that take one, the pair features.
+            # models that take one, the pair input (features or cell-line code).
             od = {k: t.to(device) for k, t in zip(keys, inputs)}
             fb, cb, *extra = (t.to(device) for t in inputs[len(keys):])
             yb = yb.to(device)
@@ -269,11 +287,16 @@ def train(model, loader, predict_ln, val_idx, y_va, keys, device, max_epochs) ->
     return model, best_epoch
 
 
-def run_one(config_id, protocol, data, batched, threshold, device, seed, max_epochs) -> tuple[dict, dict]:
-    """Train and score one run -> (results row, validation and test predictions)."""
-    gathered, fingerprints, codes, y, groups, pair_features = data
+def run_one(config_id, protocol, data, batched, threshold, device, seed,
+            max_epochs) -> tuple[dict, dict, dict | None]:
+    """Train and score one run -> (results row, validation and test predictions,
+    best-epoch weights for attention runs or None)."""
+    gathered, fingerprints, codes, y, groups, pair_features, pair_sets = data
     cfg = resolve_config(config_id)
-    pair = pair_features if cfg["pair_module"] == "features" else None
+    # What each row gives the pair module: its features, or its cell line's row
+    # of the mutation table (the drug's row is the drug code it already has).
+    pair = {"none": None, "features": pair_features,
+            "attention": pair_sets.cell_codes}[cfg["pair_module"]]
     keys = list(cfg["modalities"])
     print("\n" + "#" * 82)
     print(f"# {config_id} | protocol={protocol} | seed={seed}")
@@ -312,8 +335,13 @@ def run_one(config_id, protocol, data, batched, threshold, device, seed, max_epo
         dropout=DROPOUT,
     )
     # Without a pair module this is the frozen base itself, built as in Phase 2.
-    model = (MoGraphDRPAligned(**model_kwargs) if pair is None
-             else PairGraphDRP(**model_kwargs, pair_dim=pair.shape[1])).to(device)
+    if cfg["pair_module"] == "none":
+        model = MoGraphDRPAligned(**model_kwargs)
+    elif cfg["pair_module"] == "features":
+        model = PairGraphDRP(**model_kwargs, pair_dim=pair.shape[1])
+    else:
+        model = PairGraphDRP(**model_kwargs, pair_sets=pair_sets)
+    model = model.to(device)
     n_params = sum(p.numel() for p in model.parameters())
 
     def predict_ln(idx: np.ndarray) -> np.ndarray:
@@ -355,12 +383,23 @@ def run_one(config_id, protocol, data, batched, threshold, device, seed, max_epo
         "val_idx": val_idx, "val_true": y[val_idx], "val_pred": val_pred,
         "test_idx": test_idx, "test_true": y[test_idx], "test_pred": test_pred,
     }
-    return row, predictions
+    # Attention weights can only be read from the trained model, so those runs
+    # keep their best-epoch weights. Other runs are fully described by their
+    # predictions and keep none.
+    state = None
+    if cfg["pair_module"] == "attention":
+        state = {k: v.cpu() for k, v in model.state_dict().items()}
+    return row, predictions, state
 
 
 def predictions_dir(results_csv: Path) -> Path:
     """Where a results CSV's per-run predictions live: `<csv name>_predictions/`."""
     return results_csv.with_name(results_csv.stem + "_predictions")
+
+
+def checkpoints_dir(results_csv: Path) -> Path:
+    """Where the attention runs' weights live: `<csv name>_checkpoints/`."""
+    return results_csv.with_name(results_csv.stem + "_checkpoints")
 
 
 def print_summary(df: pd.DataFrame) -> None:
@@ -427,15 +466,23 @@ def main(argv: list[str] | None = None) -> None:
     graphs = build_drug_graphs()
     assert_fingerprint_population_parity(graphs)
     gathered, fingerprints, codes, y, groups, batched, _, y_used = load_pairs(graphs)
-    data = (gathered, fingerprints, codes, y, groups, build_pair_features(y_used).matrix)
+    pair_sets = build_pair_sets(y_used)
+    # The attention module looks up a drug's targets by the drug code the model
+    # is already given, so both must number the drugs the same way.
+    assert np.array_equal(pair_sets.drug_codes, codes), "pair sets and drug codes disagree"
+    data = (gathered, fingerprints, codes, y, groups, build_pair_features(y_used).matrix, pair_sets)
 
     prediction_dir = predictions_dir(args.out)
     prediction_dir.mkdir(parents=True, exist_ok=True)
     for config_id, protocol, seed in todo:
-        row, predictions = run_one(config_id, protocol, data, batched, threshold, device,
-                                   seed, args.max_epochs)
-        # Predictions first: a row in the CSV then always has its predictions.
-        np.savez_compressed(prediction_dir / f"{config_id}__{protocol}__seed{seed}.npz", **predictions)
+        row, predictions, state = run_one(config_id, protocol, data, batched, threshold, device,
+                                          seed, args.max_epochs)
+        # Predictions and weights first: a row in the CSV then always has them.
+        run_name = f"{config_id}__{protocol}__seed{seed}"
+        np.savez_compressed(prediction_dir / f"{run_name}.npz", **predictions)
+        if state is not None:
+            checkpoints_dir(args.out).mkdir(parents=True, exist_ok=True)
+            torch.save(state, checkpoints_dir(args.out) / f"{run_name}.pt")
         pd.DataFrame([row]).to_csv(args.out, mode="a", header=not args.out.exists(), index=False)
 
     print("\n" + "=" * 100)

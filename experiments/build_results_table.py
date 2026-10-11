@@ -71,7 +71,8 @@ ENSEMBLE_CSV = Path("experiments/08_ensemble_refinement/ensemble_results.csv")
 # and include random-split rows that must never be ranked against them.
 ALIGNMENT_CSV = Path("experiments/14_benchmark_alignment/benchmark_alignment_results.csv")
 ABLATION_CSV = Path("src/final_model/results/ablation_results.csv")
-# Phase 3 gate: `base` re-run with saved predictions beside `base+pair_features`.
+# Phase 3 gate and Phase 4 stage A: `base` re-run with saved predictions beside
+# `base+pair_features` and `base+pair_attention`.
 # Kept apart from the ladder CSV so its `base` rows are not counted twice.
 PAIR_GATE_CSV = Path("src/final_model/results/pair_gate_results.csv")
 OUTPUT = Path("docs/results.md")
@@ -128,10 +129,16 @@ def seed_summary_rows(path: Path, drug_floor: float) -> str:
             std=("test_rmse", "std"),
             pcc=("test_pcc", "mean"),
         )
-        base = stats.loc["base", "mean"] if "base" in stats.index else None
+        # Rows can have different seed sets (some rungs have 3 seeds, some 5),
+        # so each delta is taken on the seeds the rung shares with `base`.
+        by_seed = block.pivot_table(index="seed", columns="config", values="test_rmse")
         for config, r in stats.sort_values("mean").iterrows():
             std = f"{r['std']:.4f}" if r["n"] > 1 else "—"
-            delta = "—" if base is None else f"{r['mean'] - base:+.4f}"
+            if "base" not in by_seed.columns:
+                delta = "—"
+            else:
+                paired = (by_seed[config] - by_seed["base"]).dropna()
+                delta = f"{paired.mean():+.4f}" if len(paired) else "—"
             gain = f"{drug_floor - r['mean']:+.4f}" if protocol == "grouped" else "n/a"
             lines.append(
                 f"| `{config}` | {protocol} | {r['omics']} | {int(r['n'])} | "
@@ -295,21 +302,29 @@ single number from this table.
 Base + one component at a time on the frozen MoGraphDRP-aligned model
 ([`src/final_model/run_ablation.py`](../src/final_model/run_ablation.py); write-up
 in [`src/ABLATION.md`](../src/ABLATION.md)). Mean ± std over seeds. Negative Δ
-is better than `base`; a Δ smaller than ~{NOISE_THRESHOLD:.2f} is noise. The
+is better than `base`; a Δ smaller than ~{NOISE_THRESHOLD:.2f} is noise. Rows
+have 3 or 5 seeds (the Seeds column); each Δ is taken on the seeds a row
+shares with `base`, so a 3-seed row is compared with `base` on those 3 seeds
+while the `base` row itself shows all of its seeds. The
 random-split rows are a sanity check only and are not comparable to the
 grouped rows.
 
 {seed_header}
 {ablation_rows}
 
-### Phase 3: pair-feature gate
+### Phases 3 and 4: the pair-specific component
 
-`base` re-run beside `base+pair_features` (hand-built target-vs-mutation
-features into the predictor), same process and seeds
-([`src/final_model/pair_gate_report.py`](../src/final_model/pair_gate_report.py)).
-A drug's target is directly mutated in only 1.26% of pairs, so all-pairs RMSE
-cannot move by more than about 0.005; the gate is read on the subsets in
-[`src/ABLATION.md`](../src/ABLATION.md) section 6f, not on this table.
+`base` re-run beside the two forms of the pair component, same machine and
+seeds: `base+pair_features` (Phase 3, hand-built target-vs-mutation features
+into the predictor) and `base+pair_attention` (Phase 4 stage A, attention of
+a drug's target proteins over a cell line's mutated proteins, no message
+passing). A drug's target is directly mutated in only 1.26% of pairs, so a
+gain there cannot improve all-pairs RMSE by more than about 0.005; both are
+read on the subsets in [`src/ABLATION.md`](../src/ABLATION.md) section 6f
+([`src/final_model/pair_gate_report.py`](../src/final_model/pair_gate_report.py)),
+not on this table. The attention rung is worse than `base` on all pairs and
+is reported as tested-and-rejected as configured. PPI message passing under
+that attention (stage B) was skipped and has no row.
 
 {seed_header}
 {pair_gate_rows}
