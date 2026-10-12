@@ -25,6 +25,12 @@ pair split and this project's cell-line-grouped split. The grouped split is the
 headline; the random split exists only to sanity-check the reproduction against
 the published figures below.
 
+A third protocol, `ldo` (leave drugs out), holds out whole drugs instead of
+cell lines. It is never part of the default sweep and has to be asked for by
+name. Per-drug target standardization is refused under it: an unseen drug has
+no training statistics. The per-drug-mean floor does not apply either, so its
+two columns are empty in `ldo` rows.
+
 Reference points, all under the random split:
 
 | MoGraphDRP published (with XGBoost)      | 0.6622 |
@@ -47,6 +53,8 @@ Run from the repository root:
     python "src/final_model/run_ablation.py" --list
     python "src/final_model/run_ablation.py" --protocols grouped --seeds 42 43 44
     python "src/final_model/run_ablation.py" --configs base base+bilinear
+    python "src/final_model/run_ablation.py" --configs base base+proteomics \
+        --protocols ldo --out src/final_model/results/ldo_results.csv
 """
 
 from __future__ import annotations
@@ -79,6 +87,7 @@ from src.data.experiment_utils import (  # noqa: E402
     evaluate,
     grouped_split,
     leakage_report,
+    leave_drugs_out_split,
     load_omics_subset,
     load_targets,
     mean_only_floor,
@@ -162,7 +171,19 @@ ALIASES: dict[str, str] = {
     "final": "base+proteomics+std_targets+mol_graph+pair_features",
 }
 DEFAULT_LADDER = ["base", *[f"base+{name}" for name in COMPONENTS], "aligned", "full"]
-PROTOCOLS = ("grouped", "random")
+PROTOCOLS = ("grouped", "random", "ldo")
+# `ldo` is left out of the default sweep: the default ladder contains
+# `std_targets` rungs, which cannot run under it.
+DEFAULT_PROTOCOLS = ("grouped", "random")
+
+
+def check_protocol(config_id: str, protocol: str) -> None:
+    """Refuse a config that cannot be trained under the protocol."""
+    if protocol == "ldo" and resolve_config(config_id)["standardize_targets"]:
+        raise ValueError(
+            f"config {config_id!r} standardizes targets per drug, which cannot be used under "
+            f"'ldo': a held-out drug has no training statistics. Request it without 'std_targets'."
+        )
 
 
 def resolve_config(config_id: str) -> dict:
@@ -312,8 +333,13 @@ def run_one(config_id, protocol, data, batched, threshold, device, seed,
 
     torch.manual_seed(seed)
 
+    check_protocol(config_id, protocol)
     if protocol == "grouped":
         train_idx, val_idx, test_idx = grouped_split(groups)
+    elif protocol == "ldo":
+        # Drug codes are the sorted drug ids, so they group the rows exactly as
+        # the ids do and give the split of experiments/10_leave_drugs_out.
+        train_idx, val_idx, test_idx = leave_drugs_out_split(codes)
     else:
         train_idx, val_idx, test_idx = random_pair_split(len(y))
     leak = leakage_report(groups, train_idx, test_idx)
@@ -363,9 +389,15 @@ def run_one(config_id, protocol, data, batched, threshold, device, seed,
     val = evaluate(y[val_idx], val_pred, threshold)
     test = evaluate(y[test_idx], test_pred, threshold)
     floor = mean_only_floor(y[train_idx], y[test_idx])
-    drug_floor = per_drug_mean_floor(y[train_idx], codes[train_idx], y[test_idx], codes[test_idx])
+    # No test drug is in the training fold under `ldo`, so there is no per-drug
+    # mean to look up. The columns stay, empty, to keep the row layout fixed.
+    if protocol == "ldo":
+        drug_floor = float("nan")
+    else:
+        drug_floor = per_drug_mean_floor(y[train_idx], codes[train_idx], y[test_idx], codes[test_idx])
 
-    print_metric_block(f"{config_id} | {protocol}", val, test, floor, drug_floor)
+    print_metric_block(f"{config_id} | {protocol}", val, test, floor,
+                       None if protocol == "ldo" else drug_floor)
     print(f"params={n_params:,}  best_epoch={best_epoch}  fit={t_fit:.1f}s")
     print(f"Peak RSS: {peak_rss_gb():.2f} GB")
 
@@ -428,7 +460,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--configs", nargs="+", default=DEFAULT_LADDER,
                         help="'base', 'base+<component>[+...]', 'aligned', 'full' or 'final'")
-    parser.add_argument("--protocols", nargs="+", choices=PROTOCOLS, default=list(PROTOCOLS))
+    parser.add_argument("--protocols", nargs="+", choices=PROTOCOLS, default=list(DEFAULT_PROTOCOLS),
+                        help="'ldo' (leave drugs out) is not in the default and refuses std_targets")
     parser.add_argument("--seeds", nargs="+", type=int, default=[TORCH_SEED])
     parser.add_argument("--max-epochs", type=int, default=MAX_EPOCHS)
     parser.add_argument("--out", type=Path, default=RESULTS_CSV,
@@ -443,6 +476,8 @@ def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     for config_id in args.configs:
         resolve_config(config_id)  # fail on a typo before loading any data
+        for protocol in args.protocols:
+            check_protocol(config_id, protocol)
     if args.list:
         print_ladder(args.configs)
         return
