@@ -1,24 +1,59 @@
 # Runbook — the remaining runs, split across two laptops
 
-Written 2026-10-11. What is left to run before the report, who runs it, on
-which machine, in what order, and into which file. The plan and the reasons
-are in [`CLAUDE.md`](../CLAUDE.md); the results go into
+Written 2026-10-11, status updated 2026-10-12. What is left to run before the
+report, who runs it, on which machine, in what order, and into which file. The
+plan and the reasons are in [`CLAUDE.md`](../CLAUDE.md); the results go into
 [`src/ABLATION.md`](../src/ABLATION.md).
+
+## 0. Status on 2026-10-12
+
+**Done**
+
+| Block | Machine | Result | Written up in |
+|---|---|---|---|
+| A. Graph decision, 15 runs | Laptop A | all three configs eligible; `+mol_graph` 1.2731, `+mol_graph+pair_features` 1.2737, `+mol_graph+pair_attention` 1.3225 (test) | `src/ABLATION.md` section 5 |
+| B2. Anchor, 5 runs | Laptop B | `base` 1.3290 +/- 0.0169 against 1.3252 +/- 0.0119 on laptop A | section 2 |
+| B3. `HeteroIC50GNN`, 6 runs | Laptop B | 1.3203 +/- 0.0007 raw, 1.3092 +/- 0.0147 standardised | section 10 |
+| B4. Random split part 1, 12 runs | Laptop B | `base` 1.0162, `aligned` 0.9941, `base+proteomics` 1.0134, `base+std_targets` 0.9423 | section 9 |
+
+**Left, in order**
+
+| # | What | Who | Blocked by |
+|---|---|---|---|
+| 1 | Commit and push the graph-decision results and write-up; pull `origin/dev` (B4 is at `e34f390`) | Laptop A | nothing |
+| 2 | Choose the final model among the eligible configs (section 4) | team | nothing |
+| 3 | Name it `final` in `run_ablation.py`, commit, push | Laptop A | 2 |
+| 4 | Add the `ldo` protocol to `run_ablation.py` (section 6) | Laptop A | nothing |
+| 5 | B5: final model under the random split, 3 runs | Laptop B | 3 |
+| 6 | B6: leave-drugs-out, 10 runs | either laptop; A is faster | 3 and 4 |
+| 7 | Commit the missing prediction file `base+std_targets__random__seed43.npz` | Laptop B | nothing |
+| 8 | Write up B5 and B6; regenerate `docs/results.md` | Laptop A | 5 and 6 |
+
+**Optional:** `HeteroIC50GNN` seeds 45 and 46 on laptop B (about a minute
+each); RF and MLP baselines; the growth-rate rung, if the supervisor agrees.
+
+**Open with the supervisor:** the proposal asks for a heterogeneous GNN with
+GAT layers and cross-attention fusion. The eligible configs have a GCN on the
+drug molecule and concatenation. See "What the proposal asks for" in
+`CLAUDE.md`.
 
 ## 1. Who runs what
 
-| Block | Machine | Runs | Time at laptop A's speed | Can start |
+| Block | Machine | Runs | Time at laptop A's speed | Status |
 |---|---|---|---|---|
-| A. Graph decision | **Laptop A** (GTX 1650, Aditya) | 15 | about 5.7 h | now |
-| B1. Timing and data check | **Laptop B** (teammate) | 1 short | 2 min | now |
-| B2. Anchor: `base`, grouped split | Laptop B | 5 | about 0.8 h | now |
-| B3. `HeteroIC50GNN` baseline | Laptop B | 6 | about 10.4 h | now |
-| B4. Random split, part 1 | Laptop B | 12 | about 2.5 h | now |
-| B5. Random split, part 2 (final model) | Laptop B | 3 | about 1 h | after A is decided |
-| B6. Leave-drugs-out | Laptop B | 10 | about 2.4 h | after A is decided, and after the code in section 6 exists |
+| A. Graph decision | **Laptop A** (GTX 1650, Aditya) | 15 | about 5.7 h | **done** 2026-10-12 (5.8 h) |
+| B1. Timing and data check | **Laptop B** (teammate) | 1 short | 2 min | not reported; superseded by B2 |
+| B2. Anchor: `base`, grouped split | Laptop B | 5 | about 0.8 h | **done** 2026-10-11 |
+| B3. `HeteroIC50GNN` baseline | Laptop B | 6 | about 10.4 h | **done** 2026-10-11 |
+| B4. Random split, part 1 | Laptop B | 12 | about 2.5 h | **done** 2026-10-11 |
+| B5. Random split, part 2 (final model) | Laptop B | 3 | about 1 h | **left**: waits for `final` to be named |
+| B6. Leave-drugs-out | either | 10 | about 2.4 h | **left**: waits for `final` and for the code in section 6 |
 
-Laptop B's times will be shorter. How much is unknown until B1 is run; divide
-by the speed-up it gives.
+**Measured 2026-10-11: laptop B is slower on the ladder, 0.63x the speed of
+laptop A** (871 s against 546 s per `base` run), so its ladder blocks take about
+1.6x the times in this table. `HeteroIC50GNN` is the exception: about a minute
+per run there. B6 is self-contained, so it can run on either laptop; laptop A is
+the faster choice.
 
 **Why this split is safe.** Results are not bit-identical across hardware. So
 two numbers that are subtracted from each other, or sit in one table, must
@@ -46,7 +81,7 @@ candidate rows already produced on laptop A, so it stays on laptop A.
 
 ## 3. Laptop B setup (once)
 
-1. Pull the branch `aditya` at the commit agreed with laptop A.
+1. Pull the branch `dev` at the commit agreed with laptop A.
 2. Python 3.14, then `pip install -r requirements.txt`. Laptop A has
    `torch 2.13.0+cu130` and `torch_geometric 2.8.0.post1`. Install the CUDA
    build of torch and check that this prints `True`:
@@ -72,7 +107,21 @@ candidate rows already produced on laptop A, so it stays on laptop A.
 
 All commands below are run from the repository root.
 
-## 4. Laptop A — block A, graph decision
+## 4. Laptop A — block A, graph decision (done 2026-10-12)
+
+**Result.** Run 2026-10-11 21:51 to 2026-10-12 03:40 from commit `2e425a9`.
+`C` is the candidate `base+proteomics+std_targets`; 5 seeds; floor 1.4889:
+
+| Config | Validation | Test | Eligible (1.2754 or better on validation) |
+|---|---|---|---|
+| `C` | 1.2454 +/- 0.0037 | 1.2797 +/- 0.0192 | no graph component |
+| `C+mol_graph` | 1.2559 +/- 0.0039 | 1.2731 +/- 0.0182 | yes |
+| `C+mol_graph+pair_features` | 1.2441 +/- 0.0102 | 1.2737 +/- 0.0144 | yes, lowest validation |
+| `C+mol_graph+pair_attention` | 1.2745 +/- 0.0159 | 1.3225 +/- 0.0285 | by 0.0009 only; worse than `C` on every seed |
+
+**Still to do here:** the team's choice, then naming it `final`. The rule's
+tie-break gives `C+mol_graph+pair_features`. The plan as written before the
+runs follows.
 
 The project objectives need a graph component in the final model. The
 candidate `base+proteomics+std_targets` (test 1.2797 +/- 0.0192) has none.
@@ -110,17 +159,17 @@ picks the one that meets the project objective; if more than one does, the
 one with the lower validation RMSE. Test RMSE is reported afterwards and is
 not used to choose. If none is eligible, stop and reassess.
 
-**Expected, from single-rung effects only:** the first two near the
-candidate (about 1.28 to 1.29 on test), the third about 0.06 worse. These
-are estimates, not measurements.
+**Expected before the runs, from single-rung effects only:** the first two
+near the candidate (about 1.28 to 1.29 on test), the third about 0.06 worse.
+Measured: 1.2731, 1.2737 and 1.3225.
 
 **After block A:** the chosen config gets the name `final` in
 `run_ablation.py`, is committed, and laptop B pulls that commit before B5
 and B6.
 
-## 5. Laptop B — blocks B1 to B5
+## 5. Laptop B — blocks B1 to B5 (B2, B3, B4 done; B5 left)
 
-### B1. Timing and data check (2 minutes)
+### B1. Timing and data check (2 minutes) — not reported, superseded by B2
 
 ```
 python src/final_model/run_ablation.py --configs base --protocols grouped \
@@ -133,7 +182,12 @@ python src/final_model/run_ablation.py --configs base --protocols grouped \
   `fit=` seconds by 3 and compare: that ratio is the speed-up.
 - The log must show 111,799 pairs and a split of 77,668 / 17,291 / 16,840.
 
-### B2. Anchor: `base` under the grouped split
+### B2. Anchor: `base` under the grouped split — done 2026-10-11
+
+**Result:** validation 1.2928 +/- 0.0151, test 1.3290 +/- 0.0169. The means
+are within 0.004 of laptop A; single seeds differ by up to 0.028. Data
+confirmed (111,799 pairs, floor 1.4889). 871 s per run against 546 s on
+laptop A.
 
 ```
 python -u src/final_model/run_ablation.py --configs base \
@@ -148,7 +202,11 @@ python -u src/final_model/run_ablation.py --configs base \
   is expected. A gap of 0.03 or more means the data or environment differs:
   stop and check section 3.
 
-### B3. `HeteroIC50GNN` baseline
+### B3. `HeteroIC50GNN` baseline — done 2026-10-11 (seeds 42 to 44)
+
+**Result:** raw 1.3203 +/- 0.0007 (validation 1.2628), standardised
+1.3092 +/- 0.0147 (validation 1.2462). About a minute per run on laptop B.
+Seeds 45 and 46 are optional.
 
 The older graph model over the PPI, drug-target and mutation graph. It is a
 compared baseline, not a ladder rung. With message passing skipped in the
@@ -175,7 +233,12 @@ done
 - This model trains differently from the ladder (AdamW, lr 1e-3, early
   stopping with patience 15). Say so wherever the two are compared.
 
-### B4. Random split, part 1
+### B4. Random split, part 1 — done 2026-10-11
+
+**Result (test, 3 seeds):** `base` 1.0162 +/- 0.0011, `aligned` 0.9941 +/-
+0.0047, `base+proteomics` 1.0134 +/- 0.0063, `base+std_targets` 0.9423 +/-
+0.0080. Committed as `e34f390`. One prediction file was not committed:
+`base+std_targets__random__seed43.npz`.
 
 The random pair split is a sanity check against the benchmark's protocol,
 not a headline result. It is never ranked against the grouped rows.
@@ -191,7 +254,7 @@ python -u src/final_model/run_ablation.py \
 - Reference from Phase 0, same split, older script: `aligned` 0.978 +/-
   0.002. Expect best epochs near 200 here, unlike the grouped split.
 
-### B5. Random split, part 2 — after block A is decided
+### B5. Random split, part 2 — left; waits for `final` to be named
 
 Pull the commit that defines `final`, then run the same command with
 `final` added. Finished rows are skipped:
@@ -203,12 +266,14 @@ python -u src/final_model/run_ablation.py \
   --out src/final_model/results/random_split_results.csv
 ```
 
-## 6. Laptop B — block B6, leave-drugs-out (not runnable yet)
+## 6. Block B6, leave-drugs-out — left, not runnable yet
 
-Tests the final model on drugs it has never seen. Two things must exist
-first, and neither does on 2026-10-11:
+Tests the final model on drugs it has never seen. It is self-contained (it
+has its own `base` rows), so it can run on either laptop; laptop A is about
+1.6x faster. Two things must exist first, and neither does on 2026-10-12:
 
-1. The final model must be chosen (block A).
+1. The final model must be chosen. Block A's runs are done; the choice is
+   not made.
 2. `run_ablation.py` only knows the `grouped` and `random` protocols. A
    `ldo` protocol has to be added (using `leave_drugs_out_split` from
    `src/data/experiment_utils.py`), with standardised targets refused under
@@ -237,15 +302,32 @@ the earlier MLP result, 1.8516 (`docs/10_leave_drugs_out_results.md`).
 
 ## 8. Checklist
 
-- [ ] Laptop A: results of 2026-10-07 committed and pushed
-- [ ] Laptop B: setup done, five data files verified (section 3)
-- [ ] B1 timing and data check
-- [ ] A graph decision, 15 runs
-- [ ] B2 anchor, 5 runs; difference from laptop A reported
-- [ ] B3 `HeteroIC50GNN`, 6 runs
-- [ ] B4 random split part 1, 12 runs
+Done:
+
+- [x] Laptop A: results of 2026-10-07 committed and pushed
+- [x] Laptop B: set up, data confirmed by the B2 anchor (111,799 pairs, floor
+      1.4889)
+- [x] A graph decision, 15 runs (2026-10-11 21:51 to 2026-10-12 03:40, commit
+      `2e425a9`; all three configs eligible, see `src/ABLATION.md` section 5)
+- [x] B2 anchor, 5 runs (2026-10-11): laptop B 1.3290 +/- 0.0169 against laptop A
+      1.3252 +/- 0.0119, means within 0.004; laptop B is 0.63x the speed of A
+- [x] B3 `HeteroIC50GNN`, 6 runs (2026-10-11): raw 1.3203 +/- 0.0007,
+      standardised 1.3092 +/- 0.0147
+- [x] B4 random split part 1, 12 runs (2026-10-11, on `origin/dev` at `e34f390`)
+- [x] Write-up of A, B2, B3 and B4 in `src/ABLATION.md` (2026-10-12)
+
+Left:
+
+- [ ] Laptop A: graph-decision results and write-up committed and pushed;
+      `origin/dev` pulled
 - [ ] Final model chosen by the rule in section 4 and named `final`
-- [ ] B5 random split part 2, 3 runs
 - [ ] `ldo` protocol added to `run_ablation.py`
-- [ ] B6 leave-drugs-out, 10 runs
-- [ ] Write-up updated on laptop A
+- [ ] B5 random split part 2, 3 runs (laptop B)
+- [ ] B6 leave-drugs-out, 10 runs (either laptop)
+- [ ] Laptop B: commit `base+std_targets__random__seed43.npz`
+- [ ] Write-up of B5 and B6; `docs/results.md` regenerated
+
+Not needed any more:
+
+- B1 timing and data check: never reported; B2 measured both the data and the
+  speed.

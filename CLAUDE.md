@@ -114,22 +114,81 @@ project objectives are not met without one, so the candidate above cannot be
 the final model as it stands: it has none. The remaining runs, their order
 and who runs them are in **`docs/18_final_runs_runbook.md`**:
 
-1. **Graph decision (this laptop, 15 runs, about 5.7 h):** the candidate
-   plus `mol_graph`, plus `mol_graph+pair_features`, plus
-   `mol_graph+pair_attention`, 5 seeds each. Rule written before the runs: a
-   graph-bearing config is eligible if its validation RMSE is no more than
-   0.03 worse than the candidate's (1.2454). Among eligible configs the team
-   picks the one that meets the objective; test is reported after. The
-   chosen config is then named `final` in `run_ablation.py`.
-2. **Teammate's laptop (decided 2026-10-11):** a `base` anchor under the
-   grouped split, `HeteroIC50GNN` with seeds (both target arms), the
-   random-split block, and the leave-drugs-out block. Each block carries its
-   own `base` rows and its own results file, so no delta is ever taken
-   across machines.
+1. **Graph decision (this laptop, 15 runs): run 2026-10-11 21:51 to
+   2026-10-12 03:40 (5.8 h, commit `2e425a9`). All three are eligible; the
+   team has not chosen yet.** The candidate plus `mol_graph`, plus
+   `mol_graph+pair_features`, plus `mol_graph+pair_attention`, 5 seeds each.
+   Rule written before the runs: a graph-bearing config is eligible if its
+   validation RMSE is no more than 0.03 worse than the candidate's (1.2454,
+   so 1.2754 or better). Among eligible configs the team picks the one that
+   meets the objective; if more than one does, the lower validation RMSE;
+   test is reported after. The chosen config is then named `final` in
+   `run_ablation.py` (not done). Result, floor 1.4889, `C` = the candidate:
+
+   | Config | Validation | Δ val vs `C` | Test | Δ test vs `C` | Seeds better (val / test) | Δ test vs `base` |
+   |---|---|---|---|---|---|---|
+   | `C` | 1.2454 +/- 0.0037 | 0 | 1.2797 +/- 0.0192 | 0 | | -0.0455 |
+   | `C+mol_graph` | 1.2559 +/- 0.0039 | +0.0106 | 1.2731 +/- 0.0182 | -0.0066 | 0 / 4 | -0.0521 |
+   | `C+mol_graph+pair_features` | 1.2441 +/- 0.0102 | -0.0013 | 1.2737 +/- 0.0144 | -0.0059 | 3 / 3 | -0.0514 |
+   | `C+mol_graph+pair_attention` | 1.2745 +/- 0.0159 | +0.0291 | 1.3225 +/- 0.0285 | +0.0428 | 0 / 0 | -0.0027 |
+
+   - `pair_attention` is eligible by 0.0009, inside its seed std; it is worse
+     than the candidate on every seed on both folds and no better than `base`
+     on test. The other two pass with room.
+   - The rule's tie-break gives `C+mol_graph+pair_features` (lowest
+     validation), if the team judges that it and `C+mol_graph` both meet the
+     objective.
+   - Neither `mol_graph` nor the pair features changes all-pairs test RMSE
+     beyond noise. `mol_graph` is 0.011 worse on validation on all 5 seeds.
+   - Direct-hit pairs (1.26%): the candidate has the same +0.4 bias as
+     `base`. The pair features remove it and cut RMSE on 5 of 5 seeds on
+     both folds (validation -0.225, intervals exclude 0; test -0.198, seed
+     interval excludes 0, cell-line interval -0.417 to +0.054).
+   - Details: `src/ABLATION.md` section 5, update of 2026-10-12.
+2. **Teammate's laptop ("laptop B", decided 2026-10-11):** a `base` anchor
+   under the grouped split, `HeteroIC50GNN` with seeds (both target arms),
+   the random-split block, and the leave-drugs-out block. Each block carries
+   its own `base` rows and its own results file, so no delta is ever taken
+   across machines. **Done 2026-10-11: the anchor, `HeteroIC50GNN` and the
+   random split without the final model.** Written up in `src/ABLATION.md`
+   sections 2, 9 and 10:
+   - **Anchor:** laptop B `base` 1.3290 +/- 0.0169 against 1.3252 +/- 0.0119
+     here. Means within 0.004; the same seed differs by up to 0.028, so
+     seed-paired comparisons stay within one machine. Laptop B is slower on
+     the ladder (0.63x), not faster.
+   - **`HeteroIC50GNN`, 3 seeds:** 1.3203 +/- 0.0007 raw, 1.3092 +/- 0.0147
+     with standardised targets. About level with `base` on that machine, and
+     0.04 to 0.05 behind the graph-bearing candidates here (cross-machine).
+   - **Random split, 3 seeds:** `base` 1.0162, `aligned` 0.9941,
+     `base+proteomics` 1.0134, `base+std_targets` 0.9423. Standardisation is
+     the large effect there (-0.074) and proteomics none: the reverse of the
+     grouped split.
+   - Left for laptop B: the final model under the random split (3 runs),
+     after it is named. The random-split commit (`e34f390`) is on
+     `origin/dev` and not yet pulled here.
 3. **Not built yet:** an `ldo` protocol in `run_ablation.py`, needed before
    the leave-drugs-out block.
 4. Still open: whether to run the `growth_rate` rung (waiting on the
    supervisor).
+
+**What the proposal asks for** (`docs/MCS16 - Final Proposal Report.docx`,
+read 2026-10-12), against the two candidates that pass with room
+(`C+mol_graph`, `C+mol_graph+pair_features`):
+
+| Proposal wording | Met by the candidates? |
+|---|---|
+| "lower RMSE than standard flat vector concatenation baselines" | Yes: about 1.273 against `base` 1.3252, 5 of 5 seeds |
+| "improving performance over MoGraph" | Yes against the reproduction run here: `aligned` 1.3416 (3 seeds, grouped). Never against their published figures |
+| omics including proteomics, "via cross-attention fusion" | Proteomics yes. Cross-attention fusion no: rejected in the ablation (+0.091); the model concatenates |
+| "encode molecular drug structures from SMILES strings using RDKit" | Yes: fingerprint and molecular graph |
+| "implement GAT message-passing layers with an MLP prediction head" | Partly: message passing is a GCN on the drug's molecular graph, not a GAT, and not on the biological graph |
+| in scope: "build a heterogeneous GNN using PyTorch Geometric" | No. Only `HeteroIC50GNN` is one, and it is a compared baseline at 1.32 |
+| "a SHAP-based interpretability module" | Not done (Phase 6 on hold) |
+
+So "contains a graph neural network" is met by both candidates through
+`mol_graph`. The stricter wording (a GAT, a heterogeneous GNN over the PPI
+graph) is met by neither; those are deviations from the proposal to state and
+justify with the ablation, and to raise with the supervisor.
 
 Honest framing to keep: `mol_graph` had no measurable effect on `base`
 (+0.009 test, -0.007 validation, 3 seeds). If it is in the final model, it is
@@ -611,7 +670,8 @@ Mutation and target edges are inputs, not labels, so having held-out cell
 lines' edges in the graph is not leakage; say so in the report.
 
 ### Phase 5 — Full ablation
-**Not started. Waiting on the graph decision** (see "Where things stand" and
+**Not started. The graph decision's runs are done (2026-10-12); waiting on
+the team's choice among the three eligible configs** (see "Where things stand" and
 `docs/18_final_runs_runbook.md`, which holds the commands and the split
 between the two laptops). Changed by Phase 4's outcome (2026-10-06) and by
 the requirement for a graph component (2026-10-11):
@@ -665,6 +725,7 @@ attention or attribution is worth testing; otherwise report it as not done.
 | `src/final_model/pair_attention_check.py` | whether the trained attention finds a mutated target, against untrained modules |
 | `src/final_model/results/pair_gate_results_*attention*.csv` | Stage A subset metrics, paired deltas and the attention check |
 | `src/final_model/results/pair_gate_results*.csv` | Phase 3 gate runs, subset metrics, paired deltas |
+| `src/final_model/results/ablation_results_*graph_decision*.csv` | graph decision: subset metrics and paired deltas against the candidate, and (`_vs_mol_graph`) against the candidate plus `mol_graph` |
 | `src/final_model/results/*_checkpoints/` | best-epoch weights of attention runs, 17 MB each; committed with the results |
 | `experiments/14_benchmark_alignment/` | Phase 0 reproduction only (random split) |
 | `experiments/15_diagnostics/` | why the old graph model underperforms |
@@ -721,6 +782,9 @@ attention or attribution is worth testing; otherwise report it as not done.
     `base+proteomics`.
   - The two components are close to additive (92% of the summed gains on
     test, 96% on validation).
+  - **Graph decision run 2026-10-12:** all three graph-bearing configs are
+    eligible (table under "Where things stand"). Open, for the team: which
+    of them meet the project objective, and so which is named `final`.
 - **Pair attention: closed as rejected (2026-10-06).** The cause was
   diagnosed (Phase 4, Stage A result). Any changed version of the module
   (regularisation, an explicit same-protein signal, a smaller table) would be
