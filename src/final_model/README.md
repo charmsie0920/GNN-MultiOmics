@@ -23,7 +23,8 @@ New model components go in `src/models/` beside the base, and are registered
 in `COMPONENTS` in `run_ablation.py`: one entry overriding one `BASE` field,
 threaded into `run_one`. Its `base+<name>` rung follows automatically. `full`
 is pinned to the five Phase 2 components, so its existing rows keep their
-meaning. The pair-specific component is `src/models/pair_graph_drp.py`, in two
+meaning. `final` names the final model, chosen 2026-10-12:
+`base+proteomics+std_targets+mol_graph+pair_features`. The pair-specific component is `src/models/pair_graph_drp.py`, in two
 alternative forms that cannot be combined: `pair_features` (hand-built
 features) and `pair_attention` (attention of a drug's target proteins over a
 cell line's mutated proteins).
