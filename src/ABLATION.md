@@ -5,7 +5,7 @@
 **Raw results:** `src/final_model/results/ablation_results.csv`
 **Companions:** [`results.md`](../docs/results.md), [`13_seed_variance_results.md`](../docs/13_seed_variance_results.md), [`09_split_protocol_comparison.md`](../docs/09_split_protocol_comparison.md)
 **Date:** 2026-10-03 · **Runtime:** 6.5 h (24 runs, 23,523 s) · **Hardware:** one laptop GTX 1650 (4 GB), torch 2.13.0+cu130
-**Status:** Phase 2 filled (components a-e, 3 seeds, grouped split). Phase 3 filled 2026-10-04 (feature gate for component f, 10 runs over 5 seeds, 98 min, commit `cc303ee`): gate not passed, see section 6f. The attention form of f is not built; sections that depend on it, on the random split or on the final-model choice are still `TBD`.
+**Status:** Phase 2 filled (components a-e, 3 seeds, grouped split). Phase 3 filled 2026-10-04 (feature gate for component f, 10 runs over 5 seeds, 98 min, commit `cc303ee`): gate not passed, see section 6f. The attention form of f is not built; sections that depend on it, on the random split or on the final-model choice are still `TBD`. Graph decision filled 2026-10-12 (15 runs, 5 seeds, 5.8 h, commit `2e425a9`): all three graph-bearing configurations are eligible by the rule, see the update in section 5 and section 8. The final configuration is not yet chosen.
 
 > Anything marked *(report)* is meant to be lifted into the final report.
 
@@ -36,8 +36,8 @@ These must be identical for every rung, otherwise a delta is not attributable.
 | Epochs / early stopping | 200 epochs, **no early stopping** (Phase 0 frozen base) |
 | LR schedule | **constant** (Phase 0 frozen base) |
 | Checkpoint | best validation RMSE, in ln(IC50) units |
-| Seeds | 42, 43, 44 (3 per row); the Phase 3 gate and Phase 4 stage A rows use 42-46 (5 per arm). Since 2026-10-07 `base`, `base+proteomics`, `base+std_targets` and `base+proteomics+std_targets` also have 42-46 in the ladder CSV |
-| Hardware | all 24 runs on one GTX 1650, one process, commit `66205f8` |
+| Seeds | 42, 43, 44 (3 per row); the Phase 3 gate and Phase 4 stage A rows use 42-46 (5 per arm). Since 2026-10-07 `base`, `base+proteomics`, `base+std_targets` and `base+proteomics+std_targets` also have 42-46 in the ladder CSV, and since 2026-10-12 so do the three graph-decision configurations (section 5) |
+| Hardware | all 24 runs on one GTX 1650 ("laptop A"), one process, commit `66205f8`. Every ladder row in this file is from laptop A unless a table says "laptop B". Laptop B (a teammate's machine, since 2026-10-11) ran the cross-machine anchor, `HeteroIC50GNN` and the random split; see "Second machine" below |
 | Metrics | RMSE, MAE, R², PCC, SCC; AUC and F1 at the shared median threshold |
 
 Early-stopping and LR-scheduler patience are both 200, so neither fires within
@@ -49,6 +49,26 @@ Aligned to these settings on 2026-10-03; no ladder run predates that.
 only. The grouped split is fixed at `random_state=42`, so every run uses the
 same 80 test cell lines. The std below is training noise; variance from the
 choice of test cell lines is not measured.
+
+**Second machine (laptop B), anchor run 2026-10-11, results committed in `dcbc304`.** GPU
+results are not bit-identical across hardware, so no delta in this file is
+taken between a laptop A row and a laptop B row. To measure how far the two
+machines differ, laptop B ran `base` under the grouped split on seeds 42-46
+(`results/laptop_b_anchor_results.csv`):
+
+| Machine | Validation RMSE | Test RMSE | Per-seed test (42 / 43 / 44 / 45 / 46) |
+|---|---|---|---|
+| Laptop A | 1.2961 ± 0.0059 | 1.3252 ± 0.0119 | 1.3141 / 1.3347 / 1.3208 / 1.3406 / 1.3156 |
+| Laptop B | 1.2928 ± 0.0151 | 1.3290 ± 0.0169 | 1.3220 / 1.3272 / 1.3053 / 1.3468 / 1.3435 |
+| B − A | −0.0033 | +0.0038 | +0.008 / −0.008 / −0.016 / +0.006 / +0.028 |
+
+- **The means agree to within 0.004**, far inside the ~0.03 band. Same data
+  on both: 111,799 pairs, per-drug mean floor 1.4889.
+- **The same seed does not give the same run** on the two machines: per-seed
+  differences reach 0.028, as large as seed-to-seed noise. A seed-paired
+  comparison is only valid within one machine.
+- Laptop B is slower on this model, not faster: 871 s per `base` run against
+  546 s (0.63×).
 
 Reference floors on the same test fold:
 
@@ -192,6 +212,117 @@ Test fold, other metrics (mean over 5 seeds):
   parts, with the keep rule written before any new seed existed (below,
   section 8).
 
+### Update 2026-10-12 — graph decision: the candidate plus the built graph components
+
+The project objectives need a graph component in the final model, and the
+candidate has none (section 8). Three configurations add the built graph
+components to it, on seeds 42-46: 15 runs, 2026-10-11 21:51 to 2026-10-12
+03:40 (20,964 s, 5.8 h), same machine and CSV as every row above, commit
+`2e425a9` (no model, data or ladder code changed since `70c3d13`). Grouped
+split, floor 1.4889. Below, `C` is the candidate `base+proteomics+std_targets`.
+
+**Rule, written on 2026-10-11 before the runs:** a graph-bearing
+configuration is eligible if its validation RMSE is no more than 0.03 worse
+than the candidate's (1.2454, so 1.2754 or better). Among eligible ones the
+team picks the one that meets the project objective; if more than one does,
+the one with the lower validation RMSE. Test is reported after and is not
+used to choose.
+
+| Config | Val RMSE | Δ val vs `C` | Seeds better | Eligible (≤ 1.2754) | Test RMSE | Δ test vs `C` | Seeds better | Δ test vs `base` |
+|---|---|---|---|---|---|---|---|---|
+| `C` (candidate, no graph) | 1.2454 ± 0.0037 | 0 | | | 1.2797 ± 0.0192 | 0 | | −0.0455 |
+| `C+mol_graph` | 1.2559 ± 0.0039 | +0.0106 | 0 / 5 | **yes** | 1.2731 ± 0.0182 | −0.0066 | 4 / 5 | −0.0521 |
+| `C+mol_graph+pair_features` | 1.2441 ± 0.0102 | −0.0013 | 3 / 5 | **yes** | 1.2737 ± 0.0144 | −0.0059 | 3 / 5 | −0.0514 |
+| `C+mol_graph+pair_attention` | 1.2745 ± 0.0159 | +0.0291 | 0 / 5 | **yes, by 0.0009** | 1.3225 ± 0.0285 | +0.0428 | 0 / 5 | −0.0027 |
+
+Intervals on the Δ against `C`. "Seeds" is a t-interval over the five
+per-seed differences; "cell lines" is a paired bootstrap over the fold's 80
+cell lines (`pair_gate_report.py --tag graph_decision`):
+
+| Config | Fold | Δ vs `C` | 95% CI, seeds | 95% CI, cell lines | Per-seed Δ (42 / 43 / 44 / 45 / 46) |
+|---|---|---|---|---|---|
+| `C+mol_graph` | val | +0.0106 | +0.004 to +0.017 | +0.001 to +0.020 | +0.017 / +0.009 / +0.012 / +0.012 / +0.003 |
+| `C+mol_graph` | test | −0.0066 | −0.019 to +0.006 | −0.018 to +0.005 | −0.009 / −0.005 / −0.016 / −0.013 / +0.010 |
+| `C+mol_graph+pair_features` | val | −0.0013 | −0.010 to +0.007 | −0.011 to +0.009 | −0.008 / +0.009 / −0.006 / +0.003 / −0.003 |
+| `C+mol_graph+pair_features` | test | −0.0059 | −0.026 to +0.015 | −0.017 to +0.006 | +0.006 / −0.019 / −0.024 / −0.009 / +0.015 |
+| `C+mol_graph+pair_attention` | val | +0.0291 | +0.012 to +0.046 | +0.006 to +0.052 | +0.026 / +0.047 / +0.036 / +0.027 / +0.009 |
+| `C+mol_graph+pair_attention` | test | +0.0428 | +0.014 to +0.072 | +0.021 to +0.064 | +0.028 / +0.026 / +0.039 / +0.037 / +0.083 |
+
+Test fold, other metrics (mean over 5 seeds):
+
+| Config | PCC | R² | MAE | Gain over per-drug mean (1.4889) | Params | Fit (s) | Best epoch (42-46) |
+|---|---|---|---|---|---|---|---|
+| `C` | 0.8908 | 0.7854 | 0.9560 | +0.2092 | 3,316,225 | 589 | 43 / 28 / 13 / 189 / 45 |
+| `C+mol_graph` | 0.8919 | 0.7877 | 0.9502 | +0.2158 | 3,641,965 | 1,213 | 32 / 19 / 19 / 40 / 42 |
+| `C+mol_graph+pair_features` | 0.8923 | 0.7874 | 0.9529 | +0.2152 | 3,644,525 | 1,221 | 36 / 22 / 29 / 18 / 33 |
+| `C+mol_graph+pair_attention` | 0.8823 | 0.7708 | 0.9872 | +0.1664 | 4,729,197 | 1,753 | 12 / 8 / 6 / 8 / 17 |
+
+- **All three are eligible by the rule.** `C+mol_graph` and
+  `C+mol_graph+pair_features` pass with room. `C+mol_graph+pair_attention`
+  passes by 0.0009 (1.2745 against 1.2754), which is far inside its own seed
+  std (0.0159): two of its five seeds are above the line. Its eligibility is
+  not a stable result.
+- **By the rule's tie-break, the lower validation RMSE is
+  `C+mol_graph+pair_features` (1.2441).** Which eligible configurations meet
+  the project objective is the team's decision and has not been made; no
+  configuration is named `final` yet.
+- **The molecular graph still has no measurable effect.** On the candidate it
+  is 0.011 worse on validation (all 5 seeds, both intervals exclude 0) and
+  0.007 better on test (4 of 5 seeds, both intervals include 0). Both are
+  inside the ~0.03 band, and the signs disagree between the folds, as on
+  `base` (+0.009 test, −0.007 validation, 3 seeds). It doubles training time
+  (1,213 s against 589 s).
+- **Pair features on top of the molecular graph** (one change, against
+  `C+mol_graph`): validation −0.0119 on all pairs (5 of 5 seeds; cell-line
+  interval −0.023 to −0.001, seed interval −0.024 to +0.000); test +0.0007
+  (2 of 5, cell-line interval −0.011 to +0.011). No effect on all-pairs test
+  RMSE, as in Phase 3. The direct-hit subset is below.
+- **Pair attention is worse on this foundation too.** Against `C+mol_graph`:
+  validation +0.0186 (0 of 5), test +0.0494 (0 of 5, cell-line interval
+  +0.025 to +0.075). On `base` it was +0.061 on test (section 6f). It peaks
+  at epoch 6-17, earlier than on `base` (13-24). With it, the model is no
+  better than `base` on test (−0.003, 3 of 5 seeds, seed interval −0.038 to
+  +0.033): it removes the candidate's whole test gain. The attention check
+  (`pair_attention_check.py`) was not run on these checkpoints.
+- **Against `base`,** both of the first two keep the candidate's gain: test
+  −0.0521 (`C+mol_graph`, seed interval −0.069 to −0.035) and −0.0514
+  (`C+mol_graph+pair_features`, −0.068 to −0.034), 5 of 5 seeds each.
+
+**Direct-hit pairs** (a target of the drug is itself mutated: 213 validation
+pairs, 211 test; per-drug-mean floor 1.8246 / 1.9609). Signed error in
+brackets, positive = predicted ln(IC50) too high:
+
+| Config | Validation RMSE | Test RMSE |
+|---|---|---|
+| `C` | 1.5221 ± 0.0322 [+0.430] | 1.5788 ± 0.0764 [+0.370] |
+| `C+mol_graph` | 1.5311 ± 0.0615 [+0.421] | 1.5826 ± 0.0595 [+0.382] |
+| `C+mol_graph+pair_features` | 1.3056 ± 0.0952 [+0.113] | 1.3842 ± 0.0561 [−0.067] |
+| `C+mol_graph+pair_attention` | 1.5296 ± 0.1171 [+0.305] | 1.6629 ± 0.0457 [+0.252] |
+
+| `C+mol_graph+pair_features` − `C+mol_graph`, direct hits | Δ | Seeds better | 95% CI, cell lines | 95% CI, seeds |
+|---|---|---|---|---|
+| validation | −0.2254 | 5 / 5 | −0.364 to −0.077 | −0.339 to −0.112 |
+| test | −0.1984 | 5 / 5 | −0.417 to +0.054 | −0.305 to −0.092 |
+
+- **The candidate has the same direct-hit bias as `base`** (about +0.4 too
+  high on both folds); proteomics, standardisation and the molecular graph do
+  not touch it. The pair features remove most of it on every seed.
+- **The direct-hit RMSE gain is now better on 5 of 5 seeds on both folds**
+  (Phase 3, on `base`: 4 of 5). The validation intervals exclude 0. On test
+  the seed interval excludes 0 and the cell-line interval does not. By the
+  yardstick Phase 3 fixed for this subset (every seed on validation, and a
+  test bootstrap interval that excludes 0) the first half is met and the
+  second is not. That rule was written for `base+pair_features`; here it is
+  a reading after the fact, not a pre-registered test.
+- Nothing outside direct hits: 1 hop, 2+ hops and the no-target control all
+  have intervals that include 0 on test.
+- These subsets are 1.26% of pairs, so they cannot move all-pairs RMSE by
+  more than about 0.005.
+
+Source: `results/ablation_results_subsets_graph_decision.csv` and
+`_paired_graph_decision.csv` (against `C`), and the same two files with the
+suffix `_vs_mol_graph` (against `C+mol_graph`).
+
 The tables below this point are the original Phase 2 results on 3 seeds, kept
 as run.
 
@@ -278,6 +409,12 @@ how firmly any rung can be ranked from one split.
   has little to add. That reading is untested here.
 - **Cost:** +325,740 parameters, 2.1× training time.
 - Compare with [11_molecular_graph_results](../docs/11_molecular_graph_results.md), where the single-run ranking reversed across seeds. The same sign flip appears here (−0.015 on seed 43, +0.037 on seed 44).
+- **On the candidate (2026-10-12, 5 seeds):** `base+proteomics+std_targets+mol_graph`
+  against `base+proteomics+std_targets` is +0.0106 on validation (worse on 5
+  of 5 seeds) and −0.0066 on test (better on 4 of 5, interval includes 0).
+  Still no measurable effect, at 2.1× the training time. It is eligible for
+  the final model under the graph-decision rule (section 5 update); if it is
+  included, it is there for the project's scope, not for accuracy.
 
 ### c. Bilinear head — tested-and-rejected as configured
 - **Result:** 1.8343 ± 0.4946, Δ +0.5111. Per seed 2.4003 / 1.6182 / 1.4846:
@@ -607,6 +744,15 @@ and `pair_gate_results_attention_check.csv`. Produced by
 `src/final_model/pair_gate_report.py` and
 `src/final_model/pair_attention_check.py` (commands in section 15).
 
+**Both forms on top of the candidate (2026-10-12, 5 seeds).** Added to
+`base+proteomics+std_targets+mol_graph`, the two forms repeat their results
+on `base`. The features do nothing to all-pairs test RMSE (+0.0007) and cut
+direct-hit RMSE by 0.20-0.23, now on 5 of 5 seeds on both folds, with the
+test cell-line interval still including 0. The attention is worse on all
+pairs (+0.049 on test, 0 of 5 seeds) and on test direct hits (+0.080, 0 of
+5; validation −0.002). Tables in
+the section 5 update of 2026-10-12.
+
 ## 7. Do the components combine?
 
 *(report)* Components can overlap or interfere, so the sum of single gains
@@ -710,11 +856,31 @@ The original five-component analysis (Phase 2, 3 seeds):
   project's scope, not for accuracy, and is reported that way. Commands and
   the split of the remaining runs across two laptops:
   [`docs/18_final_runs_runbook.md`](../docs/18_final_runs_runbook.md).
-- **Final test RMSE / PCC / R²:** 1.2797 ± 0.0192 / 0.8908 / 0.7854 if the
-  candidate is confirmed.
-- **Gain over the per-drug mean floor:** every stable rung beats 1.4889; the
-  largest gain is the candidate at +0.2092 (`base+proteomics` +0.1969,
-  `base` +0.1637, all on 5 seeds).
+- **Status (2026-10-12): the graph decision is run; the choice is not yet
+  made.** All three graph-bearing configurations are eligible by the rule
+  (validation 1.2754 or better): `+mol_graph` 1.2559, `+mol_graph+pair_features`
+  1.2441, `+mol_graph+pair_attention` 1.2745. The third passes by 0.0009,
+  inside its seed std of 0.0159, and is 0.043 worse than the candidate on
+  test on every seed. Still the team's call: which of them meet the project
+  objective. If both of the first two do, the rule's tie-break (lower
+  validation RMSE) gives `base+proteomics+std_targets+mol_graph+pair_features`.
+  Neither is established as better or worse than the candidate on test
+  (−0.007 and −0.006, intervals include 0), so a graph component is included
+  for the project's scope and reported as having no measurable effect on
+  all-pairs RMSE. What the pair features do change is the 1.26% of pairs
+  where a target is itself mutated (section 5 update). Note for the write-up:
+  `mol_graph` is a GCN over the drug molecule; the pair features are 5
+  numbers computed from the PPI, drug-target and mutation graph, with no
+  trained message passing. No configuration is named `final` in
+  `run_ablation.py` yet.
+- **Final test RMSE / PCC / R²:** 1.2731 ± 0.0182 / 0.8919 / 0.7877 if
+  `+mol_graph` is chosen; 1.2737 ± 0.0144 / 0.8923 / 0.7874 if
+  `+mol_graph+pair_features` is (candidate without a graph: 1.2797 ± 0.0192 /
+  0.8908 / 0.7854).
+- **Gain over the per-drug mean floor:** every stable rung beats 1.4889. On 5
+  seeds: `+mol_graph` +0.2158, `+mol_graph+pair_features` +0.2152, the
+  candidate +0.2092, `base+proteomics` +0.1969, `+mol_graph+pair_attention`
+  +0.1664, `base` +0.1637.
 
 Selection is made on **validation** RMSE; test numbers are reported after the
 choice, not used to make it. Validation and test rank the rungs differently
@@ -755,8 +921,35 @@ Not a ranking. It checks that the reproduction (`aligned`) is faithful.
   GE+Proteomics; the ladder's `aligned` (= `base+mol_graph+bilinear`) uses
   GE+Mut_CNV. The two are not directly comparable.
 
-Protocol gap for the final model (random − grouped): TBD. Compare with the
-0.347 measured in [09](../docs/09_split_protocol_comparison.md).
+**Ladder configs under the random split (laptop B, run 2026-10-11, results
+committed in `e34f390`, seeds 42-44, `results/random_split_results.csv`).** A sanity
+check, never ranked against the grouped rows. Per-drug mean floor on this
+split: 1.5265.
+
+| Config | Validation RMSE | Test RMSE | Δ vs `base` | PCC | Best epoch |
+|---|---|---|---|---|---|
+| `base` | 1.0142 | 1.0162 ± 0.0011 | 0 | 0.9338 | 180 / 194 / 176 |
+| `aligned` (GE+Mut_CNV) | 0.9855 | 0.9941 ± 0.0047 | −0.0221 | 0.9368 | 195 / 198 / 196 |
+| `base+proteomics` | 1.0105 | 1.0134 ± 0.0063 | −0.0028 | 0.9341 | 139 / 197 / 177 |
+| `base+std_targets` | 0.9343 | 0.9423 ± 0.0080 | −0.0739 | 0.9437 | 140 / 158 / 123 |
+| final model | not run | not run | | | |
+
+- **The two kept components swap roles between the splits.** Under the
+  random split, where every cell line is seen in training, standardisation is
+  the large effect (−0.074, all 3 seeds) and proteomics does nothing
+  (−0.003). Under the grouped split proteomics is the consistent test gain
+  (−0.033) and standardisation's is not established (−0.017).
+- `aligned` here is 0.9941; the Phase 0 figure above is 0.978. They are not
+  the same run: different omics (GE+Mut_CNV here, GE+Proteomics there),
+  different script and different machine.
+- Protocol gap for `base` (grouped − random): 1.3290 − 1.0162 = 0.313, both
+  on laptop B. Compare with the 0.347 measured in
+  [09](../docs/09_split_protocol_comparison.md).
+- One prediction file is missing from the repository
+  (`base+std_targets__random__seed43.npz`); its CSV row is present.
+
+Protocol gap for the final model (random − grouped): TBD, after the final
+model is named and run under the random split.
 
 ## 10. Comparison with the other models on the same pairs
 
@@ -768,10 +961,32 @@ Same 111,799 pairs, same grouped split. TBD seeds each.
 | RF | TBD | TBD | |
 | MLP | TBD | TBD | |
 | CrossAttention (E10) | 1.3029 ± 0.0126 | TBD | 5 seeds, [13](../docs/13_seed_variance_results.md) |
-| HeteroIC50GNN (E11) | TBD | TBD | single run 1.3301. Needs 3-5 seeds: with stage B skipped it is the only trained GNN in the report |
+| HeteroIC50GNN, raw targets | 1.3203 ± 0.0007 | 0.8815 | **laptop B**, 3 seeds (42-44), validation 1.2628. The only trained PPI GNN in the report |
+| HeteroIC50GNN, per-drug standardised targets | 1.3092 ± 0.0147 | 0.8840 | **laptop B**, 3 seeds, validation 1.2462 |
+| `base`, laptop B anchor | 1.3290 ± 0.0169 | 0.8785 | **laptop B**, 5 seeds; the reference for the two rows above |
 | `aligned` (MoGraphDRP-style) | 1.3416 ± 0.0088 | 0.8751 | 3 seeds, GE+Mut_CNV, this study |
 | `base` (this ladder) | 1.3232 ± 0.0105 | 0.8797 | 3 seeds, this study |
 | **Final model** | TBD | TBD | |
+
+**`HeteroIC50GNN` (laptop B, run 2026-10-11, results committed in `2e425a9`,
+`results/hetero_gnn/`).** The older heterogeneous GNN over the PPI,
+drug-target and mutation graph, 2,815,489 parameters, run with seeds for the
+first time. Per-seed test RMSE (42 / 43 / 44): raw 1.3208 / 1.3207 / 1.3196;
+standardised 1.3005 / 1.3009 / 1.3261.
+
+- **It is about level with `base` on the same machine** (1.3290 ± 0.0169):
+  −0.009 with raw targets, −0.020 with standardised targets. Both are inside
+  the ~0.03 band, the comparison is unpaired, and the two models are trained
+  differently (this one: AdamW, lr 1e-3, early stopping with patience 15,
+  best epoch 6-32; the ladder: Adam, lr 1e-4, 200 epochs).
+- **It is behind the graph-bearing candidates** (1.2731 and 1.2737 on laptop
+  A, section 5) by about 0.04 to 0.05. That comparison crosses machines; the
+  anchor above puts the machine difference at 0.004 on the mean.
+- Its validation RMSE with standardised targets (1.2462) equals the
+  candidate's (1.2454) while its test RMSE is 0.03 worse.
+- Earlier single runs on laptop A, seed 42: 1.3449 raw and 1.2917
+  standardised. The same seed gives 1.3208 and 1.3005 on laptop B.
+- Seeds 45 and 46 were not run. A run takes about a minute on laptop B.
 
 ## 11. Further checks (fill if run)
 
@@ -825,6 +1040,7 @@ Tick the ones that apply and add numbers.
 - [x] Component f covers 71.75% of pairs (169 of 240 drugs have a known target).
 - [x] Component f was tested as hand-built features and as attention without message passing; PPI message passing (stage B) was skipped (decided 2026-10-06), so no trained rung in the ladder is a GNN and the PPI graph is tested only indirectly (Phase 3 hop features; `HeteroIC50GNN` as a compared baseline). The one subset with any signal (a target is directly mutated) is 1.26% of pairs, 211 on the test fold. The features' gain there is better on 4 of 5 seeds, but its test intervals include 0.
 - [x] The attention form of f was rejected as configured, with no tuning (embedding width 64, no dropout on the attention, no weight decay). Its attention did not learn to find the mutated target (0.02 above chance), so the result does not test the idea itself. The graph has no protein features; 15 of the 251 proteins mutated in test cell lines appear in no training cell line.
+- [x] The graph component of the final model is chosen under a tolerance rule (validation no more than 0.03 worse than the candidate), not because it improves accuracy: neither `mol_graph` nor the pair features changes all-pairs test RMSE beyond noise (2026-10-12). `pair_attention` meets the tolerance by 0.0009, inside its seed std.
 - [x] The subset bootstrap resamples cell lines only; training noise is covered separately by a t-interval over 5 seeds.
 - [x] The benchmark comparison is against a reimplementation, not the authors' code on their data.
 
@@ -875,6 +1091,20 @@ base clearly" above once the final model is confirmed):
 > clearly better than proteomics alone (−0.012, 3 of 5 seeds). Differences
 > are over training seeds on one fixed split of cell lines.
 
+Addition from the graph decision of 2026-10-12 (pick the sentence for the
+configuration the team chooses):
+
+> Adding a graph convolution over each drug's molecular graph to that model
+> left accuracy unchanged within seed-to-seed variation (test RMSE
+> 1.2731 ± 0.0182 against 1.2797 ± 0.0192; validation 0.011 worse). Adding
+> five features computed from the protein-interaction, drug-target and
+> mutation graph also left overall RMSE unchanged (1.2737 ± 0.0144), but on
+> the 1.3% of pairs where a target of the drug is itself mutated it removed
+> most of the model's bias and lowered RMSE on every seed (test 1.58 to 1.38;
+> the interval over test cell lines still includes zero). Learned attention
+> between target and mutated proteins made the model worse (1.3225 ± 0.0285,
+> every seed).
+
 ## 15. Reproduction
 
 ```
@@ -904,6 +1134,30 @@ python src/final_model/run_ablation.py \
 
 The ladder CSV now has 35 rows. These 11 runs also saved predictions, in
 `results/ablation_results_predictions/`; the 24 Phase 2 runs did not.
+
+Graph decision (run 2026-10-11 21:51 to 2026-10-12 03:40, same machine and
+CSV, commit `2e425a9`; the 10 `base` and candidate rows were skipped, so 15
+runs in 20,964 s):
+
+```
+python src/final_model/run_ablation.py \
+  --configs base base+proteomics+std_targets \
+            base+proteomics+std_targets+mol_graph \
+            base+proteomics+std_targets+mol_graph+pair_features \
+            base+proteomics+std_targets+mol_graph+pair_attention \
+  --protocols grouped --seeds 42 43 44 45 46
+C=base+proteomics+std_targets
+python src/final_model/pair_gate_report.py \
+  --results src/final_model/results/ablation_results.csv --tag graph_decision \
+  --baseline $C --configs $C $C+mol_graph $C+mol_graph+pair_features $C+mol_graph+pair_attention
+python src/final_model/pair_gate_report.py \
+  --results src/final_model/results/ablation_results.csv --tag graph_decision_vs_mol_graph \
+  --baseline $C+mol_graph --configs $C+mol_graph $C+mol_graph+pair_features $C+mol_graph+pair_attention
+```
+
+The ladder CSV now has 50 rows. The 15 runs saved predictions, and the 5
+attention runs saved weights in `results/ablation_results_checkpoints/`
+(18 MB each, 91 MB in all).
 
 Phase 3 gate (run 2026-10-04, same machine, commit `cc303ee`; seeds 42-44
 19:42 to 20:40, seeds 45-46 20:57 to 21:36, 10 runs):
