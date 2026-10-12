@@ -805,6 +805,47 @@ The original five-component analysis (Phase 2, 3 seeds):
 
 *(report)*
 
+**Chosen 2026-10-12: `final` =
+`base+proteomics+std_targets+mol_graph+pair_features`.** It is named `final`
+in `run_ablation.py`. Grouped split, 5 seeds (42-46), laptop A:
+
+| | Validation RMSE | Test RMSE | PCC | R² | MAE | Gain over per-drug mean (1.4889) |
+|---|---|---|---|---|---|---|
+| `final` | 1.2441 ± 0.0102 | **1.2737 ± 0.0144** | 0.8923 | 0.7874 | 0.9529 | +0.2152 |
+| `base` | 1.2961 ± 0.0059 | 1.3252 ± 0.0119 | 0.8793 | 0.7699 | 0.9979 | +0.1637 |
+| Δ, paired by seed | −0.0521, 5 of 5 | −0.0514, 5 of 5 | | | | |
+
+Per-seed test RMSE: 1.2567 / 1.2694 / 1.2653 / 1.2906 / 1.2867. Best epoch
+36 / 22 / 29 / 18 / 33. 3,644,525 parameters, about 20 min per run.
+
+- **How it was chosen.** Two steps, both on validation RMSE with test
+  reported after. First the keep rule of 2026-10-06 gave
+  `base+proteomics+std_targets` (below). Then, because the project requires
+  a graph component, the graph-decision rule of 2026-10-11 was applied to
+  that candidate plus the built graph components (section 5, update of
+  2026-10-12): a config was eligible if its validation RMSE was no more than
+  0.03 worse than the candidate's. All three were eligible; this one has the
+  lowest validation RMSE.
+- **Where its gain comes from.** Proteomics and standardisation. The two
+  graph-related parts do not move all-pairs RMSE beyond noise: the same
+  model without them is 1.2797 ± 0.0192 on test (−0.006, 3 of 5 seeds in
+  favour of `final`).
+- **What the graph-related parts are.** `mol_graph` is a GCN over each
+  drug's atoms and bonds, taken from MoGraphDRP; it is the model's only
+  graph neural network. `pair_features` are five precomputed features from
+  the STRING PPI, drug-target and driver-mutation edges; they are not
+  message passing. They remove the base's bias on the 1.26% of pairs whose
+  target is mutated, on 5 of 5 seeds.
+- **What it is not.** Not a heterogeneous GNN, not a GAT, no cross-attention
+  fusion. Those were in the proposal; the first is covered only by the
+  compared `HeteroIC50GNN` baseline (section 10), and cross-attention fusion
+  was tested and rejected (section 6a).
+- **Still to run for it:** the random split (3 seeds, laptop B) and
+  leave-drugs-out, which uses `base+proteomics+mol_graph+pair_features`
+  because standardisation cannot be used on unseen drugs.
+
+The record of how the candidate was reached follows.
+
 - **Candidate (2026-10-07): `base+proteomics+std_targets`.** It passes the
   rule below. Whether it is the final model is the team's decision, not yet
   made; it has no name of its own in `run_ablation.py` yet.
@@ -966,7 +1007,7 @@ Same 111,799 pairs, same grouped split. TBD seeds each.
 | `base`, laptop B anchor | 1.3290 ± 0.0169 | 0.8785 | **laptop B**, 5 seeds; the reference for the two rows above |
 | `aligned` (MoGraphDRP-style) | 1.3416 ± 0.0088 | 0.8751 | 3 seeds, GE+Mut_CNV, this study |
 | `base` (this ladder) | 1.3232 ± 0.0105 | 0.8797 | 3 seeds, this study |
-| **Final model** | TBD | TBD | |
+| **Final model** (`final`) | **1.2737 ± 0.0144** | 0.8923 | laptop A, 5 seeds. `base` on the same machine and seeds: 1.3252 ± 0.0119 |
 
 **`HeteroIC50GNN` (laptop B, run 2026-10-11, results committed in `2e425a9`,
 `results/hetero_gnn/`).** The older heterogeneous GNN over the PPI,
