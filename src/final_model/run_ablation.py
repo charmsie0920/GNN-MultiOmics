@@ -10,6 +10,8 @@ The ladder is **Base + one component at a time**:
                             `base` measures that component alone
     aligned                 base+mol_graph+bilinear, the MoGraphDRP reproduction
     full                    base + the five Phase 2 components
+    final                   base+proteomics+std_targets+mol_graph+pair_features,
+                            the final model (chosen 2026-10-12)
 
 Components are declared once in `COMPONENTS`; adding a new one there adds its
 `base+<name>` rung to the default ladder. `full` is pinned to the components it
@@ -150,9 +152,14 @@ assert all(k in BASE for override, _ in COMPONENTS.values() for k in override)
 # redefine it, and the skip-if-done check would take the old rows for the new
 # model.
 PHASE2_COMPONENTS = ("cross_attention", "mol_graph", "bilinear", "proteomics", "std_targets")
+# `final` is the model chosen on 2026-10-12 by the graph-decision rule
+# (docs/18_final_runs_runbook.md). Spelled out for the same reason as `full`.
+# Its grouped-split rows in ablation_results.csv were run under the
+# spelled-out name; `main` treats those as done when `final` is requested.
 ALIASES: dict[str, str] = {
     "aligned": "base+mol_graph+bilinear",
     "full": "+".join(["base", *PHASE2_COMPONENTS]),
+    "final": "base+proteomics+std_targets+mol_graph+pair_features",
 }
 DEFAULT_LADDER = ["base", *[f"base+{name}" for name in COMPONENTS], "aligned", "full"]
 PROTOCOLS = ("grouped", "random")
@@ -420,7 +427,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--configs", nargs="+", default=DEFAULT_LADDER,
-                        help="'base', 'base+<component>[+...]', 'aligned' or 'full'")
+                        help="'base', 'base+<component>[+...]', 'aligned', 'full' or 'final'")
     parser.add_argument("--protocols", nargs="+", choices=PROTOCOLS, default=list(PROTOCOLS))
     parser.add_argument("--seeds", nargs="+", type=int, default=[TORCH_SEED])
     parser.add_argument("--max-epochs", type=int, default=MAX_EPOCHS)
@@ -450,7 +457,10 @@ def main(argv: list[str] | None = None) -> None:
         for seed in args.seeds
         for protocol in args.protocols
         for config_id in args.configs
+        # A run counts as done under its own name or, for an alias, under the
+        # name the alias spells out.
         if (config_id, protocol, seed) not in done
+        and (ALIASES.get(config_id, config_id), protocol, seed) not in done
     ]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
