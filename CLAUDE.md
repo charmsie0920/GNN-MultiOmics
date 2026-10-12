@@ -10,6 +10,8 @@ phase finishes or a decision changes.
   It is the reproduced benchmark and the bottom of the ablation ladder.
 - **Our model:** a new model built on that base, differing by measured
   components (below). Working name `PairGraphDRP` — placeholder, rename freely.
+  **Chosen 2026-10-12: `final` =
+  `base+proteomics+std_targets+mol_graph+pair_features`** (table below).
 - **Novelty component:** pair-specific cross-attention between a drug's target
   proteins and a cell line's driver-mutated proteins over the STRING PPI graph.
   Since 2026-10-05 it is built and tested in two stages: the attention first,
@@ -32,37 +34,43 @@ phase finishes or a decision changes.
   (`experiments/15_diagnostics/`): 95.8% of proteins unattached, 130 drugs with
   no target edge, and no pair-specific path between mutation and target.
 
-### What makes the final model ours, not MoGraphDRP
+### The final model, and what makes it ours, not MoGraphDRP
 
-| Component | MoGraphDRP | Ours |
-|---|---|---|
-| Omics | expression, mutation, methylation, pathway | GE, Mut+CNV, **proteomics** |
-| Biological prior | none on the cell side | **STRING PPI + drug-target + driver-mutation edges** |
-| Cell-drug interaction | bilinear attention on two pooled vectors | bilinear **plus pair-specific attention between known target proteins and mutated proteins over the PPI graph** (MIDI ranks genes per drug from structure; ours is per pair and uses targets as inputs) |
-| Target scaling | raw ln(IC50) | **per-drug standardisation** (cell-line split only) |
-| Evaluation | random pair split | cell-line-grouped split (also used by MIDI, so not a novelty claim), **seeds, per-drug-mean floor** |
-| Interpretability | none validated | attention/attribution tested against **untrained-model nulls** |
+**Chosen 2026-10-12 by the graph-decision rule: `final` =
+`base+proteomics+std_targets+mol_graph+pair_features`.** Grouped split, 5
+seeds, laptop A: validation 1.2441 +/- 0.0102, **test 1.2737 +/- 0.0144**,
+against `base` 1.3252 +/- 0.0119 (-0.0514, 5 of 5 seeds) and the per-drug
+mean floor 1.4889 (gain +0.2152). PCC 0.8923, R2 0.7874, 3,644,525
+parameters, about 20 min per run.
 
-Each row must be a switch and a row in the ablation table. A component that
-does not beat the noise band is reported as tested-and-rejected, not kept to
-make the model look different. MoGraphDRP is cited as the base architecture.
+| Part | MoGraphDRP | `final` | What the ablation says |
+|---|---|---|---|
+| Omics | expression, mutation, methylation, pathway | GE, Mut+CNV, **proteomics**, one branch each, concatenated | proteomics kept: test -0.033, 5 of 5 seeds |
+| Drug encoder | fingerprints + molecular-graph GCN, gated sum | Morgan fingerprint + molecular-graph GCN, gated sum (`mol_graph`) | theirs, not ours. No measurable effect here (-0.007 test on the candidate, 4 of 5). Kept because the project needs a graph component |
+| Biological prior | none on the cell side | **5 pair features from the STRING PPI, drug-target and driver-mutation edges** (`pair_features`) | no effect on all pairs. Removes the +0.4 bias on pairs whose target is mutated, 5 of 5 seeds |
+| Cell-drug interaction | bilinear attention | concatenation into the predictor MLP | bilinear rejected as configured; pair attention rejected as configured |
+| Target scaling | raw ln(IC50) | **per-drug standardisation** (cell-line split only) | kept on validation (-0.036, 5 of 5); not established alone on test |
+| Evaluation | random pair split | cell-line-grouped split (also used by MIDI), **seeds, per-drug-mean floor** | done |
+| Interpretability | none validated | none yet | on hold, see Phase 6 |
 
-**How the table stands against the results (2026-10-07).** It is the
-intended design, not what the ablation supports:
+Each part is a switch and a row in the ablation table. MoGraphDRP is cited as
+the base architecture.
 
-- Omics: proteomics is kept (5 seeds: test -0.033, validation -0.017, 5 of 5
-  on both).
-- Biological prior: no supporting rung. Hop features had no effect; pair
-  attention was rejected; message passing (Stage B) was not run.
-- Cell-drug interaction: bilinear is rejected as configured; pair attention
-  is rejected as configured.
-- Target scaling: kept on validation (5 seeds: -0.036, 5 of 5). Alone it has
-  no established effect on test (-0.017, 4 of 5); with proteomics it gives
-  the candidate final model.
-- Evaluation: done as described (grouped split, seeds, floor).
-- Interpretability: on hold, see Phase 6.
+**What to say and not say about it.**
 
-The table is rewritten once the final configuration is chosen.
+- The gain over `base` comes from proteomics and standardisation. Neither
+  graph part moves all-pairs RMSE beyond noise: `final` is 1.2737 and the
+  same model without them (`base+proteomics+std_targets`) is 1.2797.
+- The only graph neural network in `final` is the GCN on the drug molecule.
+  The PPI network enters as precomputed topology features, not through
+  message passing. Do not call `final` a PPI GNN or a heterogeneous GNN.
+- It was chosen on validation RMSE among configs that contain a graph
+  component, because the project requires one.
+- Against the proposal: no cross-attention fusion, no GAT, no heterogeneous
+  GNN, no SHAP module yet. See "What the proposal asks for" below.
+- The original design (pair-specific attention over the PPI graph, bilinear
+  head) is recorded in Phase 4 and `src/ABLATION.md` as tested-and-rejected
+  or not run.
 
 ## Rules for every experiment
 
@@ -102,7 +110,8 @@ The table is rewritten once the final configuration is chosen.
 
 ## Tasks
 
-**Where things stand (2026-10-11).** Phases 0-3 are done. Phase 4: Stage A
+**Where things stand (2026-10-12).** **The final model is chosen and named
+`final`** (Direction section). Phases 0-3 are done. Phase 4: Stage A
 was run and pair attention is tested-and-rejected as configured; **Stage B is
 skipped for now** (decided 2026-10-06). A candidate exists,
 `base+proteomics+std_targets`, test 1.2797 +/- 0.0192 against `base`
@@ -115,15 +124,16 @@ the final model as it stands: it has none. The remaining runs, their order
 and who runs them are in **`docs/18_final_runs_runbook.md`**:
 
 1. **Graph decision (this laptop, 15 runs): run 2026-10-11 21:51 to
-   2026-10-12 03:40 (5.8 h, commit `2e425a9`). All three are eligible; the
-   team has not chosen yet.** The candidate plus `mol_graph`, plus
+   2026-10-12 03:40 (5.8 h, commit `2e425a9`). All three were eligible.
+   Chosen 2026-10-12: `C+mol_graph+pair_features`, the rule's tie-break
+   (lowest validation RMSE), now named `final` in `run_ablation.py`.** The candidate plus `mol_graph`, plus
    `mol_graph+pair_features`, plus `mol_graph+pair_attention`, 5 seeds each.
    Rule written before the runs: a graph-bearing config is eligible if its
    validation RMSE is no more than 0.03 worse than the candidate's (1.2454,
    so 1.2754 or better). Among eligible configs the team picks the one that
    meets the objective; if more than one does, the lower validation RMSE;
    test is reported after. The chosen config is then named `final` in
-   `run_ablation.py` (not done). Result, floor 1.4889, `C` = the candidate:
+   `run_ablation.py` (done 2026-10-12). Result, floor 1.4889, `C` = the candidate:
 
    | Config | Validation | Δ val vs `C` | Test | Δ test vs `C` | Seeds better (val / test) | Δ test vs `base` |
    |---|---|---|---|---|---|---|
@@ -170,6 +180,17 @@ and who runs them are in **`docs/18_final_runs_runbook.md`**:
    the leave-drugs-out block.
 4. Still open: whether to run the `growth_rate` rung (waiting on the
    supervisor).
+
+**Next, in order (2026-10-12):**
+
+1. Commit and push the `final` alias; laptop B pulls it.
+2. Laptop B: `final` under the random split, 3 runs (runbook B5).
+3. Add the `ldo` protocol to `run_ablation.py`, then leave-drugs-out for
+   `base` and `base+proteomics+mol_graph+pair_features` (`final` without
+   standardisation), 5 seeds each (runbook B6; either laptop).
+4. RF and MLP baselines for the comparison table.
+5. Supervisor: the proposal deviations, and the growth-rate covariate.
+6. Phase 6 decision (interpretability), then Phase 7 (report).
 
 **What the proposal asks for** (`docs/MCS16 - Final Proposal Report.docx`,
 read 2026-10-12), against the two candidates that pass with room
@@ -670,26 +691,27 @@ Mutation and target edges are inputs, not labels, so having held-out cell
 lines' edges in the graph is not leakage; say so in the report.
 
 ### Phase 5 — Full ablation
-**Not started. The graph decision's runs are done (2026-10-12); waiting on
-the team's choice among the three eligible configs** (see "Where things stand" and
-`docs/18_final_runs_runbook.md`, which holds the commands and the split
-between the two laptops). Changed by Phase 4's outcome (2026-10-06) and by
+**Under way. The final model was chosen on 2026-10-12** (see "Where things
+stand" and `docs/18_final_runs_runbook.md`, which holds the commands and the
+split between the two laptops). Changed by Phase 4's outcome (2026-10-06) and by
 the requirement for a graph component (2026-10-11):
 
-- [ ] Run the graph decision, choose the final configuration by its rule and
+- [x] Run the graph decision, choose the final configuration by its rule and
       give it the name `final` in `run_ablation.py` (`full` stays pinned to
-      Phase 2). `base+proteomics+std_targets` was chosen on validation RMSE on
-      2026-10-07 and is the starting point; it has no graph component.
-- [ ] Ladder on top of the best Phase 2 row: `+ pair features` and the final
-      model; 3-5 seeds, both protocols. `+ pair attention` is dropped from
-      this ladder: it is rejected as configured and already has its rung.
+      Phase 2). Done 2026-10-12: `final` =
+      `base+proteomics+std_targets+mol_graph+pair_features`.
+- [ ] The final model under both protocols. Grouped: done, 5 seeds
+      (1.2737 +/- 0.0144). Random: left, 3 seeds on laptop B (runbook B5);
+      `base`, `aligned` and the two single components are already there.
 - [ ] Leave-drugs-out run of the final model (`leave_drugs_out_split`),
       without standardisation.
-- [ ] Subset metrics: has-target vs no-target pairs.
-- [ ] Compared baselines on the same pairs: per-drug mean, RF, MLP,
-      cross-attention (E10), `HeteroIC50GNN` (E11), aligned.
-      **`HeteroIC50GNN` now needs 3-5 seeds** (it has a single run, 1.3301):
-      with Stage B skipped it is the report's only trained GNN.
+- [x] Subset metrics: has-target vs no-target pairs. Done with the graph
+      decision (`results/ablation_results_subsets_graph_decision*.csv`,
+      `src/ABLATION.md` section 5).
+- [ ] Compared baselines on the same pairs. Done: per-drug mean,
+      cross-attention (E10, 5 seeds), `aligned`, and `HeteroIC50GNN` with 3
+      seeds on laptop B (1.3203 raw, 1.3092 standardised). **Left: RF and
+      MLP.**
 
 ### Phase 6 — Interpretability on the new model
 
@@ -782,9 +804,10 @@ attention or attribution is worth testing; otherwise report it as not done.
     `base+proteomics`.
   - The two components are close to additive (92% of the summed gains on
     test, 96% on validation).
-  - **Graph decision run 2026-10-12:** all three graph-bearing configs are
-    eligible (table under "Where things stand"). Open, for the team: which
-    of them meet the project objective, and so which is named `final`.
+  - **Graph decision run 2026-10-12:** all three graph-bearing configs were
+    eligible (table under "Where things stand"). **Decided 2026-10-12:
+    `base+proteomics+std_targets+mol_graph+pair_features` is the final
+    model, named `final`.** This question is closed.
 - **Pair attention: closed as rejected (2026-10-06).** The cause was
   diagnosed (Phase 4, Stage A result). Any changed version of the module
   (regularisation, an explicit same-protein signal, a smaller table) would be
@@ -805,8 +828,7 @@ attention or attribution is worth testing; otherwise report it as not done.
 - `base+bilinear` instability is still undiagnosed. Seed 42 sat at validation
   RMSE 3.0-4.1 for most of 200 epochs with PCC 0.85. Hypothesis only: dropout
   feeding BatchNorm gives a train/eval scale mismatch.
-- Which row Phase 5 builds on (`base+proteomics` on test, `base+std_targets`
-  on validation) is still not decided; Phase 3 attached to `base`.
+- Which row Phase 5 builds on: closed 2026-10-12. Phase 5 runs `final`.
 - Where is the MoGraphDRP repo on disk, and can it be run on their data under a
   grouped split for a system-level comparison?
 - Report deadline, which decides whether Phase 6 and the leave-drugs-out run fit.

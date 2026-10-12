@@ -16,18 +16,24 @@ plan and the reasons are in [`CLAUDE.md`](../CLAUDE.md); the results go into
 | B3. `HeteroIC50GNN`, 6 runs | Laptop B | 1.3203 +/- 0.0007 raw, 1.3092 +/- 0.0147 standardised | section 10 |
 | B4. Random split part 1, 12 runs | Laptop B | `base` 1.0162, `aligned` 0.9941, `base+proteomics` 1.0134, `base+std_targets` 0.9423 | section 9 |
 
+**Final model, chosen 2026-10-12:** `final` =
+`base+proteomics+std_targets+mol_graph+pair_features`. Test 1.2737 +/- 0.0144
+against `base` 1.3252 +/- 0.0119, grouped split, 5 seeds, laptop A.
+
 **Left, in order**
 
 | # | What | Who | Blocked by |
 |---|---|---|---|
-| 1 | Commit and push the graph-decision results and write-up; pull `origin/dev` (B4 is at `e34f390`) | Laptop A | nothing |
-| 2 | Choose the final model among the eligible configs (section 4) | team | nothing |
-| 3 | Name it `final` in `run_ablation.py`, commit, push | Laptop A | 2 |
-| 4 | Add the `ldo` protocol to `run_ablation.py` (section 6) | Laptop A | nothing |
-| 5 | B5: final model under the random split, 3 runs | Laptop B | 3 |
-| 6 | B6: leave-drugs-out, 10 runs | either laptop; A is faster | 3 and 4 |
-| 7 | Commit the missing prediction file `base+std_targets__random__seed43.npz` | Laptop B | nothing |
-| 8 | Write up B5 and B6; regenerate `docs/results.md` | Laptop A | 5 and 6 |
+| 1 | Commit and push the `final` alias and the document updates | Laptop A | nothing |
+| 2 | B5: `final` under the random split, 3 runs (about 1.6 h on laptop B) | Laptop B | 1 |
+| 3 | Add the `ldo` protocol to `run_ablation.py` (section 6) | Laptop A | nothing |
+| 4 | B6: leave-drugs-out, 10 runs (about 2.4 h on laptop A, 3.9 h on B) | either laptop; A is faster | 3 |
+| 5 | Commit the missing prediction file `base+std_targets__random__seed43.npz` | Laptop B | nothing |
+| 6 | Write up B5 and B6; regenerate `docs/results.md` | Laptop A | 2 and 4 |
+
+Done since the last update: the graph-decision results were committed and
+pushed, `origin/dev` was pulled, the final model was chosen, and it was named
+`final` in `run_ablation.py` (2026-10-12).
 
 **Optional:** `HeteroIC50GNN` seeds 45 and 46 on laptop B (about a minute
 each); RF and MLP baselines; the growth-rate rung, if the supervisor agrees.
@@ -46,8 +52,8 @@ drug molecule and concatenation. See "What the proposal asks for" in
 | B2. Anchor: `base`, grouped split | Laptop B | 5 | about 0.8 h | **done** 2026-10-11 |
 | B3. `HeteroIC50GNN` baseline | Laptop B | 6 | about 10.4 h | **done** 2026-10-11 |
 | B4. Random split, part 1 | Laptop B | 12 | about 2.5 h | **done** 2026-10-11 |
-| B5. Random split, part 2 (final model) | Laptop B | 3 | about 1 h | **left**: waits for `final` to be named |
-| B6. Leave-drugs-out | either | 10 | about 2.4 h | **left**: waits for `final` and for the code in section 6 |
+| B5. Random split, part 2 (final model) | Laptop B | 3 | about 1 h | **left**: runnable once the `final` alias is pulled |
+| B6. Leave-drugs-out | either | 10 | about 2.4 h | **left**: waits for the code in section 6 |
 
 **Measured 2026-10-11: laptop B is slower on the ladder, 0.63x the speed of
 laptop A** (871 s against 546 s per `base` run), so its ladder blocks take about
@@ -119,9 +125,9 @@ All commands below are run from the repository root.
 | `C+mol_graph+pair_features` | 1.2441 +/- 0.0102 | 1.2737 +/- 0.0144 | yes, lowest validation |
 | `C+mol_graph+pair_attention` | 1.2745 +/- 0.0159 | 1.3225 +/- 0.0285 | by 0.0009 only; worse than `C` on every seed |
 
-**Still to do here:** the team's choice, then naming it `final`. The rule's
-tie-break gives `C+mol_graph+pair_features`. The plan as written before the
-runs follows.
+**Decided 2026-10-12: `C+mol_graph+pair_features` is the final model**, the
+rule's tie-break (lowest validation RMSE). It is named `final` in
+`run_ablation.py`. The plan as written before the runs follows.
 
 The project objectives need a graph component in the final model. The
 candidate `base+proteomics+std_targets` (test 1.2797 +/- 0.0192) has none.
@@ -254,7 +260,7 @@ python -u src/final_model/run_ablation.py \
 - Reference from Phase 0, same split, older script: `aligned` 0.978 +/-
   0.002. Expect best epochs near 200 here, unlike the grouped split.
 
-### B5. Random split, part 2 — left; waits for `final` to be named
+### B5. Random split, part 2 — left; runnable once the `final` alias is pulled
 
 Pull the commit that defines `final`, then run the same command with
 `final` added. Finished rows are skipped:
@@ -272,8 +278,7 @@ Tests the final model on drugs it has never seen. It is self-contained (it
 has its own `base` rows), so it can run on either laptop; laptop A is about
 1.6x faster. Two things must exist first, and neither does on 2026-10-12:
 
-1. The final model must be chosen. Block A's runs are done; the choice is
-   not made.
+1. The final model must be chosen. Done 2026-10-12: `final`.
 2. `run_ablation.py` only knows the `grouped` and `random` protocols. A
    `ldo` protocol has to be added (using `leave_drugs_out_split` from
    `src/data/experiment_utils.py`), with standardised targets refused under
@@ -284,7 +289,7 @@ standardisation here:
 
 ```
 python -u src/final_model/run_ablation.py \
-  --configs base <final model without std_targets> \
+  --configs base base+proteomics+mol_graph+pair_features \
   --protocols ldo --seeds 42 43 44 45 46 \
   --out src/final_model/results/ldo_results.csv
 ```
@@ -315,12 +320,14 @@ Done:
       standardised 1.3092 +/- 0.0147
 - [x] B4 random split part 1, 12 runs (2026-10-11, on `origin/dev` at `e34f390`)
 - [x] Write-up of A, B2, B3 and B4 in `src/ABLATION.md` (2026-10-12)
+- [x] Laptop A: graph-decision results and write-up committed and pushed;
+      `origin/dev` pulled (2026-10-12)
+- [x] Final model chosen by the rule in section 4 and named `final`
+      (2026-10-12): `base+proteomics+std_targets+mol_graph+pair_features`
 
 Left:
 
-- [ ] Laptop A: graph-decision results and write-up committed and pushed;
-      `origin/dev` pulled
-- [ ] Final model chosen by the rule in section 4 and named `final`
+- [ ] Laptop A: the `final` alias and document updates committed and pushed
 - [ ] `ldo` protocol added to `run_ablation.py`
 - [ ] B5 random split part 2, 3 runs (laptop B)
 - [ ] B6 leave-drugs-out, 10 runs (either laptop)
