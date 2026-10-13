@@ -243,6 +243,35 @@ the runbook is left. The minimal Phase 6 was run and passed the same day.
 5. `predicted_drug_results.csv` at the repository root (commit `676c847`) is
    not an output of the ladder and is not described anywhere; say what
    produces it or move it out of the root.
+6. **Future to-do (added 2026-10-13): add cross-attention fusion to
+   `final`.** The proposal names cross-attention fusion and `final`
+   concatenates its omics branches. Not run yet.
+   - **Config:** `base+proteomics+std_targets+mol_graph+pair_features+cross_attention`
+     (`final` with `fusion=cross_attention`; 4,271,085 parameters). It has to
+     be spelled out: `final+cross_attention` does not resolve. Smoke-tested
+     for 1 epoch on 2026-10-13.
+   - **Runs, on laptop A:** grouped split, seeds 42-46, into
+     `ablation_results.csv` beside `final`'s rows (5 runs, about 2.7 h). Random
+     split, seeds 42-44, for `final` and the new config, into a new file
+     `results/random_split_laptop_a_results.csv` (6 runs, about 2.6 h):
+     `final`'s existing random-split rows are from laptop B and cannot be the
+     reference.
+   - **Rule, written 2026-10-13 before any run:** cross-attention replaces
+     concatenation in `final` only if its grouped-split validation RMSE is no
+     more than 0.03 worse than `final`'s (1.2441, so 1.2741 or better). Test
+     is reported after, not used to decide.
+   - **Expect it to hurt:** `base+cross_attention` was +0.091 on 0 of 3
+     seeds, and `full`, which contains it, is not better than `base`.
+   - **Caveat that stays even if it passes:** each omics layer is one vector
+     and the module attends pairwise, so every attention weight is 1.0. It
+     adds projection layers, not attention (decided 2026-10-03). A real
+     version needs several tokens per omics layer and would be a new
+     component with its own name.
+   - **Status:** a launcher was queued on 2026-10-13 16:22 that starts both
+     blocks when the laptop is on mains power and the tree is clean (logs
+     `cross_attention_queue.log`, `cross_attention_grouped.log`,
+     `cross_attention_random.log`). It had not started when this was
+     written. `pkill -f cross_attention_queue` cancels it.
 
 **What the proposal asks for** (`docs/MCS16 - Final Proposal Report.docx`,
 read 2026-10-12), against the two candidates that pass with room
