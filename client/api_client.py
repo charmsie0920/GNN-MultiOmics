@@ -49,6 +49,18 @@ def upload_dataset_csv(file_path: str) -> dict:
     return _unwrap(response)
 
 
+def delete_uploaded_dataset() -> None:
+    """Ask the backend to delete the uploaded dataset.
+
+    Called as the application closes, so it uses a short timeout and never
+    raises: a backend that is already gone must not hold up or break the exit.
+    """
+    try:
+        requests.delete(f"{BASE_URL}/api/v1/dataset/upload", timeout=2)
+    except requests.RequestException:
+        pass
+
+
 def start_run(target_cell_line: str, backend_name: str | None = None) -> dict:
     """Start a model run for the most recently uploaded dataset.
 

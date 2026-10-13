@@ -1,1 +1,1 @@
-"""Shared styling helpers for the MSC16 PySide6 frontend."""
+"""Shared styling helpers for the MCS16 PySide6 frontend."""

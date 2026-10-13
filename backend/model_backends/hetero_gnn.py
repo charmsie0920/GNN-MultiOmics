@@ -32,6 +32,7 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from backend.model_backends._common import attach_eval_metrics, enable_mc_dropout, rank_predictions
+from backend.dataset_schema import UPLOADED_CSV_PATH
 from backend.model_backends.base import ModelBackend
 from backend.model_backends.registry import register
 
@@ -46,7 +47,7 @@ _GRAPH_PATH = _REPO_ROOT / "src" / "graph" / "hetero_graph.pt"
 _CHECKPOINT_PATH = _REPO_ROOT / "models" / "checkpoints" / "best_hetero_gnn.pt"
 # The same file the upload endpoint writes to (backend/routers/dataset.py),
 # so a run always scores the dataset the user just uploaded.
-_TARGET_CSV = _REPO_ROOT / "data" / "processed" / "aligned" / "gdsc2_response_master.csv"
+_TARGET_CSV = UPLOADED_CSV_PATH
 
 _COL_CELL_LINE = "sanger_model_id"
 _COL_DRUG = "drug_id"

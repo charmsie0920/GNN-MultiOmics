@@ -1,1 +1,1 @@
-"""FastAPI backend package for MSC16 desktop placeholders."""
+"""FastAPI backend package for MCS16 desktop placeholders."""

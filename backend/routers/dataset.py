@@ -6,15 +6,12 @@ from pathlib import Path
 import pandas as pd
 from fastapi import APIRouter, HTTPException, UploadFile
 
-from backend.dataset_schema import REQUIRED_COLUMNS
+from backend.dataset_schema import REQUIRED_COLUMNS, UPLOADED_CSV_PATH, delete_uploaded_dataset
 from backend.schemas.dataset import DatasetUploadResponse
 
 router = APIRouter(prefix="/api/v1/dataset", tags=["dataset"])
 
-# Canonical location every experiment script under experiments/ reads its
-# target CSV from (e.g. cross_attention_baseline.py's TARGET_CSV).
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-TARGET_CSV_PATH = _REPO_ROOT / "data" / "processed" / "aligned" / "gdsc2_response_master.csv"
 
 # The heterogeneous graph the active backend predicts over: only cell lines
 # that exist as `cell_line` nodes in it can be scored, so it is the real
@@ -49,19 +46,25 @@ async def upload_dataset(file: UploadFile) -> DatasetUploadResponse:
             detail=f"Uploaded CSV is missing required columns: {', '.join(missing_columns)}",
         )
 
-    TARGET_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
-    TARGET_CSV_PATH.write_bytes(raw_bytes)
+    UPLOADED_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
+    UPLOADED_CSV_PATH.write_bytes(raw_bytes)
 
     cell_line_ids = _valid_target_cell_lines(frame)
 
     return DatasetUploadResponse(
         filename=file.filename,
-        saved_path=str(TARGET_CSV_PATH),
+        saved_path=str(UPLOADED_CSV_PATH),
         row_count=len(frame),
         columns=list(frame.columns),
         cell_line_ids=cell_line_ids,
         message="Dataset uploaded and validated successfully.",
     )
+
+
+@router.delete("/upload")
+def delete_upload() -> dict[str, bool]:
+    """Remove the uploaded dataset. The desktop app calls this as it closes."""
+    return {"deleted": delete_uploaded_dataset()}
 
 
 def _reference_cell_ids() -> set[str]:
