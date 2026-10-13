@@ -64,6 +64,18 @@ SAMPLE_PROFILE_ACCENT_WIDTH = 10
 CONTRIBUTION_SENSITISING = "#005b96"  # negative score: pushes toward sensitivity (bar goes left)
 CONTRIBUTION_RESISTANCE = "#c2410c"   # positive score: pushes toward resistance (bar goes right)
 
+# The three omics layers on the model run page (`widgets.omics_loader`): the
+# squares on each gene, their file cards, and the signal while a layer loads.
+OMICS_EXPRESSION = "#0b5d7a"
+OMICS_MUTATION = "#b4500c"
+OMICS_PROTEOMICS = "#6b3fa0"
+# The run console, the one dark panel in the UI besides tooltips.
+CONSOLE_BACKGROUND = "#1e1e1e"
+CONSOLE_HEADER = "#2a2a2c"
+CONSOLE_BORDER = "#3f3f46"
+CONSOLE_TEXT = "#d4d4d8"
+CONSOLE_TEXT_MUTED = "#9a9aa3"
+
 # --- Layout scale ------------------------------------------------------------
 # Shared sizing so every page's chrome (sidebar/header) lines up pixel-for-pixel.
 SIDEBAR_WIDTH = 260

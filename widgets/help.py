@@ -22,11 +22,9 @@ HELP: dict[str, str] = {
     # -- dataset initialization page --
     "upload": "CSV with sanger_model_id, drug_id and ln_ic50 columns.",
     # -- model execution log page --
-    "overall_progress": "Estimated from elapsed time.",
     "file_graph": "Prebuilt graph of cell lines, drugs and proteins.",
     "file_dataset": "Your uploaded dataset.",
     "file_checkpoint": "Trained model weights.",
-    "file_inference": "Predicting each drug's response.",
     # -- final results page: predicted drug results --
     "results_panel": "Click a row to see the genes behind it.",
     "col_ic50": "Lower = more sensitive.",
