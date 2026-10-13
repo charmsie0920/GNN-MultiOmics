@@ -1,83 +1,122 @@
 # Graph Neural Network-Based Multi-Omics Integration for Predicting Cancer Drug Response
 
-This project asks two questions about predicting cancer cell-line drug sensitivity (LN(IC50)) from multi-omics data:
+Predicting cancer cell-line drug sensitivity (ln IC50) on GDSC2 from multi-omics
+data plus drug structure. Final Year Project (FIT3161, team MCS16), Monash University.
 
-1. **Fusion:** Does learned **cross-attention fusion** combine omics types better than simply concatenating them?
-2. **Graph:** Can a **heterogeneous graph neural network**, linking cell lines, drugs and proteins through the STRING protein–protein interaction network, use that biological structure to predict drug response?
-
-Final Year Project (FIT3161, team MCS16), Monash University.
+The study is an **additive ablation**: start from the simplest pipeline that
+works, add one component at a time, and keep only the components that beat the
+run-to-run noise band.
 
 ## Architecture
 
-![alt text](image.png)
+![Final model architecture](docs/figures/final_model_architecture.png)
 
-The planned final model has five stages:
+**Final model** (chosen 2026-10-12, named `final` in
+[`src/final_model/run_ablation.py`](src/final_model/run_ablation.py)):
+`base + proteomics + std_targets + mol_graph + pair_features`.
 
-1. **Inputs**
-   - Cell lines: gene expression, mutations + copy-number variation, and proteomics. Each is imputed, z-scored and PCA-reduced to 128 dimensions.
-   - Drugs: SMILES strings from PubChem, turned into Morgan fingerprints with RDKit (a one-hot drug ID is also tested).
-2. **Fusion:** multi-head cross-attention combines the omics types into one cell-line embedding.
-3. **Graph construction:** a heterogeneous graph built with PyTorch Geometric.
-   - Nodes: cell lines, drugs and proteins.
-   - Edges: protein–protein (STRING v12), drug → target protein, and cell line → mutated gene.
-4. **GNN:** two heterogeneous GraphSAGE layers pass messages across the graph.
-5. **Prediction:** the cell-line and drug embeddings are joined and passed to an MLP that predicts IC50. Models are scored with RMSE, PCC and R².
+| Stage | What it is |
+|---|---|
+| Cell-line inputs | gene expression, mutation + copy-number, **proteomics** — imputed, z-scored, PCA to 128 dims |
+| Drug input | PubChem SMILES → a **GCN over the drug's atoms and bonds** (`mol_graph`) |
+| Pair features | 5 numbers from the STRING PPI, drug-target and driver-mutation graph: is the target itself mutated, hops to the nearest mutation, and so on (`pair_features`) |
+| Target scaling | **per-drug standardisation** of ln IC50, fitted on the training cell lines only |
+| Head | concatenate, then MLP; scored by RMSE, PCC, R² |
 
-> **Current status:** stages 2 and 3 are not connected yet. The GNN's cell-line nodes currently use the concatenated PCA features. The next step is to feed them the cross-attention embeddings instead.
+Base architecture is MoGraphDRP, reproduced in
+[`src/models/mographdrp_aligned.py`](src/models/mographdrp_aligned.py) and frozen.
+
+**What the final model is not:** not a heterogeneous GNN, not a GAT, and no
+cross-attention fusion. All three were in the proposal; cross-attention fusion
+was tested and rejected, and the heterogeneous GNN (`HeteroIC50GNN`) survives
+only as a compared baseline.
+
+## Status
+
+**Every planned run is finished** (see
+[the runbook](docs/18_final_runs_runbook.md)): the ablation ladder on the
+grouped split, the random-split sanity check, leave-drugs-out, the compared
+baselines, and the interpretability check. What is left is the report —
+rewriting `docs/architecture.md` and producing the figures.
 
 ## Results
 
-All 59 runs use the same cell-line-grouped 70/15/15 split (`random_state=42`, 532 cell lines with all three omics). Predicting the training-set mean gives RMSE 2.710; lower RMSE is better.
+Headline protocol: cell-line-grouped 70/15/15 split (seed 42), 111,799 pairs
+over 532 tri-omics-complete cell lines, 5 seeds per row. Lower RMSE is better.
 
-### 1. Cross-attention fusion vs. simple concatenation
+The baseline that matters is the **per-drug training mean, RMSE 1.4889** — drug
+identity alone, no omics. Everything a model adds is measured against that, not
+against the global mean (2.7690).
 
-Each row compares the two methods on the same omics and the same drug representation (test RMSE).
+| | Test RMSE | PCC | R² | Gain over per-drug mean |
+|---|---|---|---|---|
+| **`final`** | **1.2737 ± 0.0144** | 0.8923 | 0.7874 | +0.2152 |
+| `base` | 1.3252 ± 0.0119 | 0.8793 | 0.7699 | +0.1637 |
 
-| Omics | Drug representation | Concatenation (MLP) | Cross-attention |
-|---|---|---|---|
-| GE + Mut/CNV + Proteomics | one-hot | 1.820 | **1.266** |
-| Mut/CNV + Proteomics | one-hot | 1.921 | **1.281** |
-| GE + Mut/CNV | one-hot | 1.849 | **1.296** |
-| GE + Proteomics | one-hot | 1.513 | **1.244** |
-| GE + Mut/CNV + Proteomics | fingerprint | 1.580 | **1.359** |
-| GE + Proteomics | fingerprint | 1.452 | **1.321** |
+Δ = −0.0514, better on 5 of 5 seeds. **Repeated runs of one configuration vary
+by ±0.013–0.029 RMSE, so differences below ~0.03 are noise**
+([seed variance](docs/13_seed_variance_results.md)).
 
-Cross-attention wins every comparison, and its margin grows as more omics types are added. Concatenation gets worse as omics types are added, while cross-attention stays stable. Cross-attention on GE + Proteomics is the best model overall (RMSE 1.244, R² 0.788). See the [cross-attention ablation](docs/06_cross_attention_ablation_results.md).
+Against the other models on the same pairs and split:
 
-### 2. Graph neural networks
+| Model | Test RMSE | Seeds |
+|---|---|---|
+| **`final`** | **1.2737 ± 0.0144** | 5 |
+| CrossAttention, GE+Proteomics | 1.3029 ± 0.0126 | 5 |
+| `HeteroIC50GNN`, standardised targets | 1.3092 ± 0.0147 | 3 |
+| `HeteroIC50GNN`, raw targets | 1.3203 ± 0.0007 | 3 |
+| `base` | 1.3252 ± 0.0119 | 5 |
+| MLP, Proteomics | 1.3273 ± 0.0286 | 5 |
+| `aligned` (MoGraphDRP-style) | 1.3416 ± 0.0088 | 3 |
+| Random forest | 1.3805 | 1 |
+| Per-drug mean (floor) | 1.4889 | — |
 
-These GNNs use concatenated cell-line features (see *Current status* above).
+### Honest reading of that
 
-| Model | Omics | Drug representation | RMSE ↓ | PCC ↑ | R² ↑ |
-|---|---|---|---|---|---|
-| HeteroIC50GNN (GraphSAGE) | GE + Mut/CNV + Proteomics | fingerprint | **1.3301** | 0.8805 | 0.7682 |
-| HeteroGNN (GraphSAGE, "GCN" variant) | GE + Mut/CNV + Proteomics | fingerprint | 1.3513 | 0.8757 | 0.7608 |
-| HeteroGNN (GAT) | GE + Mut/CNV + Proteomics | fingerprint | 2.2546 | 0.5865 | 0.3341 |
+- **The gain comes from proteomics and per-drug standardisation**, not from the
+  graph. The same model with the two graph-related parts removed scores
+  1.2797 ± 0.0192 — inside the noise band. A graph component is in the final
+  model because the project scope requires one, and is reported that way.
+- **The pair features do change the pairs they are about.** On the 1.26% of
+  pairs where a drug's target is itself mutated, removing the direct-hit signal
+  at inference raises test RMSE from 1.41 to 1.64, on 5 of 5 seeds.
+- **The model uses that signal in the biologically correct direction.** Across
+  30 drugs its effect tracks the measured sensitivity difference at Spearman
+  +0.73 ± 0.05; 0 of 50 untrained models of the same architecture reach that.
+  It is strongest for the BRAF and EGFR inhibitors and near zero for MIRA-1,
+  whose TP53 hits are not sensitising.
+- **Random-split sanity check** (benchmark protocol, not a ranking): `final`
+  0.9622 ± 0.0058 against `base` 1.0162 ± 0.0011, and the reproduced `aligned`
+  reaches 0.9941 ± 0.0047 against MoGraphDRP's published 0.9497.
+- **Unseen drugs are a different problem.** Under leave-drugs-out (no
+  standardisation — unseen drugs have no statistics) the model reaches
+  2.0038 ± 0.0843 against `base` 2.1722 ± 0.0369 and a floor of 2.5500. The
+  interval over the 36 held-out drugs includes 0. The model is built and
+  selected for unseen cell lines and makes no claim about new compounds.
 
-With the same concatenated three-omics fingerprint input, the GNN beats the plain MLP (1.330 vs 1.580) and the random forest. That suggests the graph structure adds useful information. Adding cell line → mutated-gene edges also helped (1.401 → 1.351). GAT performed poorly. See the [GNN ablation](docs/07_gnn_ablation_results.md).
-
-Full ranked table: [docs/results.md](docs/results.md). It is generated by `experiments/build_results_table.py`, so don't edit it by hand.
+**Full study, with every per-component finding and the rules each decision was
+made under: [`src/ABLATION.md`](src/ABLATION.md).** The earlier exploratory
+matrix is in [docs/results.md](docs/results.md), generated by
+`experiments/build_results_table.py` (do not edit it by hand).
 
 ## Repository structure
 
 ```
-backend/        FastAPI service the desktop app calls (dataset upload, model runs, results)
-client/         HTTP client + Qt workers used by the GUI
-pages/          GUI pages (dataset setup, execution log, results)
-widgets/, styles/  Shared GUI components and theme
-UILauncher.py   Desktop app entry point (PySide6)
-src/data/       Ingestion, alignment, preprocessing and graph construction
-src/models/     Model definitions; src/models/train/ holds the hetero-GNN training script
-src/graph/      Serialised heterogeneous graph (hetero_graph.pt)
-models/         Fitted PCA pipelines and trained checkpoints
-experiments/    Numbered experiments (NN_*) with their result CSVs
-docs/           Write-ups (NN_* matches experiments/NN_*), plans and reports
-data/           raw/ (not tracked), aligned/, processed/ (generated)
+src/final_model/   The final model, its ablation ladder and all reported results
+src/ABLATION.md    The ablation study — the primary results document
+src/models/        Model definitions (mographdrp_aligned.py is the frozen base)
+src/data/          Ingestion, alignment, preprocessing, graph construction
+src/graph/         Serialised heterogeneous graph (hetero_graph.pt)
+experiments/       Earlier numbered experiments (NN_*) with their result CSVs
+docs/              Write-ups (NN_* matches experiments/NN_*), runbook, figures
+data/              raw/ (not tracked), aligned/, processed/ (generated)
+backend/           FastAPI service the desktop app calls
+pages/, widgets/, styles/, client/, UILauncher.py     PySide6 desktop app
 ```
 
 ## Setup
 
-Requires Python 3.10+.
+Python 3.10+.
 
 ```bash
 python -m venv .venv
@@ -85,11 +124,15 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-For GPU training, install the CUDA build of PyTorch from [pytorch.org](https://pytorch.org/get-started/locally/) that matches your driver, then install PyTorch Geometric by following [its install guide](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html). The code is written to fit in 4–8 GB of VRAM.
+For GPU training, install the CUDA build of PyTorch from
+[pytorch.org](https://pytorch.org/get-started/locally/) matching your driver,
+then PyTorch Geometric per
+[its install guide](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html).
+Developed on a GTX 1650 (4 GB); a `final` run takes about 20 minutes there.
 
 ## Data
 
-Raw data is not tracked in git. Place the files under `data/raw/` using these paths:
+Raw data is not tracked in git. Place these under `data/raw/`:
 
 | Path | Source |
 |---|---|
@@ -103,9 +146,9 @@ Raw data is not tracked in git. Place the files under `data/raw/` using these pa
 | `gdsc/screened_compounds_rel_8.5.csv` | GDSC |
 | `string/9606.protein.links.v12.0.txt.gz` | [STRING](https://string-db.org/cgi/download) |
 
-Two more inputs are downloaded by scripts (see step 1 below): `string/9606.protein.aliases.v12.0.txt.gz` and `pubchem/gdsc_drug_smiles.csv`.
-
-These datasets have their own licences and terms of use. Check each source before redistributing anything.
+The STRING aliases file and `pubchem/gdsc_drug_smiles.csv` are fetched by
+scripts in step 1. Each dataset has its own licence — check the source before
+redistributing anything.
 
 ## Usage
 
@@ -118,32 +161,45 @@ python src/data/fetch_string_aliases.py
 python src/data/fetch_drug_smiles.py
 python src/data/ingest_and_align.py      # -> data/processed/aligned/
 python src/data/build_wide_matrices.py   # -> data/processed/wide/
-python src/data/00_run_preprocessing.py  # -> data/processed/*_pca.csv, models/omics_pca/
+python src/data/00_run_preprocessing.py  # -> data/processed/*_pca.csv
 python src/data/03_graph_construction.py # -> src/graph/hetero_graph.pt
-python src/data/04_link_cell_lines.py    # adds cell-line edges to the graph
+python src/data/04_link_cell_lines.py    # adds cell-line edges
 ```
 
-**2. Train the heterogeneous GNN**
+Every grouped-split run must report 111,799 pairs and a per-drug mean floor of
+1.4889. If it does not, the data differs — stop.
+
+**2. Reproduce the ablation ladder**
 
 ```bash
-python src/models/train/05_train.py      # -> models/checkpoints/best_hetero_gnn.pt
+python src/final_model/run_ablation.py --list          # print the ladder
+python src/final_model/run_ablation.py --configs base final \
+    --protocols grouped --seeds 42 43 44 45 46
 ```
 
-**3. Reproduce the experiments**
+Each finished run appends one row to `src/final_model/results/` and is skipped
+on re-run (`--rerun` to repeat, `--out` for a scratch file). Other protocols:
+`--protocols random` and `--protocols ldo` (leave-drugs-out).
+
+**3. The interpretability check** (needs saved weights)
 
 ```bash
-python experiments/06_full_matrix/cross_attention_matrix.py   # for example
-python experiments/build_results_table.py                     # regenerates docs/results.md
+python src/final_model/run_ablation.py --configs final --protocols grouped \
+    --seeds 42 43 44 45 46 --save-weights
+python src/final_model/pair_feature_check.py
 ```
 
-**4. Run the desktop app.** Start the backend first, then launch the GUI in a second terminal:
+**4. Run the desktop app** — backend first, GUI in a second terminal:
 
 ```bash
 python -m backend.main   # FastAPI on http://127.0.0.1:8000
 python UILauncher.py
 ```
 
-## Experiments
+## Earlier experiments
+
+Exploratory work that preceded the ablation study. Single runs unless noted, so
+read them against the ±0.03 noise band.
 
 | # | Experiment | Write-up |
 |---|---|---|
@@ -157,8 +213,17 @@ python UILauncher.py
 | 08 | XGBoost ensemble refinement (negative result) | [docs](docs/08_ensemble_refinement_results.md) |
 | 09 | Split protocol comparison | [docs](docs/09_split_protocol_comparison.md) |
 | 10 | Leave-drugs-out generalisation | [docs](docs/10_leave_drugs_out_results.md) |
+| 11 | Molecular graph drug encoder | [docs](docs/11_molecular_graph_results.md) |
+| 12 | Full architecture (fusion + graph + molecular graph) | [docs](docs/12_full_architecture_results.md) |
+| 13 | Seed variance / noise band | [docs](docs/13_seed_variance_results.md) |
+| 14 | MoGraphDRP reproduction (Phase 0) | — |
+| 15 | Dataset diagnostics; interpretability vs untrained nulls | [docs](docs/15_interpretability_validation_results.md) |
+| 16 | Target-edge removal ablation | [docs](docs/16_target_edge_ablation_results.md) |
+| 17 | MIDI literature review | [docs](docs/17_midi_review.md) |
 
-Pipeline details are in [data ingestion](docs/data_ingestion_and_alignment.md), [preprocessing & fusion](docs/preprocessing_and_fusion_module.md) and [graph construction](docs/graph_construction.md).
+Pipeline details: [data ingestion](docs/data_ingestion_and_alignment.md) ·
+[preprocessing & fusion](docs/preprocessing_and_fusion_module.md) ·
+[graph construction](docs/graph_construction.md)
 
 ## Team
 
