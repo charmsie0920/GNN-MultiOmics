@@ -51,7 +51,7 @@ parameters, about 20 min per run.
 | Cell-drug interaction | bilinear attention | concatenation into the predictor MLP | bilinear rejected as configured; pair attention rejected as configured |
 | Target scaling | raw ln(IC50) | **per-drug standardisation** (cell-line split only) | kept on validation (-0.036, 5 of 5); not established alone on test |
 | Evaluation | random pair split | cell-line-grouped split (also used by MIDI), **seeds, per-drug-mean floor** | done |
-| Interpretability | none validated | none yet | on hold, see Phase 6 |
+| Interpretability | none validated | a sensitivity test of the direct-hit signal against untrained models | passed its three rules (Phase 6, 2026-10-13); not a gene-level attribution, no SHAP |
 
 Each part is a switch and a row in the ablation table. MoGraphDRP is cited as
 the base architecture.
@@ -67,10 +67,21 @@ the base architecture.
 - It was chosen on validation RMSE among configs that contain a graph
   component, because the project requires one.
 - Against the proposal: no cross-attention fusion, no GAT, no heterogeneous
-  GNN, no SHAP module yet. See "What the proposal asks for" below.
+  GNN, no SHAP module. See "What the proposal asks for" below.
+- On interpretability, say: the trained model uses the "target is mutated"
+  signal in the direction and drug order the measurements support, and
+  untrained models do not. Do not say it explains predictions in general, or
+  that it identifies genes: it covers 1.26% of pairs and five hand-built
+  inputs.
 - The original design (pair-specific attention over the PPI graph, bilinear
   head) is recorded in Phase 4 and `src/ABLATION.md` as tested-and-rejected
   or not run.
+- It is a model for unseen cell lines. On unseen drugs (leave-drugs-out,
+  without standardisation) it is 2.0038 +/- 0.0843 against `base` 2.1722,
+  not established across drugs, and not better than an earlier flat MLP
+  (1.8516, one run). Do not claim generalisation to new compounds.
+- Under the random split it beats `base` (0.9622 against 1.0162) but
+  `base+std_targets` alone is better there (0.9423).
 
 ## Rules for every experiment
 
@@ -110,8 +121,11 @@ the base architecture.
 
 ## Tasks
 
-**Where things stand (2026-10-12).** **The final model is chosen and named
-`final`** (Direction section). Phases 0-3 are done. Phase 4: Stage A
+**Where things stand (2026-10-13).** **The final model is chosen and named
+`final`** (Direction section). **Every block of the runbook is done and
+written up**, leave-drugs-out included (laptop B, 2026-10-13). No run of the
+plan is left, and the minimal Phase 6 passed on 2026-10-13; what remains is
+the supervisor's questions and the report. Phases 0-3 are done. Phase 4: Stage A
 was run and pair attention is tested-and-rejected as configured; **Stage B is
 skipped for now** (decided 2026-10-06). A candidate exists,
 `base+proteomics+std_targets`, test 1.2797 +/- 0.0192 against `base`
@@ -173,24 +187,62 @@ and who runs them are in **`docs/18_final_runs_runbook.md`**:
      `base+proteomics` 1.0134, `base+std_targets` 0.9423. Standardisation is
      the large effect there (-0.074) and proteomics none: the reverse of the
      grouped split.
-   - Left for laptop B: the final model under the random split (3 runs),
-     after it is named. The random-split commit (`e34f390`) is on
-     `origin/dev` and not yet pulled here.
-3. **Not built yet:** an `ldo` protocol in `run_ablation.py`, needed before
-   the leave-drugs-out block.
+   - **`final` under the random split, done 2026-10-12 (3 seeds, `c346fc9`):**
+     0.9622 +/- 0.0058 against `base` 1.0162 (-0.054, 3 of 3), about the same
+     gain as under the grouped split. It is not the best config there:
+     `base+std_targets` alone (0.9423) is 0.020 better on every seed, and
+     `final` peaks at epoch 46-67 against 123-198 for the others. The choice
+     of `final` was made on the grouped split and is not changed by this.
+3. **Leave-drugs-out:** the `ldo` protocol was added to `run_ablation.py` on
+   2026-10-12 (`e4e3517`): 168 / 36 / 36 drugs, mean-only floor 2.5500,
+   configs with `std_targets` refused. **The block was run on laptop B and
+   committed on 2026-10-13 (`5efc470`, 10 runs, 3.7 h,
+   `results/ldo_results.csv`).** `final` cannot run under it, so the model
+   tested is `base+proteomics+mol_graph+pair_features`. Test fold, 36
+   held-out drugs, 5 seeds, mean-only floor 2.5500 (the per-drug floor does
+   not exist here):
+
+   | Config | Validation | Test | PCC | R2 |
+   |---|---|---|---|---|
+   | `base` | 2.2021 +/- 0.0283 | 2.1722 +/- 0.0369 | 0.5909 | 0.2603 |
+   | `final` without standardisation | 2.0715 +/- 0.0268 | 2.0038 +/- 0.0843 | 0.6835 | 0.3698 |
+
+   - Delta on test -0.169, 4 of 5 seeds, seed interval -0.314 to -0.023. The
+     interval over the 36 test drugs is -0.441 to +0.091: it includes 0.
+     Better on 20 of 36 drugs on both folds.
+   - 70 to 76% of the squared error is one constant per drug (the new
+     compound's overall potency). With it removed the two models are level.
+   - Not attributable: three components differ between the two configs.
+   - Not better than the earlier flat MLP's single run on this split
+     (1.8516, `docs/10_leave_drugs_out_results.md`).
+   - Validation drugs do not select well for test drugs (validation and test
+     RMSE anti-correlated over seeds, -0.91).
+   - Details: `src/ABLATION.md` section 11.
 4. Still open: whether to run the `growth_rate` rung (waiting on the
    supervisor).
 
-**Next, in order (2026-10-12):**
+**Next, in order (2026-10-13):**
 
-1. Commit and push the `final` alias; laptop B pulls it.
-2. Laptop B: `final` under the random split, 3 runs (runbook B5).
-3. Add the `ldo` protocol to `run_ablation.py`, then leave-drugs-out for
-   `base` and `base+proteomics+mol_graph+pair_features` (`final` without
-   standardisation), 5 seeds each (runbook B6; either laptop).
-4. RF and MLP baselines for the comparison table.
-5. Supervisor: the proposal deviations, and the growth-rate covariate.
-6. Phase 6 decision (interpretability), then Phase 7 (report).
+Done since 2026-10-12: the `final` alias was pushed, laptop B ran `final`
+under the random split, the `ldo` protocol was added, and the RF and MLP rows
+of the comparison table were filled from the earlier experiments.
+
+Leave-drugs-out was run on laptop B and written up on 2026-10-13. No run of
+the runbook is left. The minimal Phase 6 was run and passed the same day.
+
+1. Supervisor: the proposal deviations (SHAP among them), and the
+   growth-rate covariate.
+2. Decide whether the frontend should serve `final`; it serves
+   `HeteroIC50GNN` now. Then Phase 7 (report).
+3. Fill the `TBD` cells of `src/ABLATION.md` sections 3, 4 and 13
+   (justifications, hypotheses, figures).
+4. Optional, only if the report needs to say which component helps on unseen
+   drugs: `base+mol_graph` and `base+proteomics` under `ldo`, 5 seeds each,
+   in the same file and on the same machine as the other `ldo` rows
+   (laptop B).
+5. `predicted_drug_results.csv` at the repository root (commit `676c847`) is
+   not an output of the ladder and is not described anywhere; say what
+   produces it or move it out of the root.
 
 **What the proposal asks for** (`docs/MCS16 - Final Proposal Report.docx`,
 read 2026-10-12), against the two candidates that pass with room
@@ -204,7 +256,7 @@ read 2026-10-12), against the two candidates that pass with room
 | "encode molecular drug structures from SMILES strings using RDKit" | Yes: fingerprint and molecular graph |
 | "implement GAT message-passing layers with an MLP prediction head" | Partly: message passing is a GCN on the drug's molecular graph, not a GAT, and not on the biological graph |
 | in scope: "build a heterogeneous GNN using PyTorch Geometric" | No. Only `HeteroIC50GNN` is one, and it is a compared baseline at 1.32 |
-| "a SHAP-based interpretability module" | Not done (Phase 6 on hold) |
+| "a SHAP-based interpretability module" | Not as worded. A sensitivity test of the pair features against untrained models was run and passed (Phase 6, 2026-10-13); no SHAP |
 
 So "contains a graph neural network" is met by both candidates through
 `mol_graph`. The stricter wording (a GAT, a heterogeneous GNN over the PPI
@@ -700,30 +752,120 @@ the requirement for a graph component (2026-10-11):
       give it the name `final` in `run_ablation.py` (`full` stays pinned to
       Phase 2). Done 2026-10-12: `final` =
       `base+proteomics+std_targets+mol_graph+pair_features`.
-- [ ] The final model under both protocols. Grouped: done, 5 seeds
-      (1.2737 +/- 0.0144). Random: left, 3 seeds on laptop B (runbook B5);
-      `base`, `aligned` and the two single components are already there.
-- [ ] Leave-drugs-out run of the final model (`leave_drugs_out_split`),
-      without standardisation.
+- [x] The final model under both protocols. Grouped: 5 seeds, laptop A
+      (1.2737 +/- 0.0144). Random: 3 seeds, laptop B, done 2026-10-12
+      (0.9622 +/- 0.0058; `base` 1.0162 on the same machine).
+- [x] Leave-drugs-out run of the final model (`leave_drugs_out_split`),
+      without standardisation. Done 2026-10-13 on laptop B, 5 seeds:
+      2.0038 +/- 0.0843 against `base` 2.1722 +/- 0.0369 (floor 2.5500).
 - [x] Subset metrics: has-target vs no-target pairs. Done with the graph
       decision (`results/ablation_results_subsets_graph_decision*.csv`,
       `src/ABLATION.md` section 5).
-- [ ] Compared baselines on the same pairs. Done: per-drug mean,
+- [x] Compared baselines on the same pairs. Done: per-drug mean,
       cross-attention (E10, 5 seeds), `aligned`, and `HeteroIC50GNN` with 3
-      seeds on laptop B (1.3203 raw, 1.3092 standardised). **Left: RF and
-      MLP.**
+      seeds on laptop B (1.3203 raw, 1.3092 standardised). RF and MLP are
+      filled from the earlier experiments (2026-10-13): RF 1.3805 and MLP
+      1.5795 at the final model's omics, one run each; best MLP 1.3273 +/-
+      0.0286 on 5 seeds. Not re-run with the ladder's settings.
 
 ### Phase 6 — Interpretability on the new model
 
-**On hold (2026-10-06).** The BRAF test was planned on the pair attention's
+**Minimal version done 2026-10-13, all three tests passed** (below). The
+original plan was put on hold on 2026-10-06: the BRAF test was planned on the pair attention's
 weights. Stage A's attention is near uniform, so its weights carry nothing to
 interpret. Run this phase only if the final model has a component whose
 attention or attribution is worth testing; otherwise report it as not done.
 
 - [ ] Repeat the experiment 15 BRAF test using attention weights: does
       attention on BRAF track measured ln(IC50) across BRAF-mutant lines,
-      against 50 untrained models, including held-out cell lines?
-- [ ] Repeat the experiment 16 target-removal test if time allows.
+      against 50 untrained models, including held-out cell lines? Not
+      possible on `final`, which has no attention; replaced by the minimal
+      version below.
+- [ ] Repeat the experiment 16 target-removal test if time allows. Replaced
+      by test 1 below (removal at inference, no retraining).
+
+#### Minimal version on `final` (decided 2026-10-13)
+
+**Reopened 2026-10-13 in a minimal form**, on the one part of `final` that
+has something to test: the pair features. It is a sensitivity test on five
+hand-built inputs, not a gene-level attribution and not the SHAP module of
+the proposal. Script: `src/final_model/pair_feature_check.py`.
+
+**Prerequisite.** No `final` run kept its weights (only attention runs do).
+`run_ablation.py` got a `--save-weights` flag, and `final` is trained again
+on seeds 42-46 into its own file, `results/final_weights_results.csv`, on
+this laptop. Found while setting this up: **runs with `mol_graph` are not
+bit-reproducible even on one machine with one seed** (three 1-epoch repeats
+of `final`: test 1.4190 / 1.4370 / 1.4338; `base+proteomics+std_targets`
+twice: 1.3344 both times). So these weights are new runs of `final`, not
+copies of the ladder rows; their RMSE is reported beside the ladder's.
+
+**The counterfactual.** For a pair whose target is itself mutated, the
+"hit removed" input is the same pair described as if the nearest mutation
+were one hop away: `direct` 1 to 0 and `proximity` 1.0 to 0.5, the other
+three features unchanged. That input is in distribution (54,844 pairs have
+it). The effect of the hit is prediction with the real features minus
+prediction with the hit removed, in ln(IC50) units; negative means the model
+predicts the pair more sensitive because of the hit. The omics inputs are
+untouched, so the model can still see the mutation through Mut_CNV.
+
+**Controls.** 50 untrained models of `final`'s architecture (random
+initialisations 0-49), scored the same way, as in experiment 15.
+
+**Tests and pass rules, written before the weights existed:**
+
+1. **Use.** On direct-hit pairs of held-out cell lines (validation 213, test
+   211): RMSE with the real features against RMSE with the hit removed.
+   *Passes if* the real features give the lower RMSE on all 5 seeds on both
+   folds. Also reported: mean effect and signed error with and without.
+2. **Direction across drugs.** For each drug with at least 3 direct-hit
+   pairs on held-out cell lines (validation and test together): the model's
+   mean effect, in units of that drug's training std, against the measured
+   difference between hit and non-hit held-out cell lines for that drug.
+   Spearman correlation across drugs. *Passes if* it is positive on all 5
+   seeds and at most 2 of the 50 controls reach the seed mean.
+3. **BRAF case study** (the experiment 15 test): BRAF-mutant cell lines on
+   PLX-4720, SB590885 and Dabrafenib, 157 pairs, 44 of them on held-out cell
+   lines. Spearman correlation across pairs between the model's effect and
+   measured ln(IC50): is the effect most sensitising where the cell line is
+   most sensitive? *Passes if*, on the 44 held-out pairs, it is positive on
+   at least 4 of 5 seeds and at most 2 of the 50 controls reach the seed
+   mean. The share of pairs with a sensitising effect is reported but not
+   used: experiment 15 showed the sign alone does not separate trained from
+   untrained models.
+
+A test that fails is reported as failed. Passing all three shows that the
+trained model uses the direct-hit signal in the direction the measurements
+support; it does not show a mechanism, and it covers 1.26% of pairs.
+
+**Result (2026-10-13): all three passed.** Weights: `final` trained again,
+11:47 to 13:34, 5 runs, from `5efc470` plus the then-uncommitted
+`--save-weights` flag. Test 1.2698 +/- 0.0126 (ladder: 1.2737 +/- 0.0144),
+validation 1.2442 (ladder 1.2441), so the new draws agree with the ladder's.
+
+| Test | Result | Rule met? |
+|---|---|---|
+| 1. Use | Direct-hit RMSE, real against hit removed: validation 1.300 / 1.652, test 1.410 / 1.643. Signed error +0.16 / -0.02 with, +0.54 / +0.46 removed | yes, 5 of 5 seeds on both folds |
+| 2. Direction across drugs | Spearman +0.725 +/- 0.049 over 30 drugs; untrained +0.034 +/- 0.312 | yes, 5 of 5 seeds, 0 of 50 controls |
+| 3. BRAF, 44 held-out pairs | Spearman +0.633 +/- 0.026 (within drug +0.658); untrained -0.049 +/- 0.263 | yes, 5 of 5 seeds, 0 of 50 controls |
+
+- The model's effect is ordered like the measurements: BRAF inhibitors about
+  -1.1 z, EGFR inhibitors about -0.5 z, MIRA-1 on TP53 about 0 (its hits are
+  a quarter of all direct hits and are not sensitising).
+- It is smaller than the measured hit against non-hit difference (0.36
+  against 0.88 on average). That is expected: the measured figure is the
+  whole difference, the model's is what the features add beyond the omics.
+- It is sensitising for 29 of 30 drugs. Of the 7 drugs whose hit cell lines
+  are measured as more resistant, the sign is right for one.
+- Caveat on test 3, as in experiment 15: the effect correlates +0.47 with
+  the prediction without the hit, and the hit shifts the level more than it
+  re-ranks cell lines (rank correlation with measured ln(IC50) +0.80 with,
+  +0.78 without).
+- Not done: SHAP over all inputs; the four other pair features separately.
+  The omics inputs are PCA components, so nothing here names a gene other
+  than a drug's annotated target.
+- The frontend serves `HeteroIC50GNN`, not `final`; none of this is in it.
+- Details: `src/ABLATION.md` section 11.
 
 ### Phase 7 — Report
 - [ ] Rewrite `docs/architecture.md` for the new model. Its section 1.3 is
@@ -745,6 +887,8 @@ attention or attribution is worth testing; otherwise report it as not done.
 | `src/models/pair_graph_drp.py` | `PairGraphDRP`: frozen base + a per-pair vector into the predictor, from features or from `PairAttention` |
 | `src/final_model/pair_gate_report.py` | subset RMSE and paired bootstrap from saved predictions (`--configs`, `--baseline`, `--tag`) |
 | `src/final_model/pair_attention_check.py` | whether the trained attention finds a mutated target, against untrained modules |
+| `src/final_model/pair_feature_check.py` | Phase 6, minimal: whether the trained `final` uses the direct-hit signal in the measured direction, against untrained models |
+| `src/final_model/results/final_weights_results*` | `final` trained again with `--save-weights` (5 seeds), its weights, and the check's output |
 | `src/final_model/results/pair_gate_results_*attention*.csv` | Stage A subset metrics, paired deltas and the attention check |
 | `src/final_model/results/pair_gate_results*.csv` | Phase 3 gate runs, subset metrics, paired deltas |
 | `src/final_model/results/ablation_results_*graph_decision*.csv` | graph decision: subset metrics and paired deltas against the candidate, and (`_vs_mol_graph`) against the candidate plus `mol_graph` |
@@ -831,4 +975,5 @@ attention or attribution is worth testing; otherwise report it as not done.
 - Which row Phase 5 builds on: closed 2026-10-12. Phase 5 runs `final`.
 - Where is the MoGraphDRP repo on disk, and can it be run on their data under a
   grouped split for a system-level comparison?
-- Report deadline, which decides whether Phase 6 and the leave-drugs-out run fit.
+- Report deadline, which decides whether a SHAP module fits (leave-drugs-out
+  and the minimal Phase 6 are done).

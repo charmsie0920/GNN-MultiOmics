@@ -1,11 +1,11 @@
 # Runbook — the remaining runs, split across two laptops
 
-Written 2026-10-11, status updated 2026-10-12. What is left to run before the
+Written 2026-10-11, status updated 2026-10-13. What is left to run before the
 report, who runs it, on which machine, in what order, and into which file. The
 plan and the reasons are in [`CLAUDE.md`](../CLAUDE.md); the results go into
 [`src/ABLATION.md`](../src/ABLATION.md).
 
-## 0. Status on 2026-10-12
+## 0. Status on 2026-10-13
 
 **Done**
 
@@ -15,28 +15,26 @@ plan and the reasons are in [`CLAUDE.md`](../CLAUDE.md); the results go into
 | B2. Anchor, 5 runs | Laptop B | `base` 1.3290 +/- 0.0169 against 1.3252 +/- 0.0119 on laptop A | section 2 |
 | B3. `HeteroIC50GNN`, 6 runs | Laptop B | 1.3203 +/- 0.0007 raw, 1.3092 +/- 0.0147 standardised | section 10 |
 | B4. Random split part 1, 12 runs | Laptop B | `base` 1.0162, `aligned` 0.9941, `base+proteomics` 1.0134, `base+std_targets` 0.9423 | section 9 |
+| B5. Random split part 2, 3 runs | Laptop B | `final` 0.9622 +/- 0.0058 (-0.054 against `base`, 3 of 3 seeds); 0.020 worse than `base+std_targets` alone | section 9 |
+| `ldo` protocol in `run_ablation.py` | code, `e4e3517` | 168 / 36 / 36 drugs, floor 2.5500, `std_targets` refused | section 11 |
+| B6. Leave-drugs-out, 10 runs | Laptop B | `base` 2.1722 +/- 0.0369, `final` without standardisation 2.0038 +/- 0.0843 (-0.169, 4 of 5 seeds; interval over drugs includes 0) | section 11 |
 
 **Final model, chosen 2026-10-12:** `final` =
 `base+proteomics+std_targets+mol_graph+pair_features`. Test 1.2737 +/- 0.0144
 against `base` 1.3252 +/- 0.0119, grouped split, 5 seeds, laptop A.
 
-**Left, in order**
+**Left: nothing.** Every block of this runbook is run and written up.
 
-| # | What | Who | Blocked by |
-|---|---|---|---|
-| 1 | Commit and push the `final` alias and the document updates | Laptop A | nothing |
-| 2 | B5: `final` under the random split, 3 runs (about 1.6 h on laptop B) | Laptop B | 1 |
-| 3 | Add the `ldo` protocol to `run_ablation.py` (section 6) | Laptop A | nothing |
-| 4 | B6: leave-drugs-out, 10 runs (about 2.4 h on laptop A, 3.9 h on B) | either laptop; A is faster | 3 |
-| 5 | Commit the missing prediction file `base+std_targets__random__seed43.npz` | Laptop B | nothing |
-| 6 | Write up B5 and B6; regenerate `docs/results.md` | Laptop A | 2 and 4 |
-
-Done since the last update: the graph-decision results were committed and
-pushed, `origin/dev` was pulled, the final model was chosen, and it was named
-`final` in `run_ablation.py` (2026-10-12).
+Done since the last update (2026-10-12 to 2026-10-13): the `final` alias was
+pushed and pulled on laptop B, B5 was run, the missing prediction file
+`base+std_targets__random__seed43.npz` was committed (`edb1bf8`), the `ldo`
+protocol was added, B5 was written up, and B6 was run on laptop B
+(`5efc470`) and written up.
 
 **Optional:** `HeteroIC50GNN` seeds 45 and 46 on laptop B (about a minute
-each); RF and MLP baselines; the growth-rate rung, if the supervisor agrees.
+each); RF and MLP with seeds under the ladder's settings (their rows are
+filled from the earlier experiments); the growth-rate rung, if the supervisor
+agrees.
 
 **Open with the supervisor:** the proposal asks for a heterogeneous GNN with
 GAT layers and cross-attention fusion. The eligible configs have a GCN on the
@@ -52,8 +50,8 @@ drug molecule and concatenation. See "What the proposal asks for" in
 | B2. Anchor: `base`, grouped split | Laptop B | 5 | about 0.8 h | **done** 2026-10-11 |
 | B3. `HeteroIC50GNN` baseline | Laptop B | 6 | about 10.4 h | **done** 2026-10-11 |
 | B4. Random split, part 1 | Laptop B | 12 | about 2.5 h | **done** 2026-10-11 |
-| B5. Random split, part 2 (final model) | Laptop B | 3 | about 1 h | **left**: runnable once the `final` alias is pulled |
-| B6. Leave-drugs-out | either | 10 | about 2.4 h | **left**: waits for the code in section 6 |
+| B5. Random split, part 2 (final model) | Laptop B | 3 | about 1 h | **done** 2026-10-12 (2.2 h on laptop B) |
+| B6. Leave-drugs-out | Laptop B | 10 | about 2.4 h | **done** 2026-10-13 (3.7 h on laptop B) |
 
 **Measured 2026-10-11: laptop B is slower on the ladder, 0.63x the speed of
 laptop A** (871 s against 546 s per `base` run), so its ladder blocks take about
@@ -173,7 +171,7 @@ Measured: 1.2731, 1.2737 and 1.3225.
 `run_ablation.py`, is committed, and laptop B pulls that commit before B5
 and B6.
 
-## 5. Laptop B — blocks B1 to B5 (B2, B3, B4 done; B5 left)
+## 5. Laptop B — blocks B1 to B5 (B2 to B5 done)
 
 ### B1. Timing and data check (2 minutes) — not reported, superseded by B2
 
@@ -243,8 +241,8 @@ done
 
 **Result (test, 3 seeds):** `base` 1.0162 +/- 0.0011, `aligned` 0.9941 +/-
 0.0047, `base+proteomics` 1.0134 +/- 0.0063, `base+std_targets` 0.9423 +/-
-0.0080. Committed as `e34f390`. One prediction file was not committed:
-`base+std_targets__random__seed43.npz`.
+0.0080. Committed as `e34f390`. The one prediction file that was missing
+(`base+std_targets__random__seed43.npz`) was added in `edb1bf8`.
 
 The random pair split is a sanity check against the benchmark's protocol,
 not a headline result. It is never ranked against the grouped rows.
@@ -260,7 +258,12 @@ python -u src/final_model/run_ablation.py \
 - Reference from Phase 0, same split, older script: `aligned` 0.978 +/-
   0.002. Expect best epochs near 200 here, unlike the grouped split.
 
-### B5. Random split, part 2 — left; runnable once the `final` alias is pulled
+### B5. Random split, part 2 — done 2026-10-12
+
+**Result (3 seeds, committed as `c346fc9`):** `final` validation 0.9610 +/-
+0.0022, test 0.9622 +/- 0.0058, against `base` 1.0162 +/- 0.0011 on the same
+machine (-0.054, 3 of 3 seeds). `base+std_targets` alone is 0.020 better than
+`final` on every seed. Best epoch 48 / 67 / 46; 2,649 s per run.
 
 Pull the commit that defines `final`, then run the same command with
 `final` added. Finished rows are skipped:
@@ -272,20 +275,33 @@ python -u src/final_model/run_ablation.py \
   --out src/final_model/results/random_split_results.csv
 ```
 
-## 6. Block B6, leave-drugs-out — left, not runnable yet
+## 6. Block B6, leave-drugs-out — done 2026-10-13 (laptop B)
 
 Tests the final model on drugs it has never seen. It is self-contained (it
 has its own `base` rows), so it can run on either laptop; laptop A is about
-1.6x faster. Two things must exist first, and neither does on 2026-10-12:
+1.6x faster. Both things it needed exist:
 
-1. The final model must be chosen. Done 2026-10-12: `final`.
-2. `run_ablation.py` only knows the `grouped` and `random` protocols. A
-   `ldo` protocol has to be added (using `leave_drugs_out_split` from
-   `src/data/experiment_utils.py`), with standardised targets refused under
-   it, because unseen drugs have no statistics.
+1. The final model is chosen (2026-10-12): `final`.
+2. `run_ablation.py` has the `ldo` protocol since `e4e3517` (2026-10-12). It
+   uses `leave_drugs_out_split` from `src/data/experiment_utils.py` and
+   refuses any config with standardised targets, `final` included, because
+   unseen drugs have no statistics. Checked on laptop A on 2026-10-13 with a
+   1-epoch run into scratch: 168 / 36 / 36 drugs, 78,973 / 16,878 / 15,948
+   pairs, mean-only floor 2.5500.
 
-Planned command, once both are done. The final model runs without target
-standardisation here:
+**Result (laptop B, 5 seeds, committed as `5efc470`, 3.7 h).** Test fold, 36
+held-out drugs, mean-only floor 2.5500:
+
+| Config | Validation | Test |
+|---|---|---|
+| `base` | 2.2021 +/- 0.0283 | 2.1722 +/- 0.0369 |
+| `base+proteomics+mol_graph+pair_features` | 2.0715 +/- 0.0268 | 2.0038 +/- 0.0843 |
+
+Delta on test -0.169, 4 of 5 seeds; the interval over the 36 drugs includes
+0. Not better than the earlier MLP's single run (1.8516). Written up in
+`src/ABLATION.md` section 11.
+
+The command. The final model runs without target standardisation here:
 
 ```
 python -u src/final_model/run_ablation.py \
@@ -324,15 +340,20 @@ Done:
       `origin/dev` pulled (2026-10-12)
 - [x] Final model chosen by the rule in section 4 and named `final`
       (2026-10-12): `base+proteomics+std_targets+mol_graph+pair_features`
+- [x] Laptop A: the `final` alias and document updates committed and pushed
+      (2026-10-12)
+- [x] B5 random split part 2, 3 runs (laptop B, 2026-10-12): `final`
+      0.9622 +/- 0.0058
+- [x] Laptop B: `base+std_targets__random__seed43.npz` committed (`edb1bf8`)
+- [x] `ldo` protocol added to `run_ablation.py` (`e4e3517`, 2026-10-12)
+- [x] Write-up of B5 in `src/ABLATION.md` section 9 (2026-10-13)
+- [x] B6 leave-drugs-out, 10 runs (laptop B, 2026-10-13, `5efc470`)
+- [x] Write-up of B6 in `src/ABLATION.md` section 11; `docs/results.md`
+      regenerated, unchanged (2026-10-13)
 
 Left:
 
-- [ ] Laptop A: the `final` alias and document updates committed and pushed
-- [ ] `ldo` protocol added to `run_ablation.py`
-- [ ] B5 random split part 2, 3 runs (laptop B)
-- [ ] B6 leave-drugs-out, 10 runs (either laptop)
-- [ ] Laptop B: commit `base+std_targets__random__seed43.npz`
-- [ ] Write-up of B5 and B6; `docs/results.md` regenerated
+Nothing.
 
 Not needed any more:
 
