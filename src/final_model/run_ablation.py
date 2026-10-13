@@ -47,7 +47,8 @@ run's validation and test predictions are saved beside the CSV, in
 `<csv name>_predictions/`, for subset metrics and paired comparisons. Runs with
 the attention module also save their best-epoch weights, in
 `<csv name>_checkpoints/` (about 17 MB each), because attention
-weights cannot be recovered from predictions.
+weights cannot be recovered from predictions. `--save-weights` does the same
+for any run.
 
 Run from the repository root:
     python "src/final_model/run_ablation.py" --list
@@ -316,9 +317,9 @@ def train(model, loader, predict_ln, val_idx, y_va, keys, device, max_epochs) ->
 
 
 def run_one(config_id, protocol, data, batched, threshold, device, seed,
-            max_epochs) -> tuple[dict, dict, dict | None]:
+            max_epochs, save_weights=False) -> tuple[dict, dict, dict | None]:
     """Train and score one run -> (results row, validation and test predictions,
-    best-epoch weights for attention runs or None)."""
+    best-epoch weights for attention runs and on request, or None)."""
     gathered, fingerprints, codes, y, groups, pair_features, pair_sets = data
     cfg = resolve_config(config_id)
     # What each row gives the pair module: its features, or its cell line's row
@@ -424,9 +425,10 @@ def run_one(config_id, protocol, data, batched, threshold, device, seed,
     }
     # Attention weights can only be read from the trained model, so those runs
     # keep their best-epoch weights. Other runs are fully described by their
-    # predictions and keep none.
+    # predictions and keep none, unless `--save-weights` asks for them (an
+    # analysis that re-runs the trained model on changed inputs needs them).
     state = None
-    if cfg["pair_module"] == "attention":
+    if cfg["pair_module"] == "attention" or save_weights:
         state = {k: v.cpu() for k, v in model.state_dict().items()}
     return row, predictions, state
 
@@ -437,7 +439,7 @@ def predictions_dir(results_csv: Path) -> Path:
 
 
 def checkpoints_dir(results_csv: Path) -> Path:
-    """Where the attention runs' weights live: `<csv name>_checkpoints/`."""
+    """Where saved best-epoch weights live: `<csv name>_checkpoints/`."""
     return results_csv.with_name(results_csv.stem + "_checkpoints")
 
 
@@ -468,6 +470,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="results CSV to append to (use a scratch path for smoke tests)")
     parser.add_argument("--rerun", action="store_true",
                         help="repeat runs already present in the results CSV")
+    parser.add_argument("--save-weights", action="store_true",
+                        help="keep every run's best-epoch weights in <csv name>_checkpoints/ "
+                             "(attention runs always do)")
     parser.add_argument("--list", action="store_true", help="print the ladder and exit")
     return parser.parse_args(argv)
 
@@ -521,7 +526,7 @@ def main(argv: list[str] | None = None) -> None:
     prediction_dir.mkdir(parents=True, exist_ok=True)
     for config_id, protocol, seed in todo:
         row, predictions, state = run_one(config_id, protocol, data, batched, threshold, device,
-                                          seed, args.max_epochs)
+                                          seed, args.max_epochs, args.save_weights)
         # Predictions and weights first: a row in the CSV then always has them.
         run_name = f"{config_id}__{protocol}__seed{seed}"
         np.savez_compressed(prediction_dir / f"{run_name}.npz", **predictions)
