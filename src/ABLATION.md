@@ -5,7 +5,7 @@
 **Raw results:** `src/final_model/results/ablation_results.csv`
 **Companions:** [`results.md`](../docs/results.md), [`13_seed_variance_results.md`](../docs/13_seed_variance_results.md), [`09_split_protocol_comparison.md`](../docs/09_split_protocol_comparison.md)
 **Date:** 2026-10-03 · **Runtime:** 6.5 h (24 runs, 23,523 s) · **Hardware:** one laptop GTX 1650 (4 GB), torch 2.13.0+cu130
-**Status:** Phase 2 filled (components a-e, 3 seeds, grouped split). Phase 3 filled 2026-10-04 (feature gate for component f, 10 runs over 5 seeds, 98 min, commit `cc303ee`): gate not passed, see section 6f. The attention form of f is not built; sections that depend on it, on the random split or on the final-model choice are still `TBD`. Graph decision filled 2026-10-12 (15 runs, 5 seeds, 5.8 h, commit `2e425a9`): all three graph-bearing configurations are eligible by the rule, see the update in section 5 and section 8. The final configuration is not yet chosen.
+**Status:** Phase 2 filled (components a-e, 3 seeds, grouped split). Phase 3 filled 2026-10-04 (feature gate for component f, 10 runs over 5 seeds, 98 min, commit `cc303ee`): gate not passed, see section 6f. The attention form of f was built and rejected on 2026-10-05 (section 6f). Graph decision filled 2026-10-12 (15 runs, 5 seeds, 5.8 h, commit `2e425a9`): all three graph-bearing configurations are eligible by the rule, see the update in section 5. The final model was chosen on 2026-10-12 and is named `final` (section 8). Filled 2026-10-13: `final` under the random split (laptop B, section 9) and the RF and MLP rows of the comparison table (section 10). Leave-drugs-out filled 2026-10-13 (laptop B, 10 runs, 3.7 h, section 11). Every run of the plan is now in this file. Interpretability filled 2026-10-13 in a minimal form (section 11): a sensitivity test of the direct-hit signal on `final`, three pre-written rules, all passed. Still open: the `TBD` cells of sections 3, 4 and 13 (justifications, hypotheses, figures).
 
 > Anything marked *(report)* is meant to be lifted into the final report.
 
@@ -37,7 +37,7 @@ These must be identical for every rung, otherwise a delta is not attributable.
 | LR schedule | **constant** (Phase 0 frozen base) |
 | Checkpoint | best validation RMSE, in ln(IC50) units |
 | Seeds | 42, 43, 44 (3 per row); the Phase 3 gate and Phase 4 stage A rows use 42-46 (5 per arm). Since 2026-10-07 `base`, `base+proteomics`, `base+std_targets` and `base+proteomics+std_targets` also have 42-46 in the ladder CSV, and since 2026-10-12 so do the three graph-decision configurations (section 5) |
-| Hardware | all 24 runs on one GTX 1650 ("laptop A"), one process, commit `66205f8`. Every ladder row in this file is from laptop A unless a table says "laptop B". Laptop B (a teammate's machine, since 2026-10-11) ran the cross-machine anchor, `HeteroIC50GNN` and the random split; see "Second machine" below |
+| Hardware | all 24 runs on one GTX 1650 ("laptop A"), one process, commit `66205f8`. Every ladder row in this file is from laptop A unless a table says "laptop B". Laptop B (a teammate's machine, since 2026-10-11) ran the cross-machine anchor, `HeteroIC50GNN`, the random split and leave-drugs-out; see "Second machine" below |
 | Metrics | RMSE, MAE, R², PCC, SCC; AUC and F1 at the shared median threshold |
 
 Early-stopping and LR-scheduler patience are both 200, so neither fires within
@@ -49,6 +49,19 @@ Aligned to these settings on 2026-10-03; no ladder run predates that.
 only. The grouped split is fixed at `random_state=42`, so every run uses the
 same 80 test cell lines. The std below is training noise; variance from the
 choice of test cell lines is not measured.
+
+**A seed does not pin a run that uses the molecular graph (found
+2026-10-13).** On laptop A, three 1-epoch repeats of `final` with seed 42
+gave test RMSE 1.4190 / 1.4370 / 1.4338, while two repeats of
+`base+proteomics+std_targets` gave 1.3344 both times. So configurations
+without `mol_graph` reproduce exactly on one machine (as checked for `base`
+on 2026-10-04 and 2026-10-07), and configurations with it (`base+mol_graph`,
+`aligned`, `full`, the graph-decision rows, `final`) do not. The cause was
+not traced; the GCN's sum pooling on the GPU is the likely source. For those
+rows a "seed" is one draw, the per-seed pairing with `base` is a pairing of
+draws rather than of identical initial conditions, and a re-run lands within
+seed-to-seed noise instead of on the same number. No conclusion in this file
+depends on exact reproduction of such a row.
 
 **Second machine (laptop B), anchor run 2026-10-11, results committed in `dcbc304`.** GPU
 results are not bit-identical across hardware, so no delta in this file is
@@ -840,9 +853,22 @@ Per-seed test RMSE: 1.2567 / 1.2694 / 1.2653 / 1.2906 / 1.2867. Best epoch
   fusion. Those were in the proposal; the first is covered only by the
   compared `HeteroIC50GNN` baseline (section 10), and cross-attention fusion
   was tested and rejected (section 6a).
-- **Still to run for it:** the random split (3 seeds, laptop B) and
-  leave-drugs-out, which uses `base+proteomics+mol_graph+pair_features`
-  because standardisation cannot be used on unseen drugs.
+- **Under the random split** (laptop B, 3 seeds, section 9): 0.9622 ± 0.0058
+  against `base` 1.0162 ± 0.0011 (−0.054, 3 of 3 seeds). Not the best
+  configuration there: `base+std_targets` alone is 0.020 better on every
+  seed.
+- **On unseen drugs** (leave-drugs-out, laptop B, 5 seeds, section 11):
+  run without standardisation, which cannot be used on unseen drugs, it
+  reaches 2.0038 ± 0.0843 against `base` 2.1722 ± 0.0369 (−0.169, 4 of 5
+  seeds) and a mean-only floor of 2.5500. The interval over the 36 held-out
+  drugs includes 0, and it is not better than the earlier flat MLP's single
+  run (1.8516). The model is built and selected for unseen cell lines; it
+  makes no claim about new compounds.
+- **What it does with the pair features** (section 11, 2026-10-13): with
+  the direct hit removed at inference its RMSE on those pairs goes from 1.41
+  to 1.64 on test, and its effect per drug tracks the measured one
+  (Spearman +0.73 over 30 drugs; 0 of 50 untrained models reach it).
+- **Nothing is left to run for it.**
 
 The record of how the candidate was reached follows.
 
@@ -935,8 +961,9 @@ Not a ranking. It checks that the reproduction (`aligned`) is faithful.
 | Config | Random-split RMSE | Reference |
 |---|---|---|
 | `aligned` (Phase 0, GE+Proteomics) | **0.978 ± 0.002** (3 seeds) | MoGraphDRP without XGBoost: 0.9497 |
-| `base` | TBD | — |
-| `full` | TBD | MoGraphDRP with XGBoost: 0.6622 |
+| `base` | 1.0162 ± 0.0011 (3 seeds, laptop B) | — |
+| `final` | 0.9622 ± 0.0058 (3 seeds, laptop B) | MoGraphDRP with XGBoost: 0.6622. A reference, not a ranking: different pairs and data |
+| `full` | not run under this split; `final` took its place | — |
 
 **Phase 0 result (2026-10-01).** Source:
 `experiments/14_benchmark_alignment/benchmark_alignment_results.csv`.
@@ -962,18 +989,42 @@ Not a ranking. It checks that the reproduction (`aligned`) is faithful.
   GE+Proteomics; the ladder's `aligned` (= `base+mol_graph+bilinear`) uses
   GE+Mut_CNV. The two are not directly comparable.
 
-**Ladder configs under the random split (laptop B, run 2026-10-11, results
-committed in `e34f390`, seeds 42-44, `results/random_split_results.csv`).** A sanity
-check, never ranked against the grouped rows. Per-drug mean floor on this
-split: 1.5265.
+**Ladder configs under the random split (laptop B, seeds 42-44,
+`results/random_split_results.csv`).** The four single configs were run on
+2026-10-11 (committed in `e34f390`) and `final` on 2026-10-12 (committed in
+`c346fc9`), all on laptop B, 15 rows. A sanity check, never ranked against
+the grouped rows. Floors on this split: global mean 2.8384, per-drug mean
+1.5265.
 
-| Config | Validation RMSE | Test RMSE | Δ vs `base` | PCC | Best epoch |
-|---|---|---|---|---|---|
-| `base` | 1.0142 | 1.0162 ± 0.0011 | 0 | 0.9338 | 180 / 194 / 176 |
-| `aligned` (GE+Mut_CNV) | 0.9855 | 0.9941 ± 0.0047 | −0.0221 | 0.9368 | 195 / 198 / 196 |
-| `base+proteomics` | 1.0105 | 1.0134 ± 0.0063 | −0.0028 | 0.9341 | 139 / 197 / 177 |
-| `base+std_targets` | 0.9343 | 0.9423 ± 0.0080 | −0.0739 | 0.9437 | 140 / 158 / 123 |
-| final model | not run | not run | | | |
+| Config | Validation RMSE | Test RMSE | Δ vs `base` | Seeds better | PCC | R² | Best epoch |
+|---|---|---|---|---|---|---|---|
+| `base` | 1.0142 ± 0.0028 | 1.0162 ± 0.0011 | 0 | | 0.9338 | 0.8718 | 180 / 194 / 176 |
+| `aligned` (GE+Mut_CNV) | 0.9855 ± 0.0041 | 0.9941 ± 0.0047 | −0.0222 | 3 / 3 | 0.9368 | 0.8773 | 195 / 198 / 196 |
+| `base+proteomics` | 1.0105 ± 0.0038 | 1.0134 ± 0.0063 | −0.0028 | 2 / 3 | 0.9341 | 0.8725 | 139 / 197 / 177 |
+| `base+std_targets` | 0.9343 ± 0.0024 | 0.9423 ± 0.0080 | −0.0739 | 3 / 3 | 0.9437 | 0.8898 | 140 / 158 / 123 |
+| **`final`** | 0.9610 ± 0.0022 | **0.9622 ± 0.0058** | −0.0540 | 3 / 3 | 0.9412 | 0.8851 | 48 / 67 / 46 |
+
+`final` per seed (42 / 43 / 44): test 0.9602 / 0.9578 / 0.9687, Δ vs `base`
+−0.055 / −0.059 / −0.048. MAE 0.7145, 3,644,525 parameters, 2,649 s per run
+on laptop B. Gain over the per-drug mean floor of this split: +0.5642
+(`base` +0.5102, `base+std_targets` +0.5842).
+
+- **`final` beats `base` under the random split too**, by about the same
+  amount as under the grouped split: −0.054 here (laptop B, 3 of 3 seeds)
+  against −0.051 there (laptop A, 5 of 5). Both are past the ~0.03 band.
+- **It is not the best configuration under this split.**
+  `base+std_targets` alone is better than `final` on every seed: by 0.020 on
+  test (+0.024 / +0.018 / +0.018) and 0.027 on validation. That is inside the
+  band, but consistent in sign. So under the random split the three parts
+  `final` adds to standardisation (proteomics, the molecular graph, the pair
+  features) make it slightly worse together, where under the grouped split
+  they make it better (1.2737 against 1.3086 for `base+std_targets`).
+- **`final` peaks early here**, at epoch 46-67, while the other four peak at
+  123-198. Which added part causes that was not tested: only single
+  components and `final` were run under this split.
+- `final` was selected on the grouped split's validation fold. Nothing was
+  selected on this split, and this result does not change the choice: the
+  grouped split is the headline protocol.
 
 - **The two kept components swap roles between the splits.** Under the
   random split, where every cell line is seen in training, standardisation is
@@ -986,28 +1037,43 @@ split: 1.5265.
 - Protocol gap for `base` (grouped − random): 1.3290 − 1.0162 = 0.313, both
   on laptop B. Compare with the 0.347 measured in
   [09](../docs/09_split_protocol_comparison.md).
-- One prediction file is missing from the repository
-  (`base+std_targets__random__seed43.npz`); its CSV row is present.
-
-Protocol gap for the final model (random − grouped): TBD, after the final
-model is named and run under the random split.
+- Protocol gap for `final` (grouped − random): 1.2737 − 0.9622 = 0.312. This
+  one crosses machines (grouped on laptop A, random on laptop B); the anchor
+  in section 2 puts the machine difference at 0.004 on the mean. The gap is
+  the same size as `base`'s, so `final` does not close any of the distance
+  between seen and unseen cell lines.
+- All 15 prediction files are in the repository. The one that was missing
+  (`base+std_targets__random__seed43.npz`) was added in `edb1bf8`.
 
 ## 10. Comparison with the other models on the same pairs
 
-Same 111,799 pairs, same grouped split. TBD seeds each.
+Same 111,799 pairs, same grouped split, test fold. The number of seeds
+differs by row and is given in the notes; a single run carries the ~0.03
+band and is not a ranking.
 
 | Model | RMSE | PCC | Notes |
 |---|---|---|---|
 | Per-drug mean | 1.4889 | — | floor |
-| RF | TBD | TBD | |
-| MLP | TBD | TBD | |
-| CrossAttention (E10) | 1.3029 ± 0.0126 | TBD | 5 seeds, [13](../docs/13_seed_variance_results.md) |
+| RF, GE+Mut_CNV+Proteomics, fingerprint | 1.3805 | 0.8692 | single run, laptop A, `experiments/06_full_matrix`. Same omics as `final`. Best RF row: GE+Proteomics, 1.3712 |
+| MLP, GE+Mut_CNV+Proteomics, fingerprint | 1.5795 | 0.8357 | single run, laptop A, `experiments/06_full_matrix`. Same omics as `final`; worse than the per-drug mean |
+| MLP, Proteomics, fingerprint (E04) | 1.3273 ± 0.0286 | 0.8802 | 5 seeds, laptop A, [13](../docs/13_seed_variance_results.md). The best MLP row; its recorded single run was 1.2843 |
+| CrossAttention, GE+Proteomics, fingerprint (E10) | 1.3029 ± 0.0126 | 0.8856 | 5 seeds, laptop A, [13](../docs/13_seed_variance_results.md) |
 | HeteroIC50GNN, raw targets | 1.3203 ± 0.0007 | 0.8815 | **laptop B**, 3 seeds (42-44), validation 1.2628. The only trained PPI GNN in the report |
 | HeteroIC50GNN, per-drug standardised targets | 1.3092 ± 0.0147 | 0.8840 | **laptop B**, 3 seeds, validation 1.2462 |
 | `base`, laptop B anchor | 1.3290 ± 0.0169 | 0.8785 | **laptop B**, 5 seeds; the reference for the two rows above |
 | `aligned` (MoGraphDRP-style) | 1.3416 ± 0.0088 | 0.8751 | 3 seeds, GE+Mut_CNV, this study |
 | `base` (this ladder) | 1.3232 ± 0.0105 | 0.8797 | 3 seeds, this study |
 | **Final model** (`final`) | **1.2737 ± 0.0144** | 0.8923 | laptop A, 5 seeds. `base` on the same machine and seeds: 1.3252 ± 0.0119 |
+
+- **RF, MLP and CrossAttention are the earlier experiments' results, not
+  re-run here** (filled in 2026-10-13 from `experiments/06_full_matrix/` and
+  `experiments/13_seed_variance/`). Same pairs, split and floor; each was
+  trained with its own script and settings, not the ladder's. The RF and the
+  three-omics MLP are one run each.
+- **`final` is ahead of every compared model with seeds:** by 0.029 against
+  CrossAttention (1.3029), 0.054 against the best MLP (1.3273) and 0.036 to
+  0.047 against `HeteroIC50GNN`. These are unpaired differences of means, and
+  the CrossAttention one is at the edge of the ~0.03 band.
 
 **`HeteroIC50GNN` (laptop B, run 2026-10-11, results committed in `2e425a9`,
 `results/hetero_gnn/`).** The older heterogeneous GNN over the PPI,
@@ -1063,8 +1129,190 @@ of 80 held-out cell lines and applied to the other 80:
   omics layer, and a known confound of IC50 (cite the growth-rate inhibition
   literature if used). Not run, not decided.
 
-- **Leave-drugs-out** (unseen compounds, no standardisation): TBD vs the MLP's 1.8516 in [10](../docs/10_leave_drugs_out_results.md).
-- **Interpretability:** does attention on BRAF track measured sensitivity against untrained models? TBD, see [15](../docs/15_interpretability_validation_results.md).
+### Leave-drugs-out — unseen compounds (laptop B, 2026-10-13)
+
+Whole drugs are held out instead of cell lines: 168 / 36 / 36 drugs
+(78,973 / 16,878 / 15,948 pairs), the same split as
+[10](../docs/10_leave_drugs_out_results.md). Every cell line is seen in
+training. Run on laptop B, 10 runs, 3.7 h, results committed in `5efc470`
+(`results/ldo_results.csv`); the `ldo` protocol is commit `e4e3517`.
+`final` cannot run here, because a held-out drug has no statistics to
+standardise with, so the model tested is `final` without standardisation:
+`base+proteomics+mol_graph+pair_features`. Seeds 42-46.
+
+The per-drug mean floor does not exist under this split. References on the
+test fold: global training mean 2.5500; each cell line's own training mean
+2.3874.
+
+| Config | Validation RMSE | Test RMSE | PCC | R² | MAE | Gain over the mean-only floor (2.5500) | Best epoch (42-46) |
+|---|---|---|---|---|---|---|---|
+| `base` | 2.2021 ± 0.0283 | 2.1722 ± 0.0369 | 0.5909 | 0.2603 | 1.7220 | +0.3777 | 181 / 166 / 140 / 182 / 114 |
+| `final` without standardisation | 2.0715 ± 0.0268 | **2.0038 ± 0.0843** | 0.6835 | 0.3698 | 1.5440 | +0.5462 | 20 / 30 / 165 / 185 / 47 |
+
+| Δ, `final` without standardisation − `base` | Δ | Seeds better | 95% CI, seeds | 95% CI, drugs | Per-seed Δ (42 / 43 / 44 / 45 / 46) |
+|---|---|---|---|---|---|
+| validation | −0.1306 | 5 / 5 | −0.187 to −0.075 | −0.315 to +0.023 | −0.161 / −0.105 / −0.107 / −0.194 / −0.086 |
+| test | −0.1685 | 4 / 5 | −0.314 to −0.023 | −0.441 to +0.091 | −0.292 / −0.239 / −0.114 / +0.007 / −0.205 |
+
+"Drugs" is a paired bootstrap over the fold's 36 held-out drugs, the unit
+that is resampled when a new compound arrives. It and the per-drug figures
+below are an ad-hoc analysis of the saved predictions, with no committed
+script.
+
+- **Both models beat the mean-only floor on unseen drugs**, so the drug
+  encoders transfer something to compounds they have not seen. R² is 0.26 and
+  0.37, against 0.77 and 0.79 on unseen cell lines: unseen drugs are the much
+  harder setting.
+- **The final model's parts help on average, but not established across
+  drugs.** −0.169 on test is far larger than the ~0.03 band and the seed
+  interval excludes 0, but the interval over drugs includes 0 on both folds.
+  It is better on 20 of the 36 test drugs and 20 of the 36 validation drugs.
+  The mean gain comes from a few drugs (drug `2011`: 3.06 to 1.05; `1020`:
+  4.09 to 2.22) while others get worse (`1088`: 2.52 to 3.58). With 36 drugs
+  per fold, which drugs are held out matters more than the seed.
+- **Most of the error is the drug's overall level.** 76% of `base`'s squared
+  test error and 70% of the other model's is one constant per drug: the
+  model misjudges how potent an unseen compound is on average. With that
+  removed, the two are level (1.064 and 1.093). So the gain is in guessing a
+  new drug's mean response, not in ranking cell lines for it.
+- **It cannot be attributed to one component.** Three things differ between
+  the two configs (proteomics, the molecular graph, the pair features). The
+  expectation is that the molecular graph matters most for unseen drugs
+  (section 6b), but no single-component rung was run under this split.
+- **Not better than the earlier flat models on this split.** The earlier
+  single runs in [10](../docs/10_leave_drugs_out_results.md) were MLP 1.8516,
+  RF 1.8719 and CrossAttention 1.9200 (fingerprint, GE+Proteomics, laptop A).
+  This model is 2.0038 ± 0.0843, its best seed 1.9286. The comparison is a
+  single run against a 5-seed mean, with different omics, training settings
+  and machine, so it is not a ranking; but there is no evidence that the
+  final model generalises to new compounds better than a flat MLP.
+- **Validation does not select well here.** The validation drugs are 36
+  different compounds. Across seeds, validation and test RMSE of the larger
+  model are anti-correlated (−0.91): seeds 44 and 45 have the lowest
+  validation RMSE, checkpoint late (epoch 165 and 185) and are the worst on
+  test. Its test std (0.084) is more than twice `base`'s.
+- By target annotation (test: 23 drugs with a known target, 13 without) the
+  gain is similar in both groups (−0.186 and −0.135) and both drug intervals
+  include 0. On the 23 test drugs with a target, both models are worse than
+  the mean-only floor of that subset (2.21 and 2.03 against 2.00).
+### Interpretability — what `final` does with the direct-hit signal (2026-10-13)
+
+The test planned for Phase 6 read the pair attention's weights; that
+attention is near uniform and is not in the final model. This is its minimal
+replacement, on the one pair-specific input `final` has: the five pair
+features. It is a sensitivity test on hand-built inputs. It is not a
+gene-level attribution and not the SHAP module of the proposal. Script:
+`final_model/pair_feature_check.py`; output
+`results/final_weights_results_pair_feature_check*.csv`.
+
+**Weights.** No `final` run had kept its weights, so `final` was trained
+again on seeds 42-46 with `--save-weights` (laptop A, 2026-10-13 11:47 to
+13:34, 6,425 s, `results/final_weights_results.csv`). These are new draws,
+not the ladder's rows (section 2): validation 1.2442 ± 0.0092 and test
+1.2698 ± 0.0126, against 1.2441 ± 0.0102 and 1.2737 ± 0.0144 in the ladder;
+single seeds differ by up to 0.018. Against `base`: −0.055, 5 of 5 seeds. A
+second set of five runs of `final` that agrees with the first.
+
+**Method.** A direct-hit pair is predicted twice: with its real features,
+and with the hit removed, meaning the same pair described as if its nearest
+mutation were one hop from a target (`direct` 1 to 0, `proximity` 1.0 to
+0.5; an input that 54,844 real pairs have). The *effect* of the hit is the
+first prediction minus the second, in ln(IC50) units; negative means the hit
+makes the model predict the pair more sensitive. The omics inputs are not
+changed. The null is 50 untrained models of the same architecture, as in
+[15](../docs/15_interpretability_validation_results.md). The three pass
+rules were written in `CLAUDE.md` before the weights existed.
+
+**1. Use — passed.** Direct-hit pairs of held-out cell lines:
+
+| Fold | Pairs | RMSE, real features | RMSE, hit removed | Seeds where real is better | Signed error, real | Signed error, removed | Mean effect |
+|---|---|---|---|---|---|---|---|
+| validation | 213 | 1.3001 ± 0.040 | 1.6524 ± 0.040 | 5 / 5 | +0.161 | +0.539 | −0.378 |
+| test | 211 | 1.4100 ± 0.053 | 1.6427 ± 0.062 | 5 / 5 | −0.016 | +0.461 | −0.477 |
+
+Rule: lower RMSE with the real features on all 5 seeds on both folds. Met.
+With the hit removed the trained model shows the same bias as models that
+never had the features (about +0.4 to +0.5, sections 5 and 6f).
+
+**2. Direction across drugs — passed.** For the 30 drugs with at least 3
+direct-hit pairs on held-out cell lines, the model's mean effect against the
+measured difference between hit and non-hit cell lines, both in units of the
+drug's training std:
+
+| Rows | Drugs | Spearman, trained (5 seeds) | Seeds above 0 | Untrained (50) | Controls reaching the trained mean |
+|---|---|---|---|---|---|
+| validation + test | 30 | **+0.725 ± 0.049** | 5 / 5 | +0.034 ± 0.312 | 0 / 50 |
+| test only | 20 | +0.730 ± 0.047 | 5 / 5 | +0.008 ± 0.435 | 1 / 50 |
+
+Rule: positive on all 5 seeds, at most 2 of 50 controls reaching the mean.
+Met. Per drug (held-out cell lines, model column averaged over seeds;
+negative = more sensitive when the target is mutated):
+
+| Drug | Target | Direct-hit pairs | Measured, hit − non-hit (z) | Model's effect (z) |
+|---|---|---|---|---|
+| Gefitinib | EGFR | 6 | −2.81 | −0.51 |
+| Osimertinib | EGFR | 6 | −2.80 | −0.52 |
+| Dabrafenib | BRAF | 14 | −2.02 | −1.18 |
+| PLX-4720 | BRAF | 15 | −1.79 | −1.03 |
+| SB590885 | BRAF | 15 | −1.33 | −1.07 |
+| Afatinib | EGFR, ERBB2 | 11 | −1.34 | −0.41 |
+| Alpelisib | PI3Kalpha | 20 | −0.81 | −0.40 |
+| Buparlisib | PI3K (pan) | 20 | −0.31 | −0.15 |
+| AZD8186 | PI3Kalpha, PI3Kbeta | 20 | −0.02 | −0.19 |
+| SGC-CBP30 | EP300, CBP | 13 | +0.25 | −0.18 |
+| MIRA-1 | TP53 | 115 | +0.39 | −0.02 |
+
+All 30 are in `results/final_weights_results_pair_feature_check_drugs.csv`.
+
+- **The model's effect is ordered like the measurements**: largest for the
+  BRAF and EGFR inhibitors, near zero for MIRA-1, whose TP53 hits are a
+  quarter of all direct hits and are not sensitising.
+- **It is smaller than the measured difference**: mean absolute size 0.36
+  against 0.88. The two are not the same quantity. The measured column is
+  the whole difference between hit and non-hit cell lines; the model's
+  effect is what the pair features add on top of what it already reads from
+  the omics. So a smaller effect is expected, and is not by itself an error.
+- **It is almost always sensitising**: negative for 29 of the 30 drugs. The
+  sign agrees with the measurement for 24. Of the 7 drugs whose hit cell
+  lines are measured as more *resistant*, the model has the sign right for
+  one. The features did not teach it resistance.
+
+**3. BRAF case study — passed.** BRAF-mutant cell lines on PLX-4720,
+SB590885 and Dabrafenib, the 157 pairs of experiment 15. Spearman
+correlation across pairs between the model's effect and measured ln(IC50):
+
+| Pairs | n | Trained (5 seeds) | Seeds above 0 | Within drug | Untrained (50) | Controls reaching |
+|---|---|---|---|---|---|---|
+| all | 157 | +0.695 ± 0.025 | 5 / 5 | +0.697 | −0.027 ± 0.193 | 0 / 50 |
+| training cell lines | 113 | +0.716 ± 0.028 | 5 / 5 | +0.712 | −0.019 ± 0.212 | 0 / 50 |
+| **held-out cell lines** | **44** | **+0.633 ± 0.026** | 5 / 5 | +0.658 | −0.049 ± 0.263 | 0 / 50 |
+
+Rule: on the 44 held-out pairs, positive on at least 4 of 5 seeds and at
+most 2 of 50 controls reaching the mean. Met. "Within drug" is the same
+correlation in each drug's own z-units, so a difference in potency between
+the three drugs cannot produce it.
+
+- The hit is most sensitising where the cell line is measured as most
+  sensitive, on cell lines the model never trained on. Experiment 15 found
+  the same on the old graph model (0.65 overall, 0.54 held-out).
+- Mean effect on held-out pairs: −1.69 ln(IC50) units, sensitising in 99% of
+  pairs. Untrained models: +0.001 ± 0.005 and 43% ± 29%. As in experiment
+  15, the share alone would not separate them from a trained model that is
+  merely consistent; the correlation does.
+- On these 44 pairs RMSE is 1.30 with the hit and 2.62 with it removed.
+- **Caveat, the same as in experiment 15.** The effect correlates +0.47 with
+  what the model predicts without the hit, so part of the +0.63 is
+  inherited from the omics-based prediction: the model scales the hit by
+  context it already reads elsewhere. And the hit mostly shifts the level
+  rather than re-ranking cell lines: the rank correlation of the prediction
+  with measured ln(IC50) is +0.80 with the hit and +0.78 without.
+
+**What this shows and does not show.** The trained final model uses the
+direct-hit signal, in the direction and in the drug order the measurements
+support, and untrained models do not. It does not show a mechanism, it does
+not explain any prediction outside direct hits (1.26% of pairs), and it says
+nothing about the omics inputs, which are PCA components. The four other
+pair features were not tested separately.
 
 ## 12. Limitations to state
 
@@ -1082,6 +1330,9 @@ Tick the ones that apply and add numbers.
 - [x] Component f was tested as hand-built features and as attention without message passing; PPI message passing (stage B) was skipped (decided 2026-10-06), so no trained rung in the ladder is a GNN and the PPI graph is tested only indirectly (Phase 3 hop features; `HeteroIC50GNN` as a compared baseline). The one subset with any signal (a target is directly mutated) is 1.26% of pairs, 211 on the test fold. The features' gain there is better on 4 of 5 seeds, but its test intervals include 0.
 - [x] The attention form of f was rejected as configured, with no tuning (embedding width 64, no dropout on the attention, no weight decay). Its attention did not learn to find the mutated target (0.02 above chance), so the result does not test the idea itself. The graph has no protein features; 15 of the 251 proteins mutated in test cell lines appear in no training cell line.
 - [x] The graph component of the final model is chosen under a tolerance rule (validation no more than 0.03 worse than the candidate), not because it improves accuracy: neither `mol_graph` nor the pair features changes all-pairs test RMSE beyond noise (2026-10-12). `pair_attention` meets the tolerance by 0.0009, inside its seed std.
+- [x] `final` was selected under the grouped split only. Under the random split it beats `base` (−0.054, 3 of 3 seeds) but is 0.020 worse than `base+std_targets` alone on every seed (section 9). The random-split rows are from laptop B with 3 seeds.
+- [x] Unseen drugs: the leave-drugs-out result rests on 36 test drugs. The gain over `base` (−0.169) has a seed interval that excludes 0 and a drug interval that does not; three components differ between the two configs, so it is not attributed; validation drugs do not select a good checkpoint for test drugs; and the model does not beat the earlier flat MLP's single run (1.8516 against 2.0038 ± 0.0843). Standardisation, one of the two components the grouped-split gain comes from, cannot be used there.
+- [x] Interpretability is a sensitivity test on five hand-built inputs, on 1.26% of pairs. No gene-level attribution and no SHAP: the omics inputs are PCA components. The model's direct-hit effect is sensitising for 29 of 30 drugs, so it does not capture the drugs where a mutated target goes with resistance. The weights it was run on are a second set of five runs of `final`, not the ladder's rows.
 - [x] The subset bootstrap resamples cell lines only; training noise is covered separately by a t-interval over 5 seeds.
 - [x] The benchmark comparison is against a reimplementation, not the authors' code on their data.
 
@@ -1146,6 +1397,44 @@ configuration the team chooses):
 > between target and mutated proteins made the model worse (1.3225 ± 0.0285,
 > every seed).
 
+Addition from the random split of 2026-10-12 (sanity check, second machine):
+
+> Under a random pair split, where every test cell line is also seen in
+> training, the final model reached 0.9622 ± 0.0058 against 1.0162 ± 0.0011
+> for the base (3 seeds), a gain of the same size as on unseen cell lines.
+> On that split per-drug target standardisation alone did slightly better
+> (0.9423 ± 0.0080), and proteomics alone had no effect. Errors are about 0.31
+> lower than on unseen cell lines for both the base and the final model, so
+> the final model does not narrow that gap.
+
+Addition from leave-drugs-out of 2026-10-13 (second machine):
+
+> On compounds never seen in training (36 held-out drugs), the final model
+> without target standardisation, which needs a drug's training responses,
+> reached 2.0038 ± 0.0843 against 2.1722 ± 0.0369 for the base and 2.5500 for
+> predicting the global mean (5 seeds). The improvement held on 4 of 5 seeds
+> but not consistently across drugs (20 of 36; the interval over drugs
+> includes zero), and about three quarters of the remaining error is a
+> misjudged overall potency of the new compound. An earlier flat MLP reached
+> 1.85 in a single run on the same split. The model is therefore presented as
+> a predictor for new cell lines, not for new compounds.
+
+Addition from the interpretability test of 2026-10-13:
+
+> To test whether the model uses the biological prior it is given, each pair
+> in which a drug's target is itself mutated was predicted twice, with its
+> real pair features and with that signal removed. On held-out cell lines
+> removing it raised RMSE on those pairs from 1.41 to 1.64 and brought back
+> a bias of +0.46 ln(IC50) (all five seeds). Across the 30 drugs with enough
+> such pairs, the size of the model's effect followed the measured difference
+> between mutant and non-mutant cell lines (Spearman 0.73), and for BRAF
+> inhibitors it was strongest in the BRAF-mutant cell lines measured as most
+> sensitive (0.63 on held-out cell lines); none of 50 untrained models
+> reached either value. The effect was sensitising for almost every drug, so
+> the model does not capture targets whose mutation goes with resistance.
+> This is a test of five hand-built inputs on 1.3% of pairs, not a
+> gene-level explanation of the model.
+
 ## 15. Reproduction
 
 ```
@@ -1156,7 +1445,8 @@ python "src/final_model/run_ablation.py" --configs aligned base full --protocols
 
 The second command produced the 24 rows in this file (run 2026-10-03, 15:33 to
 22:05, as one process on a GTX 1650; launch details in `CLAUDE.md`). The third
-(random split for `base` and `full`) has not been run.
+was never run in that form: the random split was run on laptop B with a
+different set of configs (below), and `full` has no random-split row.
 
 Commit hash of the code that produced the CSV: `66205f8`.
 
@@ -1199,6 +1489,58 @@ python src/final_model/pair_gate_report.py \
 The ladder CSV now has 50 rows. The 15 runs saved predictions, and the 5
 attention runs saved weights in `results/ablation_results_checkpoints/`
 (18 MB each, 91 MB in all).
+
+Laptop B blocks (a teammate's machine; each writes its own file, so no row
+of laptop B is in the ladder CSV). Anchor and `HeteroIC50GNN` run 2026-10-11
+(results committed in `dcbc304` and `2e425a9`); random split run 2026-10-11
+for the four single configs (`e34f390`) and 2026-10-12 for `final`
+(`c346fc9`, after pulling the commit that names it, `e1fd48f`):
+
+```
+python -u src/final_model/run_ablation.py --configs base \
+  --protocols grouped --seeds 42 43 44 45 46 \
+  --out src/final_model/results/laptop_b_anchor_results.csv
+python -u experiments/07_gnn_ablation/hetero_ic50_gnn_matrix.py --seed 42 \
+  --out src/final_model/results/hetero_gnn/raw_seed42.csv      # and seeds 43, 44
+python -u experiments/07_gnn_ablation/hetero_ic50_gnn_matrix.py --seed 42 \
+  --standardize-targets \
+  --out src/final_model/results/hetero_gnn/std_seed42.csv      # and seeds 43, 44
+python -u src/final_model/run_ablation.py \
+  --configs base aligned base+proteomics base+std_targets final \
+  --protocols random --seeds 42 43 44 \
+  --out src/final_model/results/random_split_results.csv
+```
+
+Leave-drugs-out (laptop B, results committed 2026-10-13 in `5efc470`, 10
+runs, 13,270 s; the protocol is commit `e4e3517`):
+
+```
+python -u src/final_model/run_ablation.py \
+  --configs base base+proteomics+mol_graph+pair_features \
+  --protocols ldo --seeds 42 43 44 45 46 \
+  --out src/final_model/results/ldo_results.csv
+```
+
+Interpretability test (laptop A, 2026-10-13; the retrain 11:47 to 13:34, 5
+runs in 6,425 s, from `5efc470` plus the `--save-weights` flag, which was not
+yet committed; the check itself trains nothing):
+
+```
+python src/final_model/run_ablation.py --configs final --protocols grouped \
+  --seeds 42 43 44 45 46 --save-weights \
+  --out src/final_model/results/final_weights_results.csv
+python src/final_model/pair_feature_check.py
+```
+
+The weights are in `results/final_weights_results_checkpoints/` (15 MB each,
+70 MB in all). Runs with `mol_graph` are not bit-reproducible (section 2), so
+a repeat of the first command gives runs within seed noise of these, not the
+same weights.
+
+The interval over drugs and the per-drug figures in section 11 were computed
+ad hoc from `results/ldo_results_predictions/` with `bootstrap_delta` from
+`pair_gate_report.py`, grouping by drug; `pair_gate_report.py` itself only
+reads grouped-split rows.
 
 Phase 3 gate (run 2026-10-04, same machine, commit `cc303ee`; seeds 42-44
 19:42 to 20:40, seeds 45-46 20:57 to 21:36, 10 runs):
