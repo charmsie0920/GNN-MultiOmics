@@ -267,11 +267,19 @@ the runbook is left. The minimal Phase 6 was run and passed the same day.
      adds projection layers, not attention (decided 2026-10-03). A real
      version needs several tokens per omics layer and would be a new
      component with its own name.
-   - **Status:** a launcher was queued on 2026-10-13 16:22 that starts both
-     blocks when the laptop is on mains power and the tree is clean (logs
-     `cross_attention_queue.log`, `cross_attention_grouped.log`,
-     `cross_attention_random.log`). It had not started when this was
-     written. `pkill -f cross_attention_queue` cancels it.
+   - **Status: not run, nothing queued.** A launcher was queued on
+     2026-10-13 16:22 to start both blocks once the laptop was on mains
+     power; it was cancelled the same day before it started, and no row or
+     file was written. To run it later, from a clean tree on mains power:
+
+     ```
+     NEW=base+proteomics+std_targets+mol_graph+pair_features+cross_attention
+     python -u src/final_model/run_ablation.py --configs base final $NEW \
+       --protocols grouped --seeds 42 43 44 45 46
+     python -u src/final_model/run_ablation.py --configs final $NEW \
+       --protocols random --seeds 42 43 44 \
+       --out src/final_model/results/random_split_laptop_a_results.csv
+     ```
 
 **What the proposal asks for** (`docs/MCS16 - Final Proposal Report.docx`,
 read 2026-10-12), against the two candidates that pass with room
