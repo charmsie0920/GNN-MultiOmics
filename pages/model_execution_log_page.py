@@ -19,7 +19,9 @@ Interactions with other pages:
     - `on_model_visualization_clicked` navigates to `ModelVisualizationPage`.
     - `on_run_complete` is invoked once the watched run finishes
       successfully, and should navigate to the results page.
-    All three callbacks are supplied and wired by `UILauncher.py`.
+    - `on_results_clicked` navigates back to `FinalResultsPage` from the
+      header's "Results" tab.
+    All four callbacks are supplied and wired by `UILauncher.py`.
 
 Call `start_watching(run_info)` (with the dict returned by
 `client.api_client.start_run`, merged with the upload response) after
@@ -122,6 +124,7 @@ class ModelExecutionLogPage(QWidget):
         on_upload_clicked: Callable[[], None] | None = None,
         on_model_visualization_clicked: Callable[[], None] | None = None,
         on_run_complete: Callable[[], None] | None = None,
+        on_results_clicked: Callable[[], None] | None = None,
     ) -> None:
         """Build the page.
 
@@ -134,12 +137,16 @@ class ModelExecutionLogPage(QWidget):
                 the model visualization page.
             on_run_complete: Invoked once the watched run finishes
                 successfully; should navigate to the results page.
+            on_results_clicked: Invoked when the header's "Results" tab is
+                clicked; should return to the results page of the run
+                already shown there, without reloading it.
         """
         super().__init__(parent)
         self.setObjectName("ModelExecutionLogPage")
         self._on_upload_clicked = on_upload_clicked
         self._on_model_visualization_clicked = on_model_visualization_clicked
         self._on_run_complete = on_run_complete
+        self._on_results_clicked = on_results_clicked
 
         self._poller: RunStatusPoller | None = None
         self._current_run_id: str | None = None
@@ -285,7 +292,7 @@ class ModelExecutionLogPage(QWidget):
         tabs = [
             make_top_tab("Upload", callback=self._on_upload_clicked),
             make_top_tab("Model Running", active=True),
-            make_top_tab("Results"),
+            make_top_tab("Results", callback=self._on_results_clicked),
         ]
         return build_header_bar(tabs)
 

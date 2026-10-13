@@ -35,7 +35,7 @@ How to run:
 from __future__ import annotations
 import sys
 
-from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget
 
 from pages.dataset_initialization_page import DatasetInitializationPage
 from pages.final_results_page import FinalResultsPage
@@ -73,7 +73,8 @@ def main() -> int:
     # `show_final_results_page` — a simple shared reference so the run id
     # and target cell line don't need to be threaded through every page
     # callback signature.
-    current_run: dict[str, str | None] = {"run_id": None, "target_cell_line": None}
+    # `results_run_id` is the run whose results the results page holds.
+    current_run: dict[str, str | None] = {"run_id": None, "target_cell_line": None, "results_run_id": None}
 
     # Each page is built with callbacks pointing at these closures rather
     # than at each other, so pages stay decoupled from one another and only
@@ -104,6 +105,7 @@ def main() -> int:
         if current_run["run_id"] is not None:
             final_results_page.load_results(current_run["run_id"])
             analytics_page.load_results(current_run["run_id"])
+            current_run["results_run_id"] = current_run["run_id"]
         if current_run["target_cell_line"] is not None:
             final_results_page.set_sample_id(current_run["target_cell_line"])
             analytics_page.set_sample_id(current_run["target_cell_line"])
@@ -112,6 +114,15 @@ def main() -> int:
     # Switching between results and analytics only changes the view; neither
     # reloads, since both already hold the current run's data.
     def show_results_view() -> None:
+        stack.setCurrentWidget(final_results_page)
+
+    # The log page's "Results" tab. While a run is still going the results
+    # page holds nothing for it yet (or an earlier run's results), so the tab
+    # only works once the watched run's results have been loaded.
+    def show_results_from_log() -> None:
+        if current_run["run_id"] is None or current_run["results_run_id"] != current_run["run_id"]:
+            QMessageBox.information(window, "Results Not Ready", "Results appear once the model run finishes.")
+            return
         stack.setCurrentWidget(final_results_page)
 
     def show_analytics_page() -> None:
@@ -126,6 +137,7 @@ def main() -> int:
         on_upload_clicked=show_upload_page,
         # !Hidden: no on_model_visualization_clicked — see the import above.
         on_run_complete=show_final_results_page,
+        on_results_clicked=show_results_from_log,
     )
     # !Hidden: ModelVisualizationPage is unreferenced (see the import above).
     # visualization_page = ModelVisualizationPage(
