@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 890" width="1400" height="890" font-family="Arial, Helvetica, sans-serif">
+  <title>PairGraphDRP architecture</title>
+  <desc>Cell-line encoder, drug encoder and PPI pair module feed a bilinear interaction and a predictor that outputs ln(IC50).</desc>
+
+  <defs>
+    <marker id="arrow" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 z" fill="#2D3748"/>
+    </marker>
+    <style>
+      .panel-label { font-size: 15px; font-weight: bold; fill: #1A202C; }
+      .main { font-size: 13px; fill: #1A202C; text-anchor: middle; }
+      .sub { font-size: 10.5px; fill: #4A5568; text-anchor: middle; }
+      .note { font-size: 11.5px; fill: #2D3748; }
+      .op { fill: #FFFFFF; stroke: #4A5568; stroke-width: 1.2; }
+      .ours { stroke: #2F855A; stroke-width: 2.4; }
+      .flow { fill: none; stroke: #2D3748; stroke-width: 1.5; marker-end: url(#arrow); }
+      .badge { fill: #2B6CB0; }
+      .badge-text { font-size: 10px; font-weight: bold; fill: #FFFFFF; text-anchor: middle; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1400" height="890" fill="#FFFFFF"/>
+  <text x="20" y="36" font-size="19" font-weight="bold" fill="#1A202C">PairGraphDRP: proposed final architecture</text>
+
+  <!-- ===================== A. Cell-line encoder ===================== -->
+  <rect x="20" y="60" width="830" height="220" rx="10" fill="#EEF4FB" stroke="#9DB7D5" stroke-width="1.2"/>
+  <text x="36" y="86" class="panel-label">A. Cell-line encoder</text>
+
+  <rect x="40" y="105" width="170" height="42" rx="8" fill="#D6E6F7" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="125" y="124" class="main">Gene expression (GE)</text>
+  <text x="125" y="139" class="sub">128 PCA components</text>
+
+  <rect x="40" y="159" width="170" height="42" rx="8" fill="#D6E6F7" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="125" y="178" class="main">Mutation + CNV</text>
+  <text x="125" y="193" class="sub">128 PCA components</text>
+
+  <rect x="40" y="213" width="170" height="42" rx="8" fill="#D6E6F7" class="ours"/>
+  <text x="125" y="232" class="main">Proteomics</text>
+  <text x="125" y="247" class="sub">128 PCA components</text>
+
+  <rect x="270" y="105" width="190" height="42" rx="4" class="op"/>
+  <text x="365" y="124" class="main">MLP branch</text>
+  <text x="365" y="139" class="sub">128 → 256 → 128</text>
+
+  <rect x="270" y="159" width="190" height="42" rx="4" class="op"/>
+  <text x="365" y="178" class="main">MLP branch</text>
+  <text x="365" y="193" class="sub">128 → 256 → 128</text>
+
+  <rect x="270" y="213" width="190" height="42" rx="4" fill="#FFFFFF" class="ours"/>
+  <text x="365" y="232" class="main">MLP branch</text>
+  <text x="365" y="247" class="sub">128 → 256 → 128</text>
+
+  <rect x="540" y="105" width="80" height="150" rx="4" class="op"/>
+  <text x="580" y="185" class="main">Concat</text>
+
+  <rect x="680" y="159" width="150" height="42" rx="8" fill="#D6E6F7" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="755" y="178" class="main">Cell vector</text>
+  <text x="755" y="193" class="sub">384-d</text>
+
+  <path class="flow" d="M210,126 H270"/>
+  <path class="flow" d="M210,180 H270"/>
+  <path class="flow" d="M210,234 H270"/>
+  <path class="flow" d="M460,126 H540"/>
+  <path class="flow" d="M460,180 H540"/>
+  <path class="flow" d="M460,234 H540"/>
+  <path class="flow" d="M620,180 H680"/>
+
+  <!-- ===================== B. Drug encoder ===================== -->
+  <rect x="20" y="300" width="830" height="200" rx="10" fill="#FDF3E7" stroke="#E0B27A" stroke-width="1.2"/>
+  <text x="36" y="326" class="panel-label">B. Drug encoder</text>
+
+  <rect x="40" y="339" width="170" height="42" rx="8" fill="#FAE1C3" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="125" y="358" class="main">Morgan fingerprint</text>
+  <text x="125" y="373" class="sub">2048 bits</text>
+
+  <rect x="40" y="419" width="170" height="42" rx="8" fill="#FAE1C3" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="125" y="438" class="main">Molecular graph</text>
+  <text x="125" y="453" class="sub">atoms and bonds</text>
+
+  <rect x="270" y="339" width="190" height="42" rx="4" class="op"/>
+  <text x="365" y="358" class="main">Fingerprint MLP</text>
+  <text x="365" y="373" class="sub">2048 → 1024 → 512 → 256 → 128</text>
+
+  <rect x="270" y="419" width="190" height="42" rx="4" class="op"/>
+  <text x="365" y="438" class="main">GCN × 3, sum pooling</text>
+  <text x="365" y="453" class="sub">→ 1024 → 128</text>
+  <rect x="420" y="410" width="34" height="16" rx="4" class="badge"/>
+  <text x="437" y="422" class="badge-text">GNN</text>
+
+  <rect x="540" y="339" width="80" height="122" rx="4" class="op"/>
+  <text x="580" y="397" class="main">Gated</text>
+  <text x="580" y="413" class="main">sum</text>
+
+  <rect x="680" y="379" width="150" height="42" rx="8" fill="#FAE1C3" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="755" y="398" class="main">Drug vector</text>
+  <text x="755" y="413" class="sub">128-d</text>
+
+  <path class="flow" d="M210,360 H270"/>
+  <path class="flow" d="M210,440 H270"/>
+  <path class="flow" d="M460,360 H540"/>
+  <path class="flow" d="M460,440 H540"/>
+  <path class="flow" d="M620,400 H680"/>
+
+  <!-- ===================== C. PPI pair module ===================== -->
+  <rect x="20" y="520" width="830" height="300" rx="10" fill="#EDF7EE" stroke="#2F855A" stroke-width="2.4"/>
+  <text x="36" y="546" class="panel-label">C. PPI pair module (added in this work)</text>
+
+  <rect x="40" y="579" width="170" height="42" rx="8" fill="#D3ECD6" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="125" y="598" class="main">STRING PPI graph</text>
+  <text x="125" y="613" class="sub">16,214 proteins</text>
+
+  <rect x="270" y="579" width="190" height="42" rx="4" class="op"/>
+  <text x="365" y="598" class="main">Protein embedding</text>
+  <text x="365" y="613" class="sub">+ GraphSAGE × 1 over PPI edges</text>
+  <rect x="420" y="570" width="34" height="16" rx="4" class="badge"/>
+  <text x="437" y="582" class="badge-text">GNN</text>
+
+  <rect x="540" y="579" width="290" height="42" rx="8" fill="#D3ECD6" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="685" y="598" class="main">Protein vectors</text>
+  <text x="685" y="613" class="sub">one per protein</text>
+
+  <rect x="540" y="654" width="140" height="42" rx="8" fill="#D3ECD6" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="610" y="673" class="main">Drug targets</text>
+  <text x="610" y="688" class="sub">queries</text>
+
+  <rect x="690" y="654" width="140" height="42" rx="8" fill="#D3ECD6" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="760" y="673" class="main">Cell mutations</text>
+  <text x="760" y="688" class="sub">keys and values</text>
+
+  <rect x="540" y="729" width="290" height="42" rx="4" class="op"/>
+  <text x="685" y="748" class="main">Cross-attention</text>
+  <text x="685" y="763" class="sub">targets attend to mutations, then mean-pool</text>
+
+  <path class="flow" d="M210,600 H270"/>
+  <path class="flow" d="M460,600 H540"/>
+  <path class="flow" d="M610,621 V654"/>
+  <path class="flow" d="M760,621 V654"/>
+  <path class="flow" d="M610,696 V729"/>
+  <path class="flow" d="M760,696 V729"/>
+
+  <text x="40" y="668" class="note" font-weight="bold">How the two protein sets are chosen</text>
+  <text x="40" y="690" class="note">Drug targets: proteins the drug is known to bind.</text>
+  <text x="40" y="709" class="note">Cell mutations: proteins with a driver mutation in this cell line.</text>
+  <text x="40" y="728" class="note">If either set is empty, a learned "none" token is used.</text>
+  <text x="40" y="758" class="note" font-weight="bold">Depth ablation</text>
+  <text x="40" y="780" class="note">0, 1 or 2 GraphSAGE layers; 0 layers is not a GNN.</text>
+
+  <!-- ===================== D. Interaction and prediction ===================== -->
+  <rect x="880" y="60" width="500" height="760" rx="10" fill="#F5F5F7" stroke="#B5B5BD" stroke-width="1.2"/>
+  <text x="896" y="86" class="panel-label">D. Interaction and prediction</text>
+
+  <rect x="910" y="262" width="190" height="56" rx="4" class="op"/>
+  <text x="1005" y="287" class="main">Bilinear interaction</text>
+  <text x="1005" y="303" class="sub">BAN, 3 heads, 128-d</text>
+
+  <rect x="910" y="729" width="190" height="42" rx="8" fill="#D3ECD6" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="1005" y="748" class="main">Pair vector</text>
+  <text x="1005" y="763" class="sub">one per (cell line, drug) pair</text>
+
+  <rect x="1130" y="480" width="80" height="80" rx="4" class="op"/>
+  <text x="1170" y="525" class="main">Concat</text>
+
+  <rect x="1240" y="492" width="120" height="56" rx="4" class="op"/>
+  <text x="1300" y="517" class="main">Predictor MLP</text>
+  <text x="1300" y="533" class="sub">512 → 128 → 1</text>
+
+  <rect x="1240" y="620" width="120" height="40" rx="20" fill="#2D3748"/>
+  <text x="1300" y="645" font-size="14" font-weight="bold" fill="#FFFFFF" text-anchor="middle">ln(IC50)</text>
+  <text x="1300" y="678" class="sub">predicted drug response</text>
+
+  <path class="flow" d="M830,180 H895 V278 H910"/>
+  <path class="flow" d="M830,400 H895 V302 H910"/>
+  <path class="flow" d="M830,750 H910"/>
+  <path class="flow" d="M1100,290 H1170 V480"/>
+  <path class="flow" d="M1100,750 H1170 V560"/>
+  <path class="flow" d="M1210,520 H1240"/>
+  <path class="flow" d="M1300,548 V620"/>
+
+  <!-- ===================== Legend ===================== -->
+  <rect x="20" y="842" width="28" height="18" rx="4" fill="#D6E6F7" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="56" y="856" class="note">Data or vector</text>
+
+  <rect x="170" y="842" width="28" height="18" rx="3" class="op"/>
+  <text x="206" y="856" class="note">Learned layer</text>
+
+  <rect x="320" y="842" width="28" height="18" rx="4" fill="#FFFFFF" class="ours"/>
+  <text x="356" y="856" class="note">Added in this work (other blocks follow MoGraphDRP)</text>
+
+  <rect x="680" y="843" width="34" height="16" rx="4" class="badge"/>
+  <text x="697" y="855" class="badge-text">GNN</text>
+  <text x="722" y="856" class="note">Graph neural network layers</text>
+</svg>

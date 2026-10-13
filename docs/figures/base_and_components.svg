@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 770" width="1400" height="770" font-family="Arial, Helvetica, sans-serif">
+  <title>Base model and ablation components</title>
+  <desc>The base model: two omics branches and a fingerprint encoder, concatenated into an MLP predictor. Numbered markers show where each ablation component attaches.</desc>
+
+  <defs>
+    <marker id="arrow" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 z" fill="#2D3748"/>
+    </marker>
+    <style>
+      .panel-label { font-size: 15px; font-weight: bold; fill: #1A202C; }
+      .main { font-size: 13px; fill: #1A202C; text-anchor: middle; }
+      .sub { font-size: 10.5px; fill: #4A5568; text-anchor: middle; }
+      .op { fill: #FFFFFF; stroke: #4A5568; stroke-width: 1.2; }
+      .flow { fill: none; stroke: #2D3748; stroke-width: 1.5; marker-end: url(#arrow); }
+      .pin { fill: #C05621; }
+      .pin-planned { fill: #FFFFFF; stroke: #C05621; stroke-width: 1.8; stroke-dasharray: 3 2; }
+      .pin-text { font-size: 11px; font-weight: bold; fill: #FFFFFF; text-anchor: middle; }
+      .pin-text-planned { font-size: 11px; font-weight: bold; fill: #C05621; text-anchor: middle; }
+      .th { font-size: 12px; font-weight: bold; fill: #1A202C; }
+      .td { font-size: 12px; fill: #1A202C; }
+      .flag { font-size: 12px; font-family: Consolas, "Courier New", monospace; fill: #1A202C; }
+      .num { font-size: 12px; fill: #1A202C; text-anchor: end; }
+      .foot { font-size: 11.5px; fill: #4A5568; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1400" height="770" fill="#FFFFFF"/>
+  <text x="20" y="36" font-size="19" font-weight="bold" fill="#1A202C">Base model and ablation components</text>
+  <text x="1380" y="36" font-size="12" fill="#4A5568" text-anchor="end">Numbered markers show where each component attaches to the base.</text>
+
+  <!-- ===================== A. Cell-line encoder ===================== -->
+  <rect x="20" y="60" width="830" height="170" rx="10" fill="#EEF4FB" stroke="#9DB7D5" stroke-width="1.2"/>
+  <text x="36" y="86" class="panel-label">A. Cell-line encoder</text>
+
+  <rect x="40" y="105" width="170" height="42" rx="8" fill="#D6E6F7" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="125" y="124" class="main">Gene expression (GE)</text>
+  <text x="125" y="139" class="sub">128 PCA components</text>
+
+  <rect x="40" y="159" width="170" height="42" rx="8" fill="#D6E6F7" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="125" y="178" class="main">Mutation + CNV</text>
+  <text x="125" y="193" class="sub">128 PCA components</text>
+
+  <rect x="270" y="105" width="190" height="42" rx="4" class="op"/>
+  <text x="365" y="124" class="main">MLP branch</text>
+  <text x="365" y="139" class="sub">128 → 256 → 128</text>
+
+  <rect x="270" y="159" width="190" height="42" rx="4" class="op"/>
+  <text x="365" y="178" class="main">MLP branch</text>
+  <text x="365" y="193" class="sub">128 → 256 → 128</text>
+
+  <rect x="540" y="105" width="80" height="96" rx="4" class="op"/>
+  <text x="580" y="158" class="main">Concat</text>
+
+  <rect x="680" y="132" width="150" height="42" rx="8" fill="#D6E6F7" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="755" y="151" class="main">Cell vector</text>
+  <text x="755" y="166" class="sub">256-d</text>
+
+  <path class="flow" d="M210,126 H270"/>
+  <path class="flow" d="M210,180 H270"/>
+  <path class="flow" d="M460,126 H540"/>
+  <path class="flow" d="M460,180 H540"/>
+  <path class="flow" d="M620,153 H680"/>
+
+  <!-- ===================== B. Drug encoder ===================== -->
+  <rect x="20" y="250" width="830" height="120" rx="10" fill="#FDF3E7" stroke="#E0B27A" stroke-width="1.2"/>
+  <text x="36" y="276" class="panel-label">B. Drug encoder</text>
+
+  <rect x="40" y="299" width="170" height="42" rx="8" fill="#FAE1C3" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="125" y="318" class="main">Morgan fingerprint</text>
+  <text x="125" y="333" class="sub">2048 bits</text>
+
+  <rect x="270" y="299" width="190" height="42" rx="4" class="op"/>
+  <text x="365" y="318" class="main">Fingerprint MLP</text>
+  <text x="365" y="333" class="sub">2048 → 1024 → 512 → 256 → 128</text>
+
+  <rect x="680" y="299" width="150" height="42" rx="8" fill="#FAE1C3" stroke="#4A5568" stroke-width="1.2"/>
+  <text x="755" y="318" class="main">Drug vector</text>
+  <text x="755" y="333" class="sub">128-d</text>
+
+  <path class="flow" d="M210,320 H270"/>
+  <path class="flow" d="M460,320 H680"/>
+
+  <!-- ===================== C. Prediction ===================== -->
+  <rect x="880" y="60" width="500" height="310" rx="10" fill="#F5F5F7" stroke="#B5B5BD" stroke-width="1.2"/>
+  <text x="896" y="86" class="panel-label">C. Prediction</text>
+
+  <rect x="910" y="180" width="80" height="80" rx="4" class="op"/>
+  <text x="950" y="218" class="main">Concat</text>
+  <text x="950" y="234" class="sub">384-d</text>
+
+  <rect x="1040" y="192" width="140" height="56" rx="4" class="op"/>
+  <text x="1110" y="217" class="main">Predictor MLP</text>
+  <text x="1110" y="233" class="sub">384 → 512 → 128 → 1</text>
+
+  <rect x="1230" y="200" width="120" height="40" rx="20" fill="#2D3748"/>
+  <text x="1290" y="225" font-size="14" font-weight="bold" fill="#FFFFFF" text-anchor="middle">ln(IC50)</text>
+  <text x="1290" y="258" class="sub">predicted drug response</text>
+
+  <path class="flow" d="M830,153 H866 V205 H910"/>
+  <path class="flow" d="M830,320 H866 V235 H910"/>
+  <path class="flow" d="M990,220 H1040"/>
+  <path class="flow" d="M1180,220 H1230"/>
+
+  <!-- ===================== Attachment markers ===================== -->
+  <circle cx="620" cy="105" r="10" class="pin"/><text x="620" y="109" class="pin-text">1</text>
+  <circle cx="460" cy="299" r="10" class="pin"/><text x="460" y="303" class="pin-text">2</text>
+  <circle cx="990" cy="180" r="10" class="pin"/><text x="990" y="184" class="pin-text">3</text>
+  <circle cx="210" cy="201" r="10" class="pin"/><text x="210" y="205" class="pin-text">4</text>
+  <circle cx="1350" cy="200" r="10" class="pin"/><text x="1350" y="204" class="pin-text">5</text>
+  <circle cx="1156" cy="192" r="10" class="pin"/><text x="1156" y="196" class="pin-text">6</text>
+  <circle cx="1180" cy="192" r="10" class="pin-planned"/><text x="1180" y="196" class="pin-text-planned">7</text>
+
+  <!-- ===================== Components table ===================== -->
+  <rect x="20" y="395" width="1360" height="355" rx="10" fill="#FFFFFF" stroke="#B5B5BD" stroke-width="1.2"/>
+  <text x="36" y="422" class="panel-label">Components: each is one switch added to the base (Base + a, Base + b, ...)</text>
+
+  <text x="64" y="452" class="th">Component</text>
+  <text x="270" y="452" class="th">What it changes in the base</text>
+  <text x="960" y="452" class="th" text-anchor="end">Test RMSE vs base</text>
+  <text x="1000" y="452" class="th">Result</text>
+  <line x1="36" y1="462" x2="1364" y2="462" stroke="#4A5568" stroke-width="1.2"/>
+
+  <rect x="36" y="466" width="1328" height="30" fill="#F7F7F9"/>
+  <rect x="36" y="526" width="1328" height="30" fill="#F7F7F9"/>
+  <rect x="36" y="586" width="1328" height="30" fill="#F7F7F9"/>
+  <rect x="36" y="646" width="1328" height="30" fill="#F7F7F9"/>
+
+  <circle cx="48" cy="482" r="9" class="pin"/><text x="48" y="486" class="pin-text">1</text>
+  <text x="64" y="486" class="flag">cross_attention</text>
+  <text x="270" y="486" class="td">Cross-attention omics fusion replaces the concat in panel A</text>
+  <text x="960" y="486" class="num">+0.091</text>
+  <text x="1000" y="486" class="td">Rejected: hurts (attention weights always 1.0 as built)</text>
+
+  <circle cx="48" cy="512" r="9" class="pin"/><text x="48" y="516" class="pin-text">2</text>
+  <text x="64" y="516" class="flag">mol_graph</text>
+  <text x="270" y="516" class="td">Molecular-graph GCN added beside the fingerprint, joined by a gated sum</text>
+  <text x="960" y="516" class="num">+0.009</text>
+  <text x="1000" y="516" class="td">No measurable effect</text>
+
+  <circle cx="48" cy="542" r="9" class="pin"/><text x="48" y="546" class="pin-text">3</text>
+  <text x="64" y="546" class="flag">bilinear</text>
+  <text x="270" y="546" class="td">Bilinear cell × drug interaction replaces the concat in panel C</text>
+  <text x="960" y="546" class="num">+0.511</text>
+  <text x="1000" y="546" class="td">Unstable alone; stable together with mol_graph</text>
+
+  <circle cx="48" cy="572" r="9" class="pin"/><text x="48" y="576" class="pin-text">4</text>
+  <text x="64" y="576" class="flag">proteomics</text>
+  <text x="270" y="576" class="td">Proteomics added as a third omics branch in panel A</text>
+  <text x="960" y="576" class="num">−0.030</text>
+  <text x="1000" y="576" class="td">Borderline gain; better on 3 of 3 seeds</text>
+
+  <circle cx="48" cy="602" r="9" class="pin"/><text x="48" y="606" class="pin-text">5</text>
+  <text x="64" y="606" class="flag">std_targets</text>
+  <text x="270" y="606" class="td">ln(IC50) standardised per drug before training (a training option, not a block)</text>
+  <text x="960" y="606" class="num">−0.012</text>
+  <text x="1000" y="606" class="td">No measurable effect</text>
+
+  <circle cx="48" cy="632" r="9" class="pin"/><text x="48" y="636" class="pin-text">6</text>
+  <text x="64" y="636" class="flag">pair_features</text>
+  <text x="270" y="636" class="td">5 hand-built target-vs-mutation features added to the predictor input</text>
+  <text x="960" y="636" class="num">−0.004</text>
+  <text x="1000" y="636" class="td">No overall effect; removes a bias on target-mutated pairs</text>
+
+  <circle cx="48" cy="662" r="9" class="pin-planned"/><text x="48" y="666" class="pin-text-planned">7</text>
+  <text x="64" y="666" class="flag">pair attention</text>
+  <text x="270" y="666" class="td">PPI GraphSAGE + target-to-mutation cross-attention, added to the predictor input</text>
+  <text x="960" y="666" class="num">not run</text>
+  <text x="1000" y="666" class="td">Planned (Phase 4), not built yet</text>
+
+  <line x1="36" y1="684" x2="1364" y2="684" stroke="#B5B5BD" stroke-width="1"/>
+  <text x="36" y="706" class="foot">Base test RMSE 1.3232 ± 0.0105. Split by cell line (70/15/15), seeds 42-44 (component 6: seeds 42-46). Predicting each drug's mean gives 1.4889. Differences under about 0.03 are noise.</text>
+  <text x="36" y="728" class="foot">Combinations: components 2 + 3 together ("aligned", the MoGraphDRP-style model) +0.018; components 1 to 5 together ("full") +0.016. Neither is better than the base.</text>
+</svg>
