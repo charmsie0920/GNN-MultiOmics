@@ -1,14 +1,26 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from backend.dataset_schema import delete_uploaded_dataset
 from backend.routers.dataset import router as dataset_router
 from backend.routers.model_run import router as model_run_router
 from backend.routers.results import router as results_router
 
-app = FastAPI(title="MSC16 Placeholder API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    # Covers the case where the desktop app could not reach the backend as it
+    # closed: the upload does not outlive the backend either.
+    delete_uploaded_dataset()
+
+
+app = FastAPI(title="MCS16 Placeholder API", version="0.1.0", lifespan=lifespan)
 
 # Local desktop UI talking to a local backend — not public-facing.
 app.add_middleware(
@@ -43,7 +55,7 @@ class ModelLogEntry(BaseModel):
 def health() -> HealthResponse:
     # * Placeholder health check for local development and UI wiring.
     # * Replace with real dependency checks (database/model-store/queue) later.
-    return HealthResponse(status="ok", service="msc16-fastapi")
+    return HealthResponse(status="ok", service="mcs16-fastapi")
 
 
 @app.post("/api/v1/dataset/initialize", response_model=DatasetInitResponse)

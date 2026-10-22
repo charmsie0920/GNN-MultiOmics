@@ -1,1 +1,1 @@
-"""Page widgets for the MSC16 PySide6 frontend."""
+"""Page widgets for the MCS16 PySide6 frontend."""

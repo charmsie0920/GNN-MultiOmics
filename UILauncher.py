@@ -1,4 +1,4 @@
-"""Application entry point for the MSC16 desktop frontend.
+"""Application entry point for the MCS16 desktop frontend.
 
 This is a PySide6 (Qt for Python) desktop application for a multi-omics
 drug-response prediction tool. It wires together three active pages inside a
@@ -37,6 +37,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget
 
+from client.api_client import delete_uploaded_dataset
 from pages.dataset_initialization_page import DatasetInitializationPage
 from pages.final_results_page import FinalResultsPage
 from pages.model_analytics_page import ModelAnalyticsPage
@@ -65,7 +66,7 @@ def main() -> int:
     install_tooltips(app)
 
     window = QMainWindow()
-    window.setWindowTitle("MSC16 - Dataset Initialization")
+    window.setWindowTitle("MCS16 - Dataset Initialization")
 
     stack = QStackedWidget()
 
@@ -165,6 +166,9 @@ def main() -> int:
     stack.addWidget(final_results_page)
     stack.addWidget(analytics_page)
     stack.setCurrentWidget(upload_page)
+
+    # The uploaded dataset lives only as long as the application does.
+    app.aboutToQuit.connect(delete_uploaded_dataset)
 
     window.setCentralWidget(stack)
     window.resize(1280, 1024)

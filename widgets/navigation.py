@@ -46,7 +46,7 @@ from widgets.icons import icon_text
 
 
 def build_brand_row() -> QHBoxLayout:
-    """Build the "MSC16 / Biomedical Engine v2.4" logo block.
+    """Build the "MCS16 / Biomedical Engine v2.4" logo block.
 
     Used at the top of every sidebar so the brand mark sits in the exact
     same position, with the same icon, spacing, and typography, on every
@@ -64,7 +64,7 @@ def build_brand_row() -> QHBoxLayout:
 
     text_column = QVBoxLayout()
     text_column.setSpacing(2)
-    title = QLabel("MSC16")
+    title = QLabel("MCS16")
     title.setObjectName("BrandTitle")
     subtitle = QLabel("Biomedical Engine v2.4")
     subtitle.setStyleSheet(
