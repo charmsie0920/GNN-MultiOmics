@@ -18,10 +18,10 @@ Supervisor: Dr Ong Huey Fang · Submitted 2 November 2026
 
 > **PROPOSED, for the team to confirm or change before submission. A missing statement costs 50%.** Each member drafted the sections listed and edited and finalised other members' contributions to them.
 
-- **AA (Aditya Ansh)** led Section 3.2 (Results), Section 3.4 (Key decisions) and Sections 4.2–4.4 (Data pipeline, Training, Evaluation protocol). AA prepared Figures 2, 3, 4 and 6 from the result files and Table D1 (Appendix D).
+- **AA (Aditya Ansh)** led Section 3.2 (Results), Section 3.4 (Key decisions) and Sections 4.2–4.4 (Data pipeline, Training, Evaluation protocol). AA prepared Figures 2, 3, 4 and 6 from the result files, Table 3 (data pipeline) and Table D1 (Appendix D).
 - **CC (Charmaine Chee)** led Section 2.2 (Related work), Section 4.1 (Design rationale) and Section 3.5 (Limitations and future work). CC prepared Figure 5 (final architecture) and the reference list, and was the document's proof editor.
 - **SM (Shaahid Marikar)** led Section 1 (Introduction), Section 3.1 (Delivered product), Section 3.3 (Requirements) and Sections 4.5–4.6 (Software, tools and application architecture). SM prepared Figure 1, Table A1 (RTM), the screenshots in Appendix B and the sample code in Appendix C.
-- **WH (Wasif Hussain)** led Section 2.1 (Context), Section 5 (Critique) and Section 6 (Conclusion). WH prepared Table 4 (proposal against outcome), the front matter and the word count.
+- **WH (Wasif Hussain)** led Section 2.1 (Context), Section 5 (Critique) and Section 6 (Conclusion). WH prepared Table 5 (proposal against outcome), the front matter and the word count.
 
 Google Doc (edit log): [link]
 
@@ -42,8 +42,9 @@ Appendix figures: B1–B6, application screenshots (Appendix B).
 **Tables:**
 1. Main results
 2. Requirements summary
-3. Tools
-4. Proposal against outcome
+3. Data pipeline
+4. Tools
+5. Proposal against outcome
 
 Appendix tables: A1 (RTM), D1 (full ablation).
 
@@ -51,54 +52,37 @@ Appendix tables: A1 (RTM), D1 (full ablation).
 
 ## 1. Introduction
 
-Patients with the same cancer diagnosis often respond differently to the same drug. Matching therapy to a tumour's molecular profile pays off: across 570 phase II trials, biomarker-matched therapy produced a 31% response rate against 10.5% without it (Schwaederle et al., 2015). Testing every drug on every tumour is not possible, so computational drug-response prediction (DRP) estimates a drug's potency, measured as the half-maximal inhibitory concentration (IC50), from a tumour's molecular data and the drug's structure.
+Patients with the same cancer diagnosis often respond differently to the same drug, and matching treatment to a tumour's molecular profile improves outcomes: across 570 phase II trials, biomarker-matched therapy achieved a 31% response rate against 10.5% without matching (Schwaederle et al., 2015). Computational drug-response prediction (DRP) estimates a drug's potency, measured as the half-maximal inhibitory concentration (IC50), from a tumour's molecular data and the drug's structure.
 
-This project, MCS16, set out to predict ln(IC50) for cancer cell lines from three omics layers, gene expression (GE), mutation and copy-number variation (Mut+CNV) and proteomics, together with drug structure, and to put the predictions in a local desktop application for cancer pharmacology researchers and bioinformaticians. The proposal planned a graph attention network with cross-attention fusion that would improve on the published MoGraphDRP benchmark (Ahmadi et al., 2026).
+This project set out to predict ln(IC50) for cancer cell lines from drug structure and three omics layers: gene expression (GE), mutation and copy-number variation (Mut+CNV), and proteomics. Predictions are delivered through a local desktop application for cancer pharmacology researchers and bioinformaticians. The proposal planned a graph attention network with cross-attention fusion that would improve on the published MoGraphDRP model (Ahmadi et al., 2026).
 
-We delivered three things:
-- a desktop application that ranks the drugs in GDSC2 by predicted IC50 for a chosen cell line;
-- a final model that predicts for cell lines never seen in training with a test RMSE of 1.2737, against 1.3252 for the reproduced MoGraphDRP-style base and 1.4889 for a per-drug-mean baseline;
-- an additive ablation that measures every component we added, over five random seeds.
+The project delivered a desktop application that ranks GDSC2 drugs by predicted IC50 for a selected cell line, and a model for cell lines not seen in training. The final model reaches a test RMSE of 1.2737 on ln(IC50), against 1.3252 for our reproduction of the MoGraphDRP architecture and 1.4889 for a baseline that predicts each drug's mean. Every added component was evaluated in an additive ablation over five random seeds, and several components named in the proposal were dropped because they did not improve accuracy.
 
-The ablation also shows which proposed components did not help, and the report says so.
-
-Section 2 summarises the background and related work. Section 3 presents the product, the results, the requirements and the key decisions. Section 4 describes the method in enough detail to reproduce it. Section 5 critiques the project and its management, and Section 6 concludes.
+Section 2 summarises the background and related work. Section 3 presents the delivered product, the results, the requirements and the main decisions. Section 4 describes the method in enough detail to reproduce it. Section 5 critiques the project and how it was managed, and Section 6 concludes.
 
 ## 2. Project background
 
 ### 2.1 Context
 
-Precision oncology depends on reading a tumour's molecular profile, yet that information is under-used. In a 2026 cohort of 63,294 US patients with advanced cancer, many were never given genomic testing (Hage Chehade et al., 2026), and clinicians face more multi-omics data than one person can integrate (Aldea et al., 2023). Public pharmacogenomic screens make the computational side of the problem tractable. GDSC2 measures IC50 for hundreds of drugs across about a thousand cancer cell lines (Yang et al., 2013), and the Cell Model Passports provide matched omics for those lines (van der Meer et al., 2019). A model trained on these screens can rank candidate drugs for a cell line before costly wet-lab assays. That is the use case our application serves; clinical use on patients is out of scope.
+Precision oncology depends on reading a tumour's molecular profile, yet this information is under-used. In a 2026 cohort of 63,294 US patients with advanced cancer, many never received genomic testing (Hage Chehade et al., 2026), and clinicians face more multi-omics data than one person can integrate (Aldea et al., 2023). Public pharmacogenomic screens make the computational problem tractable: GDSC2 measures drug response across about a thousand cancer cell lines (Yang et al., 2013), and the Cell Model Passports provide matched omics profiles (van der Meer et al., 2019). A model trained on these screens can rank candidate drugs for a cell line before costly wet-lab assays, which is the use case the application supports; clinical use on patients is out of scope.
 
 ### 2.2 Related work, updated since the proposal
 
-The proposal reviewed flat-vector baselines (random forest, support vector regression), deep multi-omics models with concatenated features (Wang et al., 2021; Li et al., 2026), and graph models (Peng et al., 2022). It chose MoGraphDRP as the benchmark. MoGraphDRP fuses multi-omics with a drug fingerprint and molecular graph through bilinear attention and reports RMSE 0.6622 on GDSC (Ahmadi et al., 2026).
+The proposal reviewed flat-vector baselines such as random forests, deep multi-omics models that concatenate features (Wang et al., 2021; Li et al., 2026) and graph-based models (Peng et al., 2022), and adopted MoGraphDRP as the benchmark. MoGraphDRP combines multi-omics with a drug fingerprint and molecular graph through bilinear attention and reports an RMSE of 0.6622 on GDSC (Ahmadi et al., 2026).
 
-Three things changed during the project.
-1. **The benchmark used a random pair split.** Under that split, cell lines in the test set also appear in training. When we re-ran the same kind of model with a split grouped by cell line, about 60% of the gap between our numbers and MoGraphDRP's was due to the protocol, not the architecture (Section 3.4).
-2. **We found closer prior work than the proposal cited.** MIDI (Wanyan et al., 2025) already uses drug-target knowledge with attention over genes, splits by cell line, and compares target-mutated with wild-type cell lines. We therefore do not claim any of those as new. Our pair-feature component differs because it feeds a drug's known targets in explicitly, computes a value for each drug–cell-line pair, and uses the STRING protein–protein interaction (PPI) topology (Szklarczyk et al., 2023).
-3. **Our own experiments contradicted the graph-attention choice.** A graph attention network (GAT; Veličković et al., 2018) trained far worse than graph convolution on our graph (Section 3.4).
+Three findings changed how this literature applies to our work. First, MoGraphDRP is evaluated on a random split of drug–cell-line pairs, so its test cell lines also appear in training, which flatters its error (Section 3.4). Second, MIDI (Wanyan et al., 2025), which the proposal did not cite, already combines drug-target knowledge with attention over genes, splits by cell line, and compares cell lines with and without a mutated target, so none of these is claimed as new here. Our pair features differ in taking a drug's known targets as explicit inputs, being computed per drug–cell-line pair, and using the topology of the STRING protein–protein interaction (PPI) network (Szklarczyk et al., 2023). Third, a graph attention network (GAT; Veličković et al., 2018) performed worse than graph convolution on our data (Section 3.4).
 
-The gap this project fills is therefore narrower and more defensible than the proposal's. It is a cell-line-grouped, multi-seed, additive ablation of a reproduced published model, which adds proteomics and a biological pair prior. Each component is reported against a per-drug baseline and kept only if it beats measured noise.
+The contribution is therefore narrower than the proposal described, but better supported: a cell-line-grouped, multi-seed, additive ablation of a reproduced published model, extended with proteomics and a biological pair prior.
 
 ## 3. Outcomes
 
 ### 3.1 The delivered product
 
-The deliverable has two parts.
+The main deliverable is a desktop application: a PySide6 client communicating with a local FastAPI backend (Figure 1; screenshots in Appendix B). The user uploads a drug-response file and selects a cell line (Figure B1), then follows the run through a live log and progress view (Figure B2). The results page ranks the drugs by predicted IC50 in micromolar, with a sensitivity band (high below 1 µM, medium below 10 µM) and a confidence score for each, and results can be downloaded as CSV or exported as a report (Figure B3). For a selected drug, the page lists the drug's target genes and the cell line's driver-mutated genes with the change in prediction when each is removed (Figure B4), and retrieves pathway enrichment from Enrichr (Kuleshov et al., 2016) when at least five genes are listed (Figure B5). An analytics page compares predicted and measured validation values (Figure B6). The uploaded file is deleted when the application closes.
 
-**A desktop application** (Figure 1; screenshots in Appendix B). It is a PySide6 client talking to a local FastAPI backend.
-1. The user uploads a drug-response CSV and selects a target cell line (Figure B1).
-2. The run is shown live: backend log lines and a staged progress view driven by the backend's own progress (Figure B2).
-3. The results page ranks every scorable drug by predicted IC50 in micromolar. Each drug gets a sensitivity band (high below 1 µM, medium below 10 µM) and a confidence score (Figure B3).
-4. For a selected drug, the page lists the drug's target genes and the cell line's driver-mutated genes, with how much the prediction changes when each one is removed, and flags which are targets and which are mutations (Figure B4). When at least five genes are listed, it also reports pathway enrichment through Enrichr (Kuleshov et al., 2016) (Figure B5).
-5. An analytics page shows validation predicted-against-measured values and confidence against IC50 (Figure B6).
-6. Results can be downloaded as CSV and exported as a report.
-7. The uploaded file is deleted when the application closes.
+The application serves the final model (Section 3.2) by averaging the predictions of its five trained seeds, so nothing is retrained at run time. Individually the seeds score a test RMSE of 1.248 to 1.280; their average scores 1.2377 (validation 1.2118). Each seed reproduces its recorded validation RMSE when loaded, confirming that the application rebuilds the model's inputs exactly. The final model replaced an earlier heterogeneous graph neural network, HeteroIC50GNN (test RMSE 1.3301), around which the application was first built.
 
-The application serves the final model (Section 3.2). It loads the five trained seeds of `final` and averages their predictions, so nothing is retrained when it runs. On the validation fold the five-seed average scores RMSE 1.2118, below every single seed (1.2349–1.2594). Each seed reproduces its recorded validation RMSE when loaded, which shows that the application rebuilds the model's inputs exactly. The application was first built around the heterogeneous graph neural network `HeteroIC50GNN` (test RMSE 1.3301) and was moved to `final` once the ablation had chosen it.
-
-**A final model and the framework that produced it.** The script `run_ablation.py` trains any combination of components on a frozen base with fixed settings, one switch per component, and appends one row per run to a results file. Section 3.2 reports what it found.
+The second deliverable is the framework that produced the final model: `run_ablation.py` trains any combination of components on a frozen base model with fixed settings, one switch per component, and records one row per run.
 
 ![Figure 1](figures/fig_app_architecture.png)
 
@@ -106,57 +90,49 @@ The application serves the final model (Section 3.2). It loads the five trained 
 
 ### 3.2 Results
 
-All results use the grouped split (unseen cell lines) and report mean ± standard deviation over seeds. Two reference points apply throughout:
-- **Per-drug-mean baseline (1.4889):** predicts each drug's training mean. Drug identity alone explains 71.5% of the variance in ln(IC50), so this baseline is the bar a model must clear to show it uses the omics at all.
-- **Noise band (0.03 RMSE):** training five seeds on one fixed split moves RMSE by up to about 0.03. A difference smaller than that is treated as noise.
+All results use the grouped split, in which test cell lines are never seen in training, and are reported as mean ± standard deviation over seeds. The per-drug-mean baseline (RMSE 1.4889) predicts each drug's average training response; since drug identity alone explains 71.5% of the variance in ln(IC50), a model must beat it to show that it uses the omics data at all. Training the same model with different seeds changes RMSE by up to about 0.03, and differences inside this noise band are not treated as real effects.
 
 *Table 1. Main results, test fold, grouped split.*
 
 | Configuration | Seeds | Validation RMSE | Test RMSE | Δ test vs base |
 |---|---|---|---|---|
 | Per-drug mean (floor) | – | – | 1.4889 | +0.1637 |
-| `base` (MoGraphDRP-style, reproduced) | 5 | 1.2961 ± 0.0059 | 1.3252 ± 0.0119 | 0 |
+| Base (MoGraphDRP-style, reproduced) | 5 | 1.2961 ± 0.0059 | 1.3252 ± 0.0119 | 0 |
 | + proteomics | 5 | 1.2796 ± 0.0060 | 1.2920 ± 0.0125 | −0.0331 |
 | + per-drug standardisation | 5 | 1.2599 ± 0.0074 | 1.3086 ± 0.0144 | −0.0166 |
 | + both | 5 | 1.2454 ± 0.0037 | 1.2797 ± 0.0192 | −0.0455 |
-| **`final`** (+ both + molecular graph + pair features) | 5 | **1.2441 ± 0.0102** | **1.2737 ± 0.0144** | **−0.0514** |
+| **Final model** (+ both + molecular graph + pair features) | 5 | **1.2441 ± 0.0102** | **1.2737 ± 0.0144** | **−0.0514** |
 
-`final` beats `base` on all five seeds, with Pearson correlation 0.892 and R² 0.787 (3,644,525 parameters, about 20 minutes per run on a 4 GB GPU). Figure 2 shows every rung.
-- **Where the gain comes from:** proteomics and per-drug standardisation of the training target. Each was kept because it improved validation RMSE on five of five seeds, and together they are close to additive.
-- **Rejected because they hurt:** cross-attention fusion (+0.091) and the pair-attention module (+0.061).
-- **Rejected as unstable:** MoGraphDRP's bilinear head trained without the molecular graph; one seed did not converge.
-- **No effect alone:** the molecular-graph GCN (Kipf & Welling, 2017) and the PPI pair features did not move all-pairs RMSE beyond noise.
+The final model outperforms the base model on all five seeds, with a Pearson correlation of 0.892 and an R² of 0.787 (3,644,525 parameters; about 20 minutes of training on a 4 GB GPU). Figure 2 shows every configuration tested. The improvement comes from proteomics and from per-drug standardisation of the training target, each kept because it improved validation RMSE on all five seeds; their effects are close to additive. Cross-attention fusion (+0.091) and the pair-attention module (+0.061) made the model worse, and MoGraphDRP's bilinear head trained unstably without the molecular graph, so all three were rejected. The molecular-graph GCN (Kipf & Welling, 2017) and the PPI pair features did not change all-pairs RMSE beyond the noise band.
 
 ![Figure 2](figures/fig_ablation_ladder.png)
 
-*Figure 2. Change in test RMSE against `base`, paired by seed. Error bars are the standard deviation of the per-seed differences. Verdicts follow the validation rule (Section 4.4).*
+*Figure 2. Change in test RMSE against the base model, paired by seed. Error bars are the standard deviation of the per-seed differences. Verdicts follow the validation rule (Section 4.4).*
 
-**Choosing `final`.** The team decided on 11 October that the final model must contain a graph component, because the project objectives require one. Before running anything, we fixed a rule: a graph-bearing configuration was eligible if its validation RMSE was within 0.03 of the best configuration so far (1.2454), and among eligible ones the lowest validation RMSE would win. Three were eligible, and adding the molecular graph and pair features won by validation RMSE. Test RMSE was looked at only afterwards.
+Because the project objectives require a graph component, the team decided on 11 October that the final model must contain one. Under the selection rule, a graph-bearing configuration was eligible if its validation RMSE was within 0.03 of the best so far (1.2454), and the eligible one with the lowest validation RMSE was chosen. Of three eligible configurations, the one adding both the molecular graph and the pair features won.
 
-**What the pair features do.** In 1.26% of pairs, the drug's own target protein is mutated in the cell line ("direct hits"). Without pair features, every model over-predicted ln(IC50) on these pairs by about 0.4, meaning it predicted the cell line more resistant than it was. The pair features remove that bias and cut direct-hit RMSE on all five seeds on both folds (Figure 3).
+The pair features matter for a small group of pairs. In 1.26% of pairs the drug's own target protein is mutated in the cell line (direct hits), and without the pair features every model over-predicted ln(IC50) on these pairs by about 0.4, predicting the cell lines to be more resistant than they were. The pair features remove this bias and reduce direct-hit RMSE on all five seeds on both validation and test (Figure 3).
 
 ![Figure 3](figures/fig_direct_hit.png)
 
 *Figure 3. Signed error and RMSE on direct-hit pairs, with and without the pair features.*
 
-**Interpretability check.** We tested whether the trained model uses the direct-hit signal in the direction the measurements support. The comparison was against 50 untrained copies of the same model, with pass rules written before training. All three tests passed:
-- On direct-hit pairs, removing the hit raises RMSE on every seed (test 1.410 to 1.643).
-- Across 30 drugs, the model's per-drug effect correlates with the measured hit effect (Spearman +0.725 ± 0.049; untrained +0.034, and 0 of 50 untrained models reach the trained mean).
-- On 44 held-out BRAF-mutant pairs treated with BRAF inhibitors, the effect tracks measured sensitivity (Spearman +0.633 ± 0.026; 0 of 50).
+We also tested whether the trained model uses this signal in the direction the measurements support, comparing it with 50 untrained copies of the model. All three tests passed:
+- Removing the hit raised direct-hit RMSE on every seed (test, from 1.410 to 1.643).
+- Across 30 drugs, the model's per-drug effect correlated with the measured effect (Spearman +0.725 ± 0.049, against +0.034 for untrained models, none of which reached the trained mean).
+- On 44 held-out BRAF-mutant cell lines treated with BRAF inhibitors, the effect tracked measured sensitivity (Spearman +0.633 ± 0.026; 0 of 50 untrained models).
 
-This is a sensitivity test of five inputs, not a gene-level explanation.
+This is a sensitivity analysis of five inputs and does not explain predictions at the level of individual genes.
 
-**Other protocols** (Figure 4).
-- **Random pairs** (cell lines shared between training and test): `final` scores 0.9622 against 1.0162 for `base`, although per-drug standardisation alone does better there (0.9423).
-- **Unseen drugs:** `final` without standardisation scores 2.0038 ± 0.0843 against 2.1722 ± 0.0369. The interval over the 36 held-out drugs includes zero, so this gain is not established. The final model should not be claimed to generalise to new compounds.
+Under two other protocols (Figure 4), the final model scores 0.9622 against 1.0162 for the base model on a random split of pairs, although per-drug standardisation alone does better there (0.9423). On held-out drugs, the model without standardisation scores 2.0038 ± 0.0843 against 2.1722 ± 0.0369, but the interval over the 36 held-out drugs includes zero, so no improvement on new compounds is claimed.
 
 ![Figure 4](figures/fig_protocols.png)
 
-*Figure 4. `base` against the final model under the three protocols. The leave-drugs-out arm cannot use per-drug standardisation, because new drugs have no training statistics.*
+*Figure 4. The base model against the final model under the three protocols. The leave-drugs-out arm cannot use per-drug standardisation, because new drugs have no training statistics.*
 
 ### 3.3 Requirements
 
-All seven requirements in the Requirements Traceability Matrix are met (Table 2; full matrix with evidence in Appendix A).
+All seven requirements in the Requirements Traceability Matrix are met (Table 2; the full matrix with evidence is in Appendix A).
 
 *Table 2. Requirement status at the end of the project.*
 
@@ -165,44 +141,36 @@ All seven requirements in the Requirements Traceability Matrix are met (Table 2;
 | R01 | Ranked IC50 predictions with a reliability measure | Met | Results table ranked by IC50 with a confidence score (Figure B3) |
 | R02 | Uploaded files deleted after the session | Met | Upload kept apart from training data, deleted on exit (Appendix A) |
 | R03 | Real-time progress feedback | Met | Live log and backend-driven progress (Figure B2) |
-| R04 | Molecular profile summary of top mutations | Met | Top genes with driver-mutation flags (Figure B4) |
+| R04 | Molecular profile summary of top mutations | Met | Driver-mutated genes and drug targets with their effect on the prediction (Figure B4) |
 | R05 | Export of results | Met | CSV download and report export (Figure B3) |
 | R06 | Multi-omics input and SMILES-derived drug structure | Met | GE, Mut+CNV and proteomics; Morgan fingerprint and molecular graph from SMILES |
 | R07 | Runs locally in 4–8 GB of VRAM | Met | All training and inference on a 4 GB GTX 1650 |
 
-Two requirements are met in a different form from the proposal's wording.
-- **R01:** the reliability measure is a confidence score from how far the five trained seeds disagree on a drug (a deep ensemble; Lakshminarayanan et al., 2017), scaled by the ensemble's validation error. It is not a calibrated interval.
-- **R06:** the omics are joined by concatenation, not cross-attention fusion, because the ablation rejected cross-attention (Section 3.4).
+Two requirements are met in a different form from the proposal's wording. For R01, the reliability measure is a confidence score based on how much the five seeds disagree about a drug (a deep ensemble; Lakshminarayanan et al., 2017), scaled by the ensemble's validation error; it is not a calibrated interval. For R06, the omics layers are concatenated, because the ablation rejected cross-attention (Section 3.4).
 
 ### 3.4 Key decisions and their justification
 
-- **Grouped split as the headline.** One model scored 0.8971 under a random split and 1.2442 under the grouped split. That difference accounts for about 60% of the gap to MoGraphDRP's 0.6622. A random split rewards remembering cell lines, while the realistic task is a new cell line. We therefore compare only against our own reproduction, never against the published figure.
-- **GAT dropped, GCN on the drug molecule kept.** On our heterogeneous graph, GAT reached test RMSE 2.25 against 1.35 for graph convolution. The only graph neural network in `final` is the GCN on the drug's molecular graph. It is kept because the project requires a graph component, and the report states that it has no measurable effect.
-- **Cross-attention rejected.** With one vector per omics layer, the attention weights are always 1, so the module reduces to extra projection layers, and those layers cost 0.091 RMSE.
-- **Pair attention rejected.** The project's original novelty was attention from a drug's target proteins to a cell line's mutated proteins. It trained on only about 1.6 matching pairs per batch. Its attention stayed near uniform: a mutated target received 0.15–0.17 of its weight against 0.13–0.15 by chance. It then overfitted early and made all subsets worse. This rejects the module as built, not the idea. Adding PPI message passing on top of it was skipped, because it would have stacked on an attention layer that had not learned.
-- **Rules before results.** Every pass rule was written before its runs, so no component was kept because it happened to look good on test.
+The grouped split was adopted as the headline protocol because it reflects the intended use: predicting response for a cell line the model has not seen. The same model scored 0.8971 under a random split and 1.2442 under the grouped split, a difference that accounts for about 60% of the gap to MoGraphDRP's published 0.6622. Results are therefore compared only with our own reproduction of MoGraphDRP.
+
+The GAT was dropped after reaching a test RMSE of 2.25 on our heterogeneous graph, against 1.35 for graph convolution. The only graph neural network in the final model is the GCN over the drug's molecular graph, retained because the project requires a graph component despite its negligible measured effect.
+
+Cross-attention fusion was rejected for a structural as well as a numerical reason: with one vector per omics layer every attention weight equals one, so the module reduces to extra projection layers, which increased RMSE by 0.091.
+
+The pair-attention module, the project's original novelty, let a drug's target proteins attend to a cell line's mutated proteins. With only about 1.6 matching pairs per training batch, its attention stayed close to uniform (a mutated target received 0.15–0.17 of its weight against 0.13–0.15 by chance), and it overfitted early and worsened every subset of pairs. This rejects the module as built rather than the underlying idea. PPI message passing on top of it was not attempted, since it would have depended on an attention layer that had not learned.
 
 ### 3.5 Limitations and future work
 
-- **The application can name few genes.** The omics layers enter `final` as PCA components, so the only genes it sees by name are a drug's targets and a cell line's driver mutations. About a third of pairs get no gene list, mostly because the drug has no known target, and most other pairs get one to four genes. Pathway enrichment needs at least five, so it runs on about 4% of pairs. The earlier `HeteroIC50GNN` scored every protein in the graph and always had enough genes, but its gene scores came from a less accurate model.
-- **The confidence score is not calibrated.** Conformal prediction intervals would turn it into the interval the requirement originally described.
-- **Unseen cell lines only.** Generalisation to new drugs is not established.
-- **No PPI message passing.** No trained rung passes messages over the PPI network; the PPI enters only as precomputed features.
-- **No SHAP.** The proposal's SHAP module was replaced by the sensitivity test above. It covers 1.26% of pairs and names no gene other than a drug's annotated target.
-- **Data caveats.**
-  - The PCA used to compress each omics layer was fitted on all 532 cell lines, including test lines. This leak is unsupervised, but a strict pipeline would fit PCA on training lines only.
-  - About 919 cell lines have all three omics, yet the delivered matrices hold 532. The reason is not documented.
-- **Not pursued:** the proposal's low-priority items (a clickable PPI subgraph, container packaging, sub-second latency).
-- **Further future work:** a cell-line growth-rate covariate, which explains part of the remaining per-cell-line error and is waiting on supervisor approval, and a test suite for the application.
+The application can name few genes. Because the omics layers enter the final model as principal components, the only genes it sees individually are a drug's targets and a cell line's driver mutations. About a third of pairs have no gene list, mostly because the drug has no known target, and most others list one to four genes, so pathway enrichment, which needs five, runs for only about 4% of pairs. HeteroIC50GNN scored every protein and always had enough genes, but was less accurate.
+
+Conformal prediction could turn the confidence score into the calibrated interval the requirement originally described. The model is validated for unseen cell lines only, and no configuration passes messages over the PPI network, which enters only through precomputed features. The proposal's SHAP module was replaced by the sensitivity test in Section 3.2, which covers 1.26% of pairs and names no gene beyond a drug's annotated target.
+
+Two data issues remain. The principal component analysis (PCA) for each omics layer was fitted on all 532 cell lines, including test lines; the leak is unsupervised, but a strict pipeline would fit it on training lines only. In addition, about 919 cell lines have all three omics layers, yet the processed matrices contain 532, for reasons not documented. The proposal's low-priority items (an interactive PPI subgraph view, container packaging and sub-second latency) were not pursued. Future work could add a cell-line growth-rate covariate, which explains part of the remaining error and awaits supervisor approval, and an automated test suite.
 
 ## 4. Methodology
 
 ### 4.1 Design rationale
 
-The proposal's design changed several times. We therefore built the final model as a frozen base plus switchable components, so the effect of each change could be measured (Figure 5).
-- **The base reproduces MoGraphDRP's architecture** from its public code: per-omics MLP branches, a fingerprint encoder and a predictor MLP. As a check, the full MoGraphDRP-aligned variant scored 0.978 ± 0.002 under a random split, against the published 0.9497 without its XGBoost stage. The remaining gap is explained by data differences.
-- **The base was then frozen,** and every component is a flag on it.
-- **The final model** concatenates three 128-dimensional cell-line branches (GE, Mut+CNV, proteomics), a 128-dimensional drug vector (Morgan fingerprint and molecular-graph GCN, blended by a learned gate) and five PPI pair features, and passes them through the predictor MLP.
+Because the planned design changed several times, the final model was built as a frozen base with switchable components, so that each change could be measured separately (Figure 5). The base reproduces MoGraphDRP's architecture from its public code: per-omics MLP branches, a fingerprint encoder and a predictor MLP. As a check, the full MoGraphDRP-aligned variant scored 0.978 ± 0.002 under a random split, against the published 0.9497 without its XGBoost stage; the remaining gap is attributed to data differences. The base was then frozen, and each component implemented as a flag on it. The final model concatenates three 128-dimensional cell-line branches (GE, Mut+CNV and proteomics), a 128-dimensional drug vector that blends the Morgan fingerprint and molecular-graph GCN through a learned gate, and the five PPI pair features, and passes them through the predictor MLP.
 
 ![Figure 5](../../docs/figures/final_model_architecture.png)
 
@@ -210,55 +178,33 @@ The proposal's design changed several times. We therefore built the final model 
 
 ### 4.2 Data pipeline
 
-Each step is a script in `src/data/` and runs in this order.
-1. **Sources.**
-   - GDSC2 fitted dose–response (release of 27 Oct 2023): 242,036 measurements.
-   - Cell Model Passports RNA-seq, mutation, CNV and proteomics files.
-   - Drug SMILES from PubChem (Kim et al., 2023), resolving 420 of 542 drug names.
-   - STRING v12.0 human PPI.
-   
-   Cell lines are joined on Sanger model IDs through a crosswalk (`ingest_and_align.py`).
-2. **Wide matrices** (`build_wide_matrices.py`), one row per cell line:
-   - GE: 41,143 genes.
-   - Mut+CNV: 20,797 binary mutation columns and 785 copy-number columns.
-   - Proteomics: 8,453 proteins, 38.6% missing.
-3. **Preprocessing** (`omics_preprocessing.py`):
-   - GE: log1p, standardise, PCA to 128 components.
-   - Mut+CNV: standardise, PCA to 128 components.
-   - Proteomics: median-impute, standardise, PCA to 128 components.
-4. **Drug features:**
-   - 2048-bit Morgan fingerprints, radius 2 (Rogers & Hahn, 2010).
-   - Molecular graphs with 39 atom features, built with RDKit.
-5. **Graph** (`03_graph_construction.py`, `04_link_cell_lines.py`):
-   - Nodes: 532 cell lines, 498 drugs and 16,214 proteins.
-   - Edges: 473,860 PPI edges (STRING combined score ≥ 700), 683 drug–target edges, and 4,341 cell-line–mutation edges restricted to 537 cancer-driver genes.
-   - The five pair features are computed from this graph: target directly mutated, inverse hop distance, mutated neighbours of the target, has-target and has-mutation.
-6. **Pairs and split:**
-   - 111,799 cell-line–drug pairs (531 cell lines, 240 drugs) have all three omics and a resolvable SMILES.
-   - Cell lines are split 70/15/15 with scikit-learn's `GroupShuffleSplit` (Pedregosa et al., 2011), seed 42, giving 77,668 training, 17,291 validation and 16,840 test pairs, with no cell line in two folds.
+The data pipeline consists of scripts in `src/data/`, run in the order shown in Table 3.
+
+*Table 3. Data pipeline.*
+
+| Step | Script | What it does | Output |
+|---|---|---|---|
+| 1. Ingest | `ingest_and_align.py` | Joins GDSC2 dose–response (27 Oct 2023 release) with Cell Model Passports RNA-seq, mutation, CNV and proteomics files on Sanger model IDs; drug SMILES from PubChem (Kim et al., 2023) | 242,036 response measurements; SMILES for 420 of 542 drug names |
+| 2. Wide matrices | `build_wide_matrices.py` | One row per cell line per layer | GE 41,143 genes; Mut+CNV 20,797 mutation and 785 copy-number columns; proteomics 8,453 proteins (38.6% missing) |
+| 3. Preprocessing | `omics_preprocessing.py` | GE: log1p, standardise. Mut+CNV: standardise. Proteomics: median-impute, standardise. All: PCA | 128 components per layer |
+| 4. Drug features | `experiment_utils.py`, `drug_graphs.py` | RDKit Morgan fingerprints (radius 2; Rogers & Hahn, 2010) and molecular graphs | 2048-bit fingerprints; graphs with 39 atom features |
+| 5. Graph | `03_graph_construction.py`, `04_link_cell_lines.py` | STRING v12.0 PPI (combined score ≥ 700), drug–target edges, cell-line edges to 537 cancer-driver genes | 532 cell lines, 498 drugs, 16,214 proteins; 473,860 PPI, 683 target and 4,341 mutation edges |
+| 6. Pair features | `pair_features.py` | Target directly mutated, inverse hop distance, mutated neighbours of the target, has-target, has-mutation | Five features per pair |
+| 7. Pairs and split | `experiment_utils.py` | Keeps pairs with all three omics and a resolvable SMILES; scikit-learn `GroupShuffleSplit` by cell line, 70/15/15, seed 42 (Pedregosa et al., 2011) | 111,799 pairs (531 cell lines, 240 drugs): 77,668 / 17,291 / 16,840 |
 
 ### 4.3 Training
 
-Every rung uses the same settings:
-- Adam (learning rate 1e-4, no weight decay)
-- batch size 128, dropout 0.4
-- 200 epochs at a constant learning rate
-- mean-squared-error loss
-- checkpoint on best validation RMSE
-
-With per-drug standardisation, the model predicts (y − drug mean) / drug std. The drug statistics are computed from training rows only and inverted at prediction. Seeds 42–46 vary initialisation and batch order; the split stays fixed.
+Every configuration is trained with the same settings: Adam with a learning rate of 1e-4 and no weight decay, a batch size of 128, dropout of 0.4, mean-squared-error loss, and 200 epochs at a constant learning rate. The checkpoint with the best validation RMSE is kept. With per-drug standardisation, the model predicts each response as (y − drug mean) / drug standard deviation. The statistics are computed from training rows only and inverted at prediction time. Seeds 42 to 46 vary the initialisation and batch order, while the split remains fixed.
 
 ### 4.4 Evaluation protocol
 
-- Each rung is reported as mean ± standard deviation over 3–5 seeds, with the change against `base` taken on shared seeds.
-- The per-drug-mean baseline is reported beside every result.
-- A component is kept if it beats `base` on validation on at least four of five seeds. Test is reported after the decision.
-- Subset analyses (pairs whose drug has a target, direct hits, hop distance) use a paired bootstrap over test cell lines.
-- **Two laptops ran the final batches.** Results differ slightly between machines (same seed, up to 0.028), so every difference is taken within one machine, and each machine wrote its own results file.
+Each configuration is reported as mean and standard deviation over three to five seeds, with its change relative to the base model computed on shared seeds, and always alongside the per-drug-mean baseline. A component is kept if it beats the base model on validation on at least four of five seeds. Every such rule was written before its runs, and test results were examined only after the decision. Subset analyses, such as direct hits, use a paired bootstrap over test cell lines. The final runs were split across two laptops, and because results differ slightly between machines (up to 0.028 for the same seed), every comparison is made within one machine.
 
 ### 4.5 Software, tools and development process
 
-*Table 3. Tools.*
+Table 4 lists the main tools. Development followed two-week sprints organised around user stories (data cleaning, exploratory analysis, backend, model development, user interface and testing). Each experiment was written up in a numbered results document (`docs/01` to `docs/18`) and the ablation in a running write-up (`src/ABLATION.md`), giving every decision a dated record.
+
+*Table 4. Tools.*
 
 | Purpose | Tool |
 |---|---|
@@ -273,54 +219,45 @@ With per-drug standardisation, the model predicts (y − drug mean) / drug std. 
 | Planning | Notion sprint board and RTM; Gantt chart |
 | Hardware | Two laptops, one with an NVIDIA GTX 1650 (4 GB) |
 
-Work ran in two-week sprints organised by user story: data cleaning, exploratory analysis, backend, model development, UI and testing. Experiments were written up in numbered result documents (`docs/01`–`docs/18`) and an ablation write-up (`src/ABLATION.md`), so each decision has a dated record.
-
 ### 4.6 Application architecture
 
-The client (`pages/`) never blocks on the model. Each request runs in a QThread worker (`client/workers.py`) that calls the backend over HTTP. The backend's run manager executes the model backend in a background thread and exposes its log and progress, which the client polls every second. On its first run, the model backend loads the reference data the checkpoints were trained on: the three omics PCA files, the drug SMILES, the graph's target and mutation edges, and the training response file, which fixes the drug codes, the grouped split and the per-drug target statistics. It then loads the five seed checkpoints and checks each one's validation RMSE against the recorded value. These are kept in memory, so later runs only predict. The uploaded file decides which cell line and drugs are scored, and supplies display names. Every drug is scored by all five models; the mean is the prediction and the spread drives the confidence score (Appendix C). The run log states whether the chosen cell line was held out from training. Gene attribution is computed on demand for the selected drug: each of the drug's target genes and the cell line's mutated genes is removed from the pair features in turn, and the change in the averaged prediction is its score. The attributed genes are sent to Enrichr for pathway enrichment.
+The client (`pages/`) never blocks while the model runs: each request is handled by a QThread worker (`client/workers.py`) that calls the backend over HTTP, and the backend runs the model in a background thread whose log and progress the client polls every second. On its first run, the model backend loads the data the checkpoints were trained on (omics principal components, drug SMILES, the graph's target and mutation edges, and the training response file, which fixes the drug encoding, split and per-drug statistics), then loads the five checkpoints and checks each against its recorded validation RMSE. These stay in memory, so later runs only predict. The upload determines which cell line and drugs are scored, and the five models' mean and spread give the prediction and confidence score (Appendix C). Gene attribution removes each target and mutated gene from the pair features in turn and scores it by the resulting change in prediction.
 
 ## 5. Software and project critique
 
-**Against the proposal.** Table 4 lists the planned components that changed. In each case an experiment showed that the planned component did not help, and the decision followed the evidence. We do not count these as failures to deliver. The proposal's success measure, "lower RMSE than flat concatenation baselines" (a random forest on concatenated features scored 2.17 under the grouped split), was met. "Improving on MoGraph" was met against our own reproduction (`aligned` 1.3416), not against the published figure.
+Table 5 compares the delivered system with the proposal. Most changes followed an experiment showing that the planned component did not help; the SHAP module was the exception, dropped for lack of time. The proposal's main success measure, lower RMSE than flat concatenation baselines, was met (a random forest on concatenated features scored 2.17 under the grouped split). Improvement on MoGraphDRP was achieved against our own reproduction (MoGraphDRP-aligned, 1.3416) but not against the published figure, which uses a different split.
 
-*Table 4. Proposal against outcome.*
+*Table 5. Proposal against outcome.*
 
-| Proposed | Delivered | Why |
+| Proposed | Delivered | Reason |
 |---|---|---|
 | GAT message passing | GCN on the drug molecule | GAT 2.25 vs GCN 1.35 |
 | Cross-attention fusion | Concatenation | +0.091 RMSE |
-| Heterogeneous GNN over PPI | Kept as a compared baseline (1.32) | Not better than `base`; signal does not reach the readout |
-| SHAP interpretability | Sensitivity test against untrained models | Not built in the time available; a test against untrained models was run instead |
+| Heterogeneous GNN over PPI | Kept as a compared baseline (1.32) | Not better than the base model; PPI signal does not reach the prediction |
+| SHAP interpretability | Sensitivity test against untrained models | Not built in the time available |
 | Beat MoGraphDRP | Beat our reproduction of it | Published figure uses a random split |
 
-**How our thinking changed.** We began by asking how to beat 0.6622. By mid-semester we had found that most of the gap was the evaluation protocol. The question then became which components help when the model meets a new cell line. That change of question produced the project's most useful outputs: the per-drug baseline, the noise band and the pre-registered rules. It also meant accepting that the graph components, which the project is named after, did not improve accuracy.
+The team's thinking changed considerably. Work began with the question of how to beat MoGraphDRP's 0.6622, but by mid-semester most of that gap was traced to the evaluation protocol, and the question became which components help when the model meets a new cell line. This shift produced the project's most useful outputs, the per-drug baseline, the noise band and the decision rules, and required accepting that the graph components named in the project's title did not improve accuracy.
 
-**What went well.**
-- The ablation framework made each claim checkable.
-- An audit of the first heterogeneous GNN found four bugs before any result was reported: cell lines received no messages, protein features were empty, the split leaked, and the checkpoint was chosen on correlation.
-- The two-laptop protocol doubled compute in the final week without mixing results across machines.
+Several aspects of execution worked well. The ablation framework made every claim checkable against a recorded run. An audit of the first heterogeneous GNN found four bugs before any of its results were reported (cell lines received no messages, protein features were empty, the split leaked, and checkpoints were selected on correlation). Running the final batches on two laptops roughly doubled the available compute without mixing results.
 
-**What went less well, and why.**
-- **Schedule.** The repository shows no commits from 4 May to 24 July and few from 9 to 21 September (Figure 6). The final model was chosen on 12 October, two weeks after the planned professor review. The cause was the change of question above: a credible model could not be fixed before the evaluation method was.
-- **Model and application tracks drifted.** The application was finished around `HeteroIC50GNN` while the ablation replaced it, and it was moved to the final model only in the last week. Its interpretation panels were designed for a model that scores every protein, and they show little for one that names only targets and mutations (Section 3.5). The final application fixes also sat on a branch that was not merged into every working branch. A shared integration date for model and application would have prevented all three.
-- **Process.** Code review through pull requests stopped after August, and there is no automated test suite or issue tracker. Bugs were recorded in documents instead. The mid-semester demonstration slide used a mock-up rather than the running application.
-- **Workload.** [Team to write: how the work was divided, whether it was balanced, and how communication through WhatsApp, Notion and supervisor meetings worked.]
-- **AI tools.** We used AI coding assistants for code and analysis, in line with the unit's policy. [Team to state how they were used and checked.]
+Other aspects went less well. The repository shows no commits between 4 May and 24 July and few between 9 and 21 September (Figure 6), and the final model was chosen on 12 October, two weeks after the planned professor review, mainly because a credible model could not be fixed before the evaluation method was settled. The model and application also developed on separate tracks: the application was completed around HeteroIC50GNN and switched to the final model only in the last week, which left its gene and pathway views designed for the wrong model (Section 3.5). Application fixes also sat for a time on an unmerged branch. A shared integration date would have prevented both problems. Finally, pull-request review stopped after August, there is no automated test suite or issue tracker, and the mid-semester demonstration slide used a mock-up rather than the running application.
+
+[Team to write: how the work was divided and whether it was balanced, and how communication through WhatsApp, Notion and supervisor meetings worked.]
+
+[Team to write: how AI coding assistants were used and how their output was checked, in line with the unit's policy.]
 
 ![Figure 6](figures/fig_commit_timeline.png)
 
 *Figure 6. Commits per week across all branches against the planned milestones.*
 
-**Lessons.**
-1. Fix the evaluation protocol before choosing an architecture.
-2. Write requirements after a feasibility spike.
-3. Keep one integration branch and merge to it weekly.
+The main lessons for future projects are to fix the evaluation protocol before choosing an architecture, to write requirements only after a short feasibility study, and to keep a single integration branch that every member merges into weekly.
 
 ## 6. Conclusion
 
-MCS16 delivered a local desktop application that ranks cancer drugs by predicted IC50 for a chosen cell line. It meets all seven recorded requirements. It serves a measured final model for unseen cell lines: test RMSE 1.2737 against 1.3252 for a reproduced MoGraphDRP-style base and 1.4889 for a per-drug baseline. The gain comes from adding proteomics and standardising the target per drug. PPI pair features correct a 0.4 bias on pairs whose drug target is mutated, and a sensitivity test against untrained models shows the model uses that signal in the measured direction.
+MCS16 delivered a working drug-ranking application that runs locally and meets all seven recorded requirements. Its final model for unseen cell lines improves on a reproduced MoGraphDRP-style base (test RMSE 1.2737 against 1.3252), mainly through proteomics and per-drug standardisation of the target. The PPI pair features correct a bias of about 0.4 on pairs whose drug target is mutated, and untrained copies of the model show no such effect.
 
-The project also departed from its proposal. Graph attention, cross-attention fusion and the novel pair-attention module were each built, tested and rejected on evidence, and the report states the limits: no gain on new drugs, an uncalibrated confidence score, and gene and pathway views that can name only a drug's targets and a cell line's mutations. Methodologically, the main lessons were to fix evaluation before architecture and to write decision rules before seeing results. On project management, they were to integrate the model and application tracks continuously.
+The project departed from its proposal where the evidence required: graph attention, cross-attention fusion and the pair-attention module were each built, tested and rejected. Its main limitations are the lack of any gain on new drugs, an uncalibrated confidence score and limited gene-level interpretation. The main methodological lessons were to settle the evaluation before the architecture and to write decision rules before seeing results; the main project-management lesson was to integrate the model and application continuously.
 
 ---
 
@@ -331,7 +268,6 @@ Ahmadi, Z., Pirgazi, J., & Sorkhi, A. G. (2026). MoGraphDRP: Multi-omics and gra
 Aldea, M., Friboulet, L., Apcher, S., Jaulin, F., Mosele, F., Sourisseau, T., Soria, J.-C., Nikolaev, S., & André, F. (2023). Precision medicine in the era of multi-omics: Can the data tsunami guide rational treatment decision? *ESMO Open, 8*(5), Article 101642. https://doi.org/10.1016/j.esmoop.2023.101642 [verify author list]
 
 Fey, M., & Lenssen, J. E. (2019). *Fast graph representation learning with PyTorch Geometric* (arXiv:1903.02428). arXiv. https://doi.org/10.48550/arXiv.1903.02428
-
 
 Hage Chehade, [initials], et al. (2026). Trends and disparities in the use of next-generation sequencing in patients with cancer in the United States. *JAMA Network Open, 9*(4), Article e265585. https://doi.org/10.1001/jamanetworkopen.2026.5585 [complete author list]
 
@@ -373,7 +309,7 @@ Yang, W., Soares, J., Greninger, P., Edelman, E. J., Lightfoot, H., Forbes, S., 
 
 ## Appendix A. Requirements Traceability Matrix (final status)
 
-*Table A1. Evidence refers to the `origin/dev` branch, which holds the delivered application.*
+*Table A1. Evidence refers to the `main` branch, which holds the delivered application.*
 
 | ID | Description | Category | Type | Source | Status | Evidence |
 |---|---|---|---|---|---|---|
@@ -387,7 +323,7 @@ Yang, W., Soares, J., Greninger, P., Edelman, E. J., Lightfoot, H., Forbes, S., 
 
 ## Appendix B. Application screenshots
 
-[Capture from the `origin/dev` application, after the final-model backend is merged, with a real run. Screenshots taken from the `HeteroIC50GNN` version must be retaken. The upload CSV needs the columns the backend reads: `sanger_model_id`, `drug_id`, `ln_ic50`, plus `drug_name`, `putative_target`, `pathway_name`, `cell_line_name`, `tissue`, `cancer_type`. For B4 and B5, use cell line KCL-22 (`SIDM01004`) and Olaparib (`1017`): KCL-22 is held out from training, the pair lists seven genes, and Enrichr returns significant DNA-damage terms. Most pairs list fewer than five genes and show no pathways (Section 3.5).]
+[Capture from the `main` branch application, which serves the final model, with a real run. Screenshots taken from the `HeteroIC50GNN` version must be retaken. The upload CSV needs `sanger_model_id`, `drug_id` and `ln_ic50`; the optional columns `drug_name`, `putative_target`, `pathway_name`, `cell_line_name`, `tissue` and `cancer_type` supply display names, so include them for readable screenshots. For B4 and B5, use cell line KCL-22 (`SIDM01004`) and Olaparib (`1017`): KCL-22 is held out from training, the pair lists seven genes, and Enrichr returns significant DNA-damage terms. Most pairs list fewer than five genes and show no pathways (Section 3.5).]
 
 - Figure B1. Dataset Initialisation: upload and target cell-line selection.
 - Figure B2. Model Execution Log: live backend log and progress.
@@ -398,10 +334,10 @@ Yang, W., Soares, J., Greninger, P., Edelman, E. J., Lightfoot, H., Forbes, S., 
 
 ## Appendix C. Sample source code
 
-The excerpt satisfies **R01**. `_predict_z` scores the requested pairs with each of the five trained models, and `_to_ln` turns each model's per-drug z-scores back into ln(IC50). The call site inside `FinalModelBackend.run` takes the mean and spread over the five models, and `rank_predictions` turns them into a ranked, display-ready list with a confidence score. The lines are copied unchanged from the `origin/dev` branch and are not consecutive; markers give the file and lines.
+The excerpt satisfies **R01**. `_predict_z` scores the requested pairs with each of the five trained models, and `_to_ln` turns each model's per-drug z-scores back into ln(IC50). The call site inside `FinalModelBackend.run` takes the mean and spread over the five models, and `rank_predictions` turns them into a ranked, display-ready list with a confidence score. The lines are copied unchanged from the `main` branch and are not consecutive; markers give the file and lines.
 
 ```python
-# --- backend/model_backends/final_model.py, lines 135-152 (origin/dev) ---
+# --- backend/model_backends/final_model.py, lines 135-152 (main) ---
 @torch.no_grad()
 def _predict_z(session: _Session, cell_rows: np.ndarray, drug_codes: np.ndarray, pair: np.ndarray) -> np.ndarray:
     """Per-drug z-scores from every model -> (n_models, n_rows)."""
@@ -422,7 +358,7 @@ def _to_ln(session: _Session, z: np.ndarray, drug_codes: np.ndarray) -> np.ndarr
     return np.stack([session.scaler.inverse_transform(row, drug_codes) for row in z]).astype(np.float64)
 
 
-# --- backend/model_backends/_common.py, lines 34-78 (origin/dev) ---
+# --- backend/model_backends/_common.py, lines 34-78 (main) ---
 def rank_predictions(raw: list[dict], val_rmse: float, drug_info: dict[str, dict]) -> list[dict]:
     """Turn raw per-drug {drug_id, ln_ic50_mean, ln_ic50_std} into display-ready results.
 
@@ -469,7 +405,7 @@ def rank_predictions(raw: list[dict], val_rmse: float, drug_info: dict[str, dict
         )
     return results
 
-# --- backend/model_backends/final_model.py, lines 433-442, inside FinalModelBackend.run (origin/dev) ---
+# --- backend/model_backends/final_model.py, lines 433-442, inside FinalModelBackend.run (main) ---
         drug_codes = np.array([session.drug_code[d] for d in panel], dtype=np.int64)
         z = _predict_z(session, np.full(len(panel), session.cell_row[cell]), drug_codes, pair)
         pred = _to_ln(session, z, drug_codes)
