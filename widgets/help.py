@@ -24,12 +24,12 @@ HELP: dict[str, str] = {
     # -- model execution log page --
     "file_graph": "Prebuilt graph of cell lines, drugs and proteins.",
     "file_dataset": "Your uploaded dataset.",
-    "file_checkpoint": "Trained model weights.",
+    "file_checkpoint": "Trained weights of the final model, 5 seeds.",
     # -- final results page: predicted drug results --
     "results_panel": "Click a row to see the genes behind it.",
     "col_ic50": "Lower = more sensitive.",
     "col_rank": "High < 1 µM · Medium 1–10 µM · Low ≥ 10 µM",
-    "col_confidence": "How consistent the model's repeated predictions are.",
+    "col_confidence": "How closely 5 trained copies of the model agree.",
     # -- final results page: charts --
     "perf_curve": "Falling validation RMSE = model improving.",
     "perf_checkpoint": "Dots near the diagonal = accurate predictions.",
@@ -40,9 +40,9 @@ HELP: dict[str, str] = {
     "omics_genomics": "DNA mutations and gene copy-number gains or losses.",
     "omics_proteomics": "Protein abundance measured in the cell line.",
     # -- final results page: biological interpretation --
-    "gene_panel": "Genes that most influenced this prediction.",
+    "gene_panel": "Effect of each drug target or mutated gene.",
     "col_contribution": "Left = toward sensitivity, right = toward resistance (√ scale).",
-    "col_evidence": "Drug target, driver mutation, or network link.",
+    "col_evidence": "Drug target or driver mutation.",
     "target_recovery": "Is the drug's known target among the top genes?",
     "enrichment_panel": "Pathways enriched in the top genes (needs internet).",
     "col_adj_p": "Lower = stronger; < 0.05 is significant.",

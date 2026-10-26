@@ -35,7 +35,8 @@ def rank_predictions(raw: list[dict], val_rmse: float, drug_info: dict[str, dict
     """Turn raw per-drug {drug_id, ln_ic50_mean, ln_ic50_std} into display-ready results.
 
     - predicted_ic50_um: back-transform from ln(IC50 uM), the model's native scale.
-    - confidence_percent: compares each drug's MC-dropout std against `val_rmse`
+    - confidence_percent: compares each drug's prediction spread (the std over
+      MC-dropout samples, or over an ensemble's seeds) against `val_rmse`
       -- the model's own measured error on held-out validation data -- via
       `100 * exp(-std / val_rmse)`. This is an *absolute* scale (comparable
       across separate runs), unlike a min-max normalization over the current

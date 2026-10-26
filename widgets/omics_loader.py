@@ -12,9 +12,11 @@ on screen glides from where it is to where it should be.
 
 The graph is an illustration, not the data: 12 well-known genes and 9 GDSC2
 drugs with their real targets, standing in for the 16,214 proteins and ~500
-drugs of `hetero_graph.pt`. The stage copy describes what `HeteroIC50GNN`
-actually does (PCA omics features joined per cell line, Morgan fingerprints,
-two message-passing layers).
+drugs of `hetero_graph.pt`. The stage copy describes what the final model
+(`backend/model_backends/final_model.py`) actually does: one encoder per PCA
+omics layer, a GCN over each drug's atoms beside its Morgan fingerprint, and
+pair features measuring how close the sample's mutations are to each drug's
+targets in the interaction network.
 
 Driving it:
     loader.start(files, cell_line)   # a new run
@@ -113,9 +115,9 @@ _STAGES = [
     ("Adding gene expression", "E fills in: your sample's expression profile, compressed with PCA."),
     ("Adding mutations and copy number", "M fills in: the mutation and copy-number profile."),
     ("Adding proteomics", "P fills in: the protein-abundance profile."),
-    ("Adding the drugs", "Each drug joins the proteins it targets; its structure is a Morgan fingerprint."),
-    ("Combining the omics for your sample", "The three profiles are joined into one feature vector for your sample."),
-    ("Passing messages through the graph", "Two graph layers pass signal along the protein interactions."),
+    ("Adding the drugs", "Each drug joins the proteins it targets; its atoms and bonds are read as a graph."),
+    ("Combining the omics for your sample", "Each profile is encoded on its own, then the three are joined."),
+    ("Matching mutations to drug targets", "How close your sample's mutations sit to each drug's targets."),
     ("Predicting drug response", "Each drug gets a predicted ln(IC50) for your sample."),
     ("Done", "Opening your results."),
 ]
@@ -142,7 +144,7 @@ _FILES = [
 ]
 
 _TAG_COLOURS = {
-    "setup": "#a1a1aa", "graph": "#a1a1aa", "data": "#93c5fd", "cell-line": "#93c5fd", "predict": "#93c5fd",
+    "setup": "#a1a1aa", "graph": "#a1a1aa", "omics": "#93c5fd", "data": "#93c5fd", "cell-line": "#93c5fd", "predict": "#93c5fd",
     "model": "#f4f4f5", "eval": "#f4f4f5", "epoch": "#f4f4f5", "train": "#f4f4f5",
     "done": "#4ade80", "error": "#f87171",
 }
@@ -1128,7 +1130,7 @@ class OmicsLoader(QFrame):
         if tag == "setup":
             self._reach(1)
         elif tag == "graph" and "loading" not in text:
-            # The graph carries the omics features, so loading it covers the omics steps too.
+            # The backend reads the omics files before the graph, so the graph covers the omics steps too.
             self._reach(5)
             drugs = re.search(r"(\d+) drugs", text)
             if drugs:

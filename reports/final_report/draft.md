@@ -91,14 +91,14 @@ The deliverable has two parts.
 1. The user uploads a drug-response CSV and selects a target cell line (Figure B1).
 2. The run is shown live: backend log lines and a staged progress view driven by the backend's own progress (Figure B2).
 3. The results page ranks every scorable drug by predicted IC50 in micromolar. Each drug gets a sensitivity band (high below 1 µM, medium below 10 µM) and a confidence score (Figure B3).
-4. For a selected drug, the page shows the cell line's top-ranked genes, flags driver mutations and known targets (Figure B4), and reports pathway enrichment through Enrichr (Kuleshov et al., 2016) (Figure B5).
+4. For a selected drug, the page lists the drug's target genes and the cell line's driver-mutated genes, with how much the prediction changes when each one is removed, and flags which are targets and which are mutations (Figure B4). When at least five genes are listed, it also reports pathway enrichment through Enrichr (Kuleshov et al., 2016) (Figure B5).
 5. An analytics page shows validation predicted-against-measured values and confidence against IC50 (Figure B6).
 6. Results can be downloaded as CSV and exported as a report.
 7. The uploaded file is deleted when the application closes.
 
-The application serves the heterogeneous graph neural network `HeteroIC50GNN`, which was the project's main model until the ablation; its test RMSE on the grouped split is 1.3301.
+The application serves the final model (Section 3.2). It loads the five trained seeds of `final` and averages their predictions, so nothing is retrained when it runs. On the validation fold the five-seed average scores RMSE 1.2118, below every single seed (1.2349–1.2594). Each seed reproduces its recorded validation RMSE when loaded, which shows that the application rebuilds the model's inputs exactly. The application was first built around the heterogeneous graph neural network `HeteroIC50GNN` (test RMSE 1.3301) and was moved to `final` once the ablation had chosen it.
 
-**A final model and the framework that produced it.** The script `run_ablation.py` trains any combination of components on a frozen base with fixed settings, one switch per component, and appends one row per run to a results file. Section 3.2 reports what it found. Section 3.5 explains why the application does not yet serve the final model.
+**A final model and the framework that produced it.** The script `run_ablation.py` trains any combination of components on a frozen base with fixed settings, one switch per component, and appends one row per run to a results file. Section 3.2 reports what it found.
 
 ![Figure 1](figures/fig_app_architecture.png)
 
@@ -171,7 +171,7 @@ All seven requirements in the Requirements Traceability Matrix are met (Table 2;
 | R07 | Runs locally in 4–8 GB of VRAM | Met | All training and inference on a 4 GB GTX 1650 |
 
 Two requirements are met in a different form from the proposal's wording.
-- **R01:** the reliability measure is a confidence score from 30 Monte Carlo dropout passes (Gal & Ghahramani, 2016), scaled by the model's validation error. It is not a calibrated interval.
+- **R01:** the reliability measure is a confidence score from how far the five trained seeds disagree on a drug (a deep ensemble; Lakshminarayanan et al., 2017), scaled by the ensemble's validation error. It is not a calibrated interval.
 - **R06:** the omics are joined by concatenation, not cross-attention fusion, because the ablation rejected cross-attention (Section 3.4).
 
 ### 3.4 Key decisions and their justification
@@ -184,7 +184,7 @@ Two requirements are met in a different form from the proposal's wording.
 
 ### 3.5 Limitations and future work
 
-- **The application serves `HeteroIC50GNN` (1.3301), not `final` (1.2737).** The final model was chosen on 12 October, after the application was built around the earlier model. Serving `final` needs a backend wrapper around checkpoints that already exist.
+- **The application can name few genes.** The omics layers enter `final` as PCA components, so the only genes it sees by name are a drug's targets and a cell line's driver mutations. About a third of pairs get no gene list, mostly because the drug has no known target, and most other pairs get one to four genes. Pathway enrichment needs at least five, so it runs on about 4% of pairs. The earlier `HeteroIC50GNN` scored every protein in the graph and always had enough genes, but its gene scores came from a less accurate model.
 - **The confidence score is not calibrated.** Conformal prediction intervals would turn it into the interval the requirement originally described.
 - **Unseen cell lines only.** Generalisation to new drugs is not established.
 - **No PPI message passing.** No trained rung passes messages over the PPI network; the PPI enters only as precomputed features.
@@ -277,7 +277,7 @@ Work ran in two-week sprints organised by user story: data cleaning, exploratory
 
 ### 4.6 Application architecture
 
-The client (`pages/`) never blocks on the model. Each request runs in a QThread worker (`client/workers.py`) that calls the backend over HTTP. The backend's run manager executes the model backend in a background thread and exposes its log and progress, which the client polls every second. The model backend loads the graph and checkpoint, scores every drug for the chosen cell line with 30 dropout-enabled forward passes, and ranks the results (Appendix C). Gene attribution and enrichment are computed on demand for the selected drug.
+The client (`pages/`) never blocks on the model. Each request runs in a QThread worker (`client/workers.py`) that calls the backend over HTTP. The backend's run manager executes the model backend in a background thread and exposes its log and progress, which the client polls every second. On its first run, the model backend loads the reference data the checkpoints were trained on: the three omics PCA files, the drug SMILES, the graph's target and mutation edges, and the training response file, which fixes the drug codes, the grouped split and the per-drug target statistics. It then loads the five seed checkpoints and checks each one's validation RMSE against the recorded value. These are kept in memory, so later runs only predict. The uploaded file decides which cell line and drugs are scored, and supplies display names. Every drug is scored by all five models; the mean is the prediction and the spread drives the confidence score (Appendix C). The run log states whether the chosen cell line was held out from training. Gene attribution is computed on demand for the selected drug: each of the drug's target genes and the cell line's mutated genes is removed from the pair features in turn, and the change in the averaged prediction is its score. The attributed genes are sent to Enrichr for pathway enrichment.
 
 ## 5. Software and project critique
 
@@ -302,7 +302,7 @@ The client (`pages/`) never blocks on the model. Each request runs in a QThread 
 
 **What went less well, and why.**
 - **Schedule.** The repository shows no commits from 4 May to 24 July and few from 9 to 21 September (Figure 6). The final model was chosen on 12 October, two weeks after the planned professor review. The cause was the change of question above: a credible model could not be fixed before the evaluation method was.
-- **Model and application tracks drifted.** The application was finished around `HeteroIC50GNN` while the ablation replaced it, and the final application fixes sit on a branch that was not merged into every working branch. A shared integration date for model and application would have prevented both.
+- **Model and application tracks drifted.** The application was finished around `HeteroIC50GNN` while the ablation replaced it, and it was moved to the final model only in the last week. Its interpretation panels were designed for a model that scores every protein, and they show little for one that names only targets and mutations (Section 3.5). The final application fixes also sat on a branch that was not merged into every working branch. A shared integration date for model and application would have prevented all three.
 - **Process.** Code review through pull requests stopped after August, and there is no automated test suite or issue tracker. Bugs were recorded in documents instead. The mid-semester demonstration slide used a mock-up rather than the running application.
 - **Workload.** [Team to write: how the work was divided, whether it was balanced, and how communication through WhatsApp, Notion and supervisor meetings worked.]
 - **AI tools.** We used AI coding assistants for code and analysis, in line with the unit's policy. [Team to state how they were used and checked.]
@@ -318,9 +318,9 @@ The client (`pages/`) never blocks on the model. Each request runs in a QThread 
 
 ## 6. Conclusion
 
-MCS16 delivered a local desktop application that ranks cancer drugs by predicted IC50 for a chosen cell line. It meets all seven recorded requirements. Behind it is a measured final model for unseen cell lines: test RMSE 1.2737 against 1.3252 for a reproduced MoGraphDRP-style base and 1.4889 for a per-drug baseline. The gain comes from adding proteomics and standardising the target per drug. PPI pair features correct a 0.4 bias on pairs whose drug target is mutated, and a sensitivity test against untrained models shows the model uses that signal in the measured direction.
+MCS16 delivered a local desktop application that ranks cancer drugs by predicted IC50 for a chosen cell line. It meets all seven recorded requirements. It serves a measured final model for unseen cell lines: test RMSE 1.2737 against 1.3252 for a reproduced MoGraphDRP-style base and 1.4889 for a per-drug baseline. The gain comes from adding proteomics and standardising the target per drug. PPI pair features correct a 0.4 bias on pairs whose drug target is mutated, and a sensitivity test against untrained models shows the model uses that signal in the measured direction.
 
-The project also departed from its proposal. Graph attention, cross-attention fusion and the novel pair-attention module were each built, tested and rejected on evidence, and the report states the limits: no gain on new drugs, an uncalibrated confidence score, and an application that does not yet serve the final model. Methodologically, the main lessons were to fix evaluation before architecture and to write decision rules before seeing results. On project management, they were to integrate the model and application tracks continuously.
+The project also departed from its proposal. Graph attention, cross-attention fusion and the novel pair-attention module were each built, tested and rejected on evidence, and the report states the limits: no gain on new drugs, an uncalibrated confidence score, and gene and pathway views that can name only a drug's targets and a cell line's mutations. Methodologically, the main lessons were to fix evaluation before architecture and to write decision rules before seeing results. On project management, they were to integrate the model and application tracks continuously.
 
 ---
 
@@ -332,7 +332,6 @@ Aldea, M., Friboulet, L., Apcher, S., Jaulin, F., Mosele, F., Sourisseau, T., So
 
 Fey, M., & Lenssen, J. E. (2019). *Fast graph representation learning with PyTorch Geometric* (arXiv:1903.02428). arXiv. https://doi.org/10.48550/arXiv.1903.02428
 
-Gal, Y., & Ghahramani, Z. (2016). Dropout as a Bayesian approximation: Representing model uncertainty in deep learning. *Proceedings of the 33rd International Conference on Machine Learning, 48*, 1050–1059.
 
 Hage Chehade, [initials], et al. (2026). Trends and disparities in the use of next-generation sequencing in patients with cancer in the United States. *JAMA Network Open, 9*(4), Article e265585. https://doi.org/10.1001/jamanetworkopen.2026.5585 [complete author list]
 
@@ -341,6 +340,8 @@ Kim, S., Chen, J., Cheng, T., Gindulyte, A., He, J., He, S., Li, Q., Shoemaker, 
 Kipf, T. N., & Welling, M. (2017). Semi-supervised classification with graph convolutional networks. *International Conference on Learning Representations*. https://doi.org/10.48550/arXiv.1609.02907
 
 Kuleshov, M. V., Jones, M. R., Rouillard, A. D., Fernandez, N. F., Duan, Q., Wang, Z., Koplev, S., Jenkins, S. L., Jagodnik, K. M., Lachmann, A., McDermott, M. G., Monteiro, C. D., Gundersen, G. W., & Ma'ayan, A. (2016). Enrichr: A comprehensive gene set enrichment analysis web server 2016 update. *Nucleic Acids Research, 44*(W1), W90–W97. https://doi.org/10.1093/nar/gkw377
+
+Lakshminarayanan, B., Pritzel, A., & Blundell, C. (2017). Simple and scalable predictive uncertainty estimation using deep ensembles. *Advances in Neural Information Processing Systems, 30*, 6402–6413.
 
 Landrum, G. (n.d.). *RDKit: Open-source cheminformatics* [Computer software]. https://www.rdkit.org
 
@@ -376,80 +377,58 @@ Yang, W., Soares, J., Greninger, P., Edelman, E. J., Lightfoot, H., Forbes, S., 
 
 | ID | Description | Category | Type | Source | Status | Evidence |
 |---|---|---|---|---|---|---|
-| R01 | Outputs a ranked list of predicted drug efficacy scores (IC50) with a reliability measure | Analysis, Predictive engine | FR | Oncologist | Met | `_predict_drug_panel` (30 MC-dropout passes) and `rank_predictions` (IC50 in µM, sensitivity band, confidence score); Appendix C; Figure B3 |
+| R01 | Outputs a ranked list of predicted drug efficacy scores (IC50) with a reliability measure | Analysis, Predictive engine | FR | Oncologist | Met | `FinalModelBackend.run` (five-seed ensemble of `final`, `backend/model_backends/final_model.py`) and `rank_predictions` (IC50 in µM, sensitivity band, confidence score); Appendix C; Figure B3 |
 | R02 | Deletes user-uploaded files after a session; no research data retained | Security, Privacy | NFR | Developer | Met | Upload written to `data/processed/uploads/`, never to training data (`backend/dataset_schema.py:20`); `delete_uploaded_dataset` on application exit (`UILauncher.py:171`) and backend shutdown (`backend/main.py:20`) |
 | R03 | Real-time progress feedback during model execution | UI, UX | NFR | Oncologist | Met | Status polled every second; log lines and backend `progress_percent` drive the loader (`pages/model_execution_log_page.py:128-139`); Figure B2 |
-| R04 | Molecular profile summary of the top mutations | UI, Visualisation | FR | Oncologist | Met | Per-drug top-gene view with driver-mutation and known-target badges (`pages/final_results_page.py:1153-1182`); Figure B4 |
+| R04 | Molecular profile summary of the top mutations | UI, Visualisation | FR | Oncologist | Met | Per-drug gene view: the cell line's driver-mutated genes and the drug's targets, each scored by its effect on the prediction, with driver-mutation and known-target badges (`FinalModelBackend.explain`; `pages/final_results_page.py:1153-1182`); Figure B4 |
 | R05 | Export and display results | Data, Visualisation | FR | Cancer researcher | Met | CSV download (`final_results_page.py:360`) and report export (`final_results_page.py:384`); Figure B3 |
 | R06 | Processes multi-omics data and accepts drug structure from SMILES | Deep learning, Pipeline | FR | Developer / Researcher | Met | GE, Mut+CNV, proteomics PCA features; SMILES to Morgan fingerprint and molecular graph (`src/data/`); fusion by concatenation, cross-attention rejected by ablation |
 | R07 | Training and inference run locally within 4–8 GB VRAM | Performance, Hardware | NFR | Developer | Met | All runs on a 4 GB GTX 1650; peak GPU memory measured at 227 MiB (pair-attention rung) |
 
 ## Appendix B. Application screenshots
 
-[Capture from the `origin/dev` application with a real run. The upload CSV needs the columns the backend reads: `sanger_model_id`, `drug_id`, `ln_ic50`, plus `drug_name`, `putative_target`, `pathway_name`, `cell_line_name`, `tissue`, `cancer_type`.]
+[Capture from the `origin/dev` application, after the final-model backend is merged, with a real run. Screenshots taken from the `HeteroIC50GNN` version must be retaken. The upload CSV needs the columns the backend reads: `sanger_model_id`, `drug_id`, `ln_ic50`, plus `drug_name`, `putative_target`, `pathway_name`, `cell_line_name`, `tissue`, `cancer_type`. For B4 and B5, use cell line KCL-22 (`SIDM01004`) and Olaparib (`1017`): KCL-22 is held out from training, the pair lists seven genes, and Enrichr returns significant DNA-damage terms. Most pairs list fewer than five genes and show no pathways (Section 3.5).]
 
 - Figure B1. Dataset Initialisation: upload and target cell-line selection.
 - Figure B2. Model Execution Log: live backend log and progress.
 - Figure B3. Final Results: ranked drugs, sensitivity, confidence; Download and Export buttons.
-- Figure B4. Final Results, Top genes view for one drug (driver-mutation badges).
+- Figure B4. Final Results, gene view for one drug: target and driver-mutation genes with their effect on the prediction.
 - Figure B5. Final Results, Pathways view (Enrichr).
 - Figure B6. Model Analytics: KPI tiles, validation scatter, IC50 against confidence.
 
 ## Appendix C. Sample source code
 
-The excerpt satisfies **R01**: it scores every candidate drug for the chosen cell line with Monte Carlo dropout (`_predict_drug_panel`) and turns the scores into a ranked, display-ready list with a confidence score (`rank_predictions`). The last block is the call site inside `HeteroGNNBackend.run`. The lines are copied unchanged from the `origin/dev` branch and are not consecutive; markers give the file and lines.
+The excerpt satisfies **R01**. `_predict_z` scores the requested pairs with each of the five trained models, and `_to_ln` turns each model's per-drug z-scores back into ln(IC50). The call site inside `FinalModelBackend.run` takes the mean and spread over the five models, and `rank_predictions` turns them into a ranked, display-ready list with a confidence score. The lines are copied unchanged from the `origin/dev` branch and are not consecutive; markers give the file and lines.
 
 ```python
-# --- backend/model_backends/hetero_gnn.py, lines 350-391 (origin/dev) ---
-def _predict_drug_panel(
-    model: nn.Module,
-    pairs: dict,
-    graph_maps: dict,
-    device: torch.device,
-    target_cell_line: str,
-    mc_samples: int,
-) -> list[dict]:
-    """Predict ln_ic50 (mean + MC-dropout std) for every candidate drug, for one cell line."""
-    cell_idx = graph_maps["cell_to_idx"].get(str(target_cell_line))
-    if cell_idx is None:
-        raise ValueError(f"Cell line {target_cell_line!r} has no node in the graph, so it cannot be scored.")
-
-    # Only drugs that are both in the uploaded dataset and present as graph
-    # nodes can be scored -- a drug with no node has no fingerprint features.
-    drug_to_idx = graph_maps["drug_to_idx"]
-    panel = [(drug_id, drug_to_idx[drug_id]) for drug_id in pairs["drug_ids_present"] if drug_id in drug_to_idx]
-    if not panel:
-        raise ValueError("None of the drugs in the uploaded dataset have nodes in the graph.")
-
-    drug_ids = [drug_id for drug_id, _ in panel]
-    drug_index = torch.tensor([idx for _, idx in panel], dtype=torch.long, device=device)
-    cell_index = torch.full((len(panel),), cell_idx, dtype=torch.long, device=device)
-
-    # Dropout live, BatchNorm on running stats. Dropout sits only in the
-    # model's predictor head, but forward() re-runs message passing on every
-    # call and the model file is off-limits, so each sample is a full forward.
-    enable_mc_dropout(model)
-    try:
-        samples = np.empty((mc_samples, len(panel)), dtype=np.float64)
-        for i in range(mc_samples):
-            samples[i] = model(graph_maps["x_dict"], graph_maps["edge_index_dict"], cell_index, drug_index).cpu().numpy()
-    finally:
-        model.eval()
-
-    mean = samples.mean(axis=0)
-    std = samples.std(axis=0)
-    return [
-        {"drug_id": str(drug_id), "ln_ic50_mean": float(mean[i]), "ln_ic50_std": float(std[i])}
-        for i, drug_id in enumerate(drug_ids)
-    ]
+# --- backend/model_backends/final_model.py, lines 135-152 (origin/dev) ---
+@torch.no_grad()
+def _predict_z(session: _Session, cell_rows: np.ndarray, drug_codes: np.ndarray, pair: np.ndarray) -> np.ndarray:
+    """Per-drug z-scores from every model -> (n_models, n_rows)."""
+    out = np.empty((len(session.models), len(drug_codes)), dtype=np.float64)
+    for start in range(0, len(drug_codes), _EVAL_BATCH_SIZE):
+        rows = slice(start, start + _EVAL_BATCH_SIZE)
+        omics = {k: torch.from_numpy(session.omics[k][cell_rows[rows]]).to(session.device) for k in session.keys}
+        fingerprints = torch.from_numpy(session.fingerprints[drug_codes[rows]]).to(session.device)
+        codes = torch.from_numpy(drug_codes[rows]).to(session.device)
+        features = torch.from_numpy(pair[rows]).to(session.device)
+        for i, model in enumerate(session.models):
+            out[i, rows] = model(omics, fingerprints, codes, features).cpu().numpy()
+    return out
 
 
-# --- backend/model_backends/_common.py, lines 34-77 (origin/dev) ---
+def _to_ln(session: _Session, z: np.ndarray, drug_codes: np.ndarray) -> np.ndarray:
+    """(n_models, n_rows) z-scores -> ln(IC50), with the training fold's statistics."""
+    return np.stack([session.scaler.inverse_transform(row, drug_codes) for row in z]).astype(np.float64)
+
+
+# --- backend/model_backends/_common.py, lines 34-78 (origin/dev) ---
 def rank_predictions(raw: list[dict], val_rmse: float, drug_info: dict[str, dict]) -> list[dict]:
     """Turn raw per-drug {drug_id, ln_ic50_mean, ln_ic50_std} into display-ready results.
 
     - predicted_ic50_um: back-transform from ln(IC50 uM), the model's native scale.
-    - confidence_percent: compares each drug's MC-dropout std against `val_rmse`
+    - confidence_percent: compares each drug's prediction spread (the std over
+      MC-dropout samples, or over an ensemble's seeds) against `val_rmse`
       -- the model's own measured error on held-out validation data -- via
       `100 * exp(-std / val_rmse)`. This is an *absolute* scale (comparable
       across separate runs), unlike a min-max normalization over the current
@@ -490,12 +469,17 @@ def rank_predictions(raw: list[dict], val_rmse: float, drug_info: dict[str, dict
         )
     return results
 
-# --- backend/model_backends/hetero_gnn.py, lines 593-597, inside HeteroGNNBackend.run (origin/dev) ---
-            raw_predictions = _predict_drug_panel(
-                model, pairs, graph_maps, device, target_cell_line, mc_samples=_MC_SAMPLES
-            )
-            log(f"[predict] scored {len(raw_predictions)} drugs over {_MC_SAMPLES} MC-dropout samples")
-            on_results(rank_predictions(raw_predictions, val_rmse, drug_info))
+# --- backend/model_backends/final_model.py, lines 433-442, inside FinalModelBackend.run (origin/dev) ---
+        drug_codes = np.array([session.drug_code[d] for d in panel], dtype=np.int64)
+        z = _predict_z(session, np.full(len(panel), session.cell_row[cell]), drug_codes, pair)
+        pred = _to_ln(session, z, drug_codes)
+        mean, std = pred.mean(axis=0), pred.std(axis=0)
+        raw = [
+            {"drug_id": d, "ln_ic50_mean": float(mean[i]), "ln_ic50_std": float(std[i])}
+            for i, d in enumerate(panel)
+        ]
+        log(f"[predict] scored {len(raw)} drugs with the {len(session.models)}-seed ensemble")
+        on_results(rank_predictions(raw, session.val_rmse, drug_info))
 ```
 
 ## Appendix D. Full ablation table

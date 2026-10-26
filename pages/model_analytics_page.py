@@ -214,7 +214,7 @@ class ModelAnalyticsPage(QWidget):
             card.set_legend([("●", TRAIN_LOSS_COLOR, "Train loss"), ("●", VAL_RMSE_COLOR, "Validation RMSE")])
         elif mode == "scatter":
             card.info_icon.setToolTip(HELP["perf_checkpoint"])
-            card.set_subtitle("Pretrained checkpoint · held-out validation samples")
+            card.set_subtitle("Pretrained checkpoints · held-out validation samples")
             card.set_legend([("●", VALIDATION_POINT_COLOR, "Validation sample"), ("┄", TEXT_SOFT, "Perfect prediction")])
 
         # Always the backend's own figure (the one it logs and scales

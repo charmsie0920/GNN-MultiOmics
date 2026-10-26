@@ -196,6 +196,16 @@ python -m backend.main   # FastAPI on http://127.0.0.1:8000
 python UILauncher.py
 ```
 
+The app serves the final model (`backend/model_backends/final_model.py`): the
+five seeds in `src/final_model/results/final_weights_results_checkpoints/`,
+averaged as an ensemble, with confidence taken from how far they disagree.
+Nothing is retrained. Start the backend from the repository root, because the
+data loaders read paths relative to it. The first run loads the reference data
+and checks each seed's validation RMSE against the recorded one (about 15 s on
+the GPU); later runs reuse them. Gene interpretation removes one drug target or
+mutated gene at a time from the pair features and reports how much the
+prediction changes. The omics are PCA components, so no other gene can be named.
+
 ## Earlier experiments
 
 Exploratory work that preceded the ablation study. Single runs unless noted, so
