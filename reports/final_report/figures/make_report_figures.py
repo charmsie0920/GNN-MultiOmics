@@ -250,7 +250,7 @@ def fig_commit_timeline() -> None:
 
 
 def fig_app_architecture() -> None:
-    """Box diagram of the delivered desktop application (origin/dev)."""
+    """Box diagram of the delivered desktop application, serving the final model."""
     from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
     boxes = {
@@ -261,11 +261,11 @@ def fig_app_architecture() -> None:
         "api": (4.6, 2.3, 3.3, 1.7, "FastAPI backend", "backend/main.py, routers/",
                 "/dataset/upload · /run/start\n/run/status · /results/*"),
         "runs": (4.6, 0.2, 3.3, 1.6, "Run manager + model backend", "backend/model_backends/",
-                 "HeteroGNNBackend: load checkpoint,\n30 MC-dropout passes, rank_predictions()"),
+                 "FinalModelBackend: 5-seed ensemble\nof final, rank_predictions()"),
         "data": (9.2, 2.3, 2.6, 1.7, "Local artefacts", "",
-                 "hetero_graph.pt\nbest_hetero_gnn.pt\nuploads/ (deleted on exit)"),
+                 "omics PCA files, SMILES\nhetero_graph.pt, 5 checkpoints\nuploads/ (deleted on exit)"),
         "ext": (9.2, 0.2, 2.6, 1.6, "Enrichr (external)", "",
-                "pathway enrichment of\ntop-ranked genes, cached"),
+                "pathway enrichment of\nattributed genes, cached"),
     }
     fig, ax = plt.subplots(figsize=(9.6, 3.6))
     for key, (x, y, w, h, title, path, body) in boxes.items():

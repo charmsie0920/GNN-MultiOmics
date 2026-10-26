@@ -13,19 +13,15 @@ router = APIRouter(prefix="/api/v1/dataset", tags=["dataset"])
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# The heterogeneous graph the active backend predicts over: only cell lines
-# that exist as `cell_line` nodes in it can be scored, so it is the real
-# source of truth for which uploaded cell lines are selectable.
-_GRAPH_PATH = _REPO_ROOT / "src" / "graph" / "hetero_graph.pt"
-
-# Fallback for when the graph file is missing: one of the fixed per-modality
-# omics reference files (any of the three shares the same cell-line index).
+# The final model reads each cell line's row of the per-modality omics PCA
+# files, so only cell lines in them can be scored. The three files share one
+# cell-line index (asserted by `load_omics_subset`), and every one of those
+# cell lines is also a node of the graph the pair features come from.
 _OMICS_REFERENCE_CSV = _REPO_ROOT / "data" / "processed" / "transcriptomics_pca.csv"
 
-# The graph is ~21 MB, so the node id list is read once per process rather
-# than on every upload. `None` means "not loaded yet"; an empty set is a
-# legitimate cached result.
-_graph_cell_ids: set[str] | None = None
+# Read once per process rather than on every upload. `None` means "not loaded
+# yet"; an empty set is a legitimate cached result.
+_reference_ids: set[str] | None = None
 
 
 @router.post("/upload", response_model=DatasetUploadResponse)
@@ -68,26 +64,14 @@ def delete_upload() -> dict[str, bool]:
 
 
 def _reference_cell_ids() -> set[str]:
-    """Cell-line ids the active backend can score, preferring the graph's own
-    `cell_line` node ids and degrading to the omics reference CSV if the graph
-    file is unavailable."""
-    global _graph_cell_ids
+    """Cell-line ids the active backend can score: those with an omics profile."""
+    global _reference_ids
 
-    if _graph_cell_ids is None and _GRAPH_PATH.exists():
-        try:
-            import torch
-
-            graph = torch.load(_GRAPH_PATH, weights_only=False)
-            _graph_cell_ids = {str(cell_id) for cell_id in graph["cell_line"].node_ids}
-        except Exception:  # noqa: BLE001 - fall back rather than fail the upload
-            _graph_cell_ids = set()
-
-    if _graph_cell_ids:
-        return _graph_cell_ids
-
-    if not _OMICS_REFERENCE_CSV.exists():
-        return set()
-    return set(pd.read_csv(_OMICS_REFERENCE_CSV, index_col=0, usecols=[0]).index.astype(str))
+    if _reference_ids is None:
+        if not _OMICS_REFERENCE_CSV.exists():
+            return set()
+        _reference_ids = set(pd.read_csv(_OMICS_REFERENCE_CSV, index_col=0, usecols=[0]).index.astype(str))
+    return _reference_ids
 
 
 def _valid_target_cell_lines(frame: pd.DataFrame) -> list[str]:

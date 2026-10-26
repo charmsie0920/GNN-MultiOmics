@@ -1,7 +1,8 @@
 """Swappable model-training backends. Importing this package registers all of them."""
 
-# Only the hetero GNN is registered -- it is the better model (test RMSE
-# 1.3302 vs the cross-attention arm) and it ships with trained weights, so a
-# run does not have to retrain from scratch. `cross_attention.py` is still on
-# disk and can be brought back by adding its import here.
-from backend.model_backends import hetero_gnn  # noqa: F401
+# Only the final model is registered -- it is the model the report presents
+# (test RMSE 1.2737 +/- 0.0144 against 1.3092 for the hetero GNN, both under
+# the grouped split) and its five trained seeds are committed, so a run never
+# retrains. `hetero_gnn.py` and `cross_attention.py` are still on disk and can
+# be brought back by adding their imports here.
+from backend.model_backends import final_model  # noqa: F401

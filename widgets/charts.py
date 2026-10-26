@@ -3,7 +3,7 @@
 Both charts are fed real per-run data, never mocked:
 
 - `TrainingCurveWidget`: how well the model fits, from `on_training_history`
-  (backend/model_backends/hetero_gnn.py).
+  (backend/model_backends/final_model.py).
 - `PredictionScatterWidget`: predicted IC50 vs. confidence, one dot per
   ranked drug, from the same rows as the results table.
 

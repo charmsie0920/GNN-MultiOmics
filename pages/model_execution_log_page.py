@@ -47,16 +47,16 @@ from widgets.navigation import (
 )
 from widgets.omics_loader import OmicsLoader
 
-# What each of the loader's file cards shows for the hetero GNN backend. The
-# three omics layers are not read as separate files at run time: they are the
-# cell-line node features already stored in the graph. The drug-response card
-# shows the uploaded file's own name (see `start_watching`).
+# What each of the loader's file cards shows for the final-model backend. The
+# graph supplies the drug-target and driver-mutation edges the pair features
+# are computed from; each omics layer is its own PCA file. The drug-response
+# card shows the uploaded file's own name (see `start_watching`).
 _RUN_FILES = {
     "graph": "hetero_graph.pt",
-    "expression": "in the graph",
-    "mutation": "in the graph",
-    "proteomics": "in the graph",
-    "model": "best_hetero_gnn.pt",
+    "expression": "transcriptomics_pca.csv",
+    "mutation": "genomics_pca.csv",
+    "proteomics": "proteomics_pca.csv",
+    "model": "final model · 5 seeds",
 }
 
 
