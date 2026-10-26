@@ -868,6 +868,16 @@ Per-seed test RMSE: 1.2567 / 1.2694 / 1.2653 / 1.2906 / 1.2867. Best epoch
   the direct hit removed at inference its RMSE on those pairs goes from 1.41
   to 1.64 on test, and its effect per drug tracks the measured one
   (Spearman +0.73 over 30 drugs; 0 of 50 untrained models reach it).
+- **As served by the application (2026-10-26, `fbf49b3`):** the app averages
+  the five `--save-weights` checkpoints of `final` (seeds 42-46,
+  `results/final_weights_results.csv`) as an ensemble; nothing is retrained.
+  Recomputed 2026-10-26 on laptop A from the app's own session code:
+  validation RMSE 1.2118 (PCC 0.9072) against 1.2349-1.2594 for the single
+  seeds, test RMSE 1.2377 (PCC 0.8977) against 1.2482-1.2803 (their mean
+  1.2698). Each seed reproduces its recorded validation RMSE when the app
+  loads it. The ensemble was not part of the selection rule: it is the
+  chosen model averaged over its seeds, reported after the choice. The
+  per-seed spread is the app's confidence score; it is not calibrated.
 - **Nothing is left to run for it.**
 
 The record of how the candidate was reached follows.
