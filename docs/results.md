@@ -103,6 +103,7 @@ grouped rows.
 | `base+proteomics+std_targets` | grouped | GE+Mut_CNV+Proteomics | 5 | 1.2797 ± 0.0192 | -0.0455 | +0.2092 | 0.8908 |
 | `base+proteomics` | grouped | GE+Mut_CNV+Proteomics | 5 | 1.2920 ± 0.0125 | -0.0331 | +0.1969 | 0.8864 |
 | `base+std_targets` | grouped | GE+Mut_CNV | 5 | 1.3086 ± 0.0144 | -0.0166 | +0.1803 | 0.8859 |
+| `base+proteomics+std_targets+mol_graph+pair_features+cross_attention` | grouped | GE+Mut_CNV+Proteomics | 5 | 1.3180 ± 0.0175 | -0.0072 | +0.1709 | 0.8830 |
 | `base+proteomics+std_targets+mol_graph+pair_attention` | grouped | GE+Mut_CNV+Proteomics | 5 | 1.3225 ± 0.0285 | -0.0027 | +0.1664 | 0.8823 |
 | `base` | grouped | GE+Mut_CNV | 5 | 1.3252 ± 0.0119 | +0.0000 | +0.1637 | 0.8793 |
 | `base+mol_graph` | grouped | GE+Mut_CNV | 3 | 1.3319 ± 0.0223 | +0.0087 | +0.1570 | 0.8806 |

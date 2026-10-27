@@ -395,11 +395,69 @@ are two different fixed sets of 80 cell lines, so differences of this size
 between rungs are within what the choice of cell lines can move. This limits
 how firmly any rung can be ranked from one split.
 
+### Update 2026-10-27 — cross-attention fusion on `final`; the final model is now `final_xattn`
+
+The proposal names cross-attention fusion and `final` concatenates its omics
+branches, so `final` with `fusion=cross_attention` was run:
+`base+proteomics+std_targets+mol_graph+pair_features+cross_attention`, alias
+`final_xattn` in `run_ablation.py`. Laptop A, commit `7ca5cfd`, 2026-10-27
+about 13:40 to 20:05, with `--save-weights`. Grouped split, seeds 42-46, in
+`ablation_results.csv` beside `final`'s rows; random split, seeds 42-44, for
+both configs in the new file `results/random_split_laptop_a_results.csv`
+(`final`'s other random-split rows are from laptop B).
+
+**Rule, written 2026-10-13 before any run:** cross-attention replaces
+concatenation in `final` if its grouped-split validation RMSE is no more than
+0.03 worse than `final`'s (1.2441, so 1.2741 or better). Test reported after.
+
+Grouped split, 5 seeds, floor 1.4889:
+
+| Config | Validation | Test | PCC | R² | MAE | Gain over floor | Params | Time per run |
+|---|---|---|---|---|---|---|---|---|
+| `base` | 1.2961 ± 0.0059 | 1.3252 ± 0.0119 | 0.8793 | 0.7699 | 0.9979 | +0.1637 | 3,184,257 | 9 min |
+| `final` | 1.2441 ± 0.0102 | 1.2737 ± 0.0144 | 0.8923 | 0.7874 | 0.9529 | +0.2152 | 3,644,525 | 20 min |
+| `final_xattn` | 1.2652 ± 0.0110 | 1.3180 ± 0.0175 | 0.8830 | 0.7724 | 0.9875 | +0.1709 | 4,271,085 | 38 min |
+
+| Comparison, paired by seed | Δ validation | Seeds better | Δ test | Seeds better | Test 95% CI, cell lines | Test 95% CI, seeds |
+|---|---|---|---|---|---|---|
+| `final_xattn` − `final` | +0.0211 | 1 / 5 | +0.0442 | 0 / 5 | +0.010 to +0.082 | +0.018 to +0.071 |
+| `final_xattn` − `base` | −0.0310 | 5 / 5 | −0.0072 | 2 / 5 | | |
+
+Per-seed test RMSE: 1.3196 / 1.3404 / 1.2919 / 1.3145 / 1.3234. Best epoch
+21 / 32 / 11 / 9 / 18 (`final`: 36 / 22 / 29 / 18 / 33).
+
+- **The rule is met:** 1.2652 is inside 1.2741. **Decided 2026-10-27 by the
+  team: swap.** `final_xattn` is the final model and the one the
+  application serves; `final` keeps its name and its rows.
+- **On test it is established as worse than `final`:** +0.044, 0 of 5
+  seeds, and both intervals exclude 0. The rule was a non-inferiority margin
+  on validation and did not require a gain.
+- **Against `base` it is better on validation (−0.031, 5 of 5) and not on
+  test** (−0.007, 2 of 5, inside the noise band).
+- **It gives back part of the pair features' correction on direct-hit
+  pairs** (results/`ablation_results_subsets_xattn_vs_final.csv`): signed
+  error +0.304 on validation and +0.259 on test, against `final`'s +0.113
+  and −0.067 and `base`'s +0.454 and +0.404. Direct-hit RMSE is worse than
+  `final`'s by 0.233 on validation (0 of 5 seeds, cell-line interval +0.097
+  to +0.377) and 0.146 on test (1 of 5).
+- **Random split** (laptop A, 3 seeds): 1.0017 ± 0.0098 against `final`
+  0.9609 ± 0.0036 on the same machine (+0.041, 0 of 3; validation +0.043,
+  0 of 3). `final` on laptop A agrees with laptop B's 0.9622. There is no
+  laptop A `base` under the random split; laptop B's is 1.0162.
+- **Overfits early,** best epoch 9 to 32, as `base+cross_attention` did
+  (section 6a).
+- **The caveat of section 6a holds unchanged.** Each omics layer is one
+  vector, so every attention weight is 1.0: the rung replaces the per-omics
+  branches with projection layers. It is cross-attention fusion in the code's
+  name and structure, not attention that weighs anything.
+- **Leave-drugs-out was not run for it.** The `ldo` rows (section 11) are
+  `final` without standardisation and contain no cross-attention.
+
 ## 6. Per-component findings
 
 *(report)* One short block per component.
 
-### a. Cross-attention fusion — tested-and-rejected
+### a. Cross-attention fusion — rejected on `base`; part of the final model since 2026-10-27
 - **Result:** 1.4144 ± 0.0040, Δ +0.0912. Worse than base on all 3 seeds, three
   times the noise band.
 - **Interpretation:** this does not test attention. Each modality is one
@@ -411,6 +469,9 @@ how firmly any rung can be ranked from one split.
   val-test gap of any stable rung. Both point to earlier overfitting. No
   further diagnosis was run.
 - **Cost:** +198,016 parameters, 1.5× training time.
+- **On `final` (2026-10-27, section 5 update):** +0.021 on validation and
+  +0.044 on test (0 of 5 seeds), but inside the 0.03 margin of its rule, so
+  it was swapped in: the final model `final_xattn` contains it.
 
 ### b. Molecular-graph GCN — tested-and-rejected
 - **Result:** 1.3319 ± 0.0223, Δ +0.0087. Inside the noise band; better than
@@ -818,6 +879,39 @@ The original five-component analysis (Phase 2, 3 seeds):
 
 *(report)*
 
+**Since 2026-10-27 the final model is `final_xattn` =
+`base+proteomics+std_targets+mol_graph+pair_features+cross_attention`:**
+`final` (below) with its omics fused by cross-attention instead of
+concatenation. It passed its rule (validation within 0.03 of `final`) and the
+team chose to swap; the numbers are in the section 5 update of 2026-10-27.
+Grouped split, 5 seeds, laptop A: validation 1.2652 ± 0.0110, **test
+1.3180 ± 0.0175**, PCC 0.8830, R² 0.7724, gain over the per-drug mean floor
++0.1709, 4,271,085 parameters, about 38 min per run.
+
+- **Against `base`:** −0.031 on validation (5 of 5 seeds), −0.007 on test
+  (2 of 5, inside the noise band). **Against `final`:** +0.021 validation,
+  +0.044 test, 0 of 5 seeds, both test intervals exclude 0. So on test the
+  swap costs most of `final`'s gain over `base`.
+- **What its parts are:** as for `final` below, plus cross-attention whose
+  weights are all 1.0 (section 6a): projection layers in place of the
+  per-omics branches.
+- **Pair features:** it still uses the direct-hit signal (Phase 6 tests
+  pass, section 11), but its direct-hit bias is +0.26 on test against
+  `final`'s −0.07 and `base`'s +0.40.
+- **Random split** (laptop A): 1.0017 ± 0.0098, against `final` 0.9609 on the
+  same machine. **Leave-drugs-out:** not run; the `ldo` rows have no
+  cross-attention.
+- **As served by the application (2026-10-27):** the five checkpoints
+  (`results/ablation_results_checkpoints/`, seeds 42-46) averaged as an
+  ensemble, computed from the app's own session code on laptop A:
+  validation 1.2217 (PCC 0.9055), test 1.2764 (PCC 0.8900). Each seed
+  reproduces its recorded validation RMSE. The ensemble of `final` was
+  1.2118 / 1.2377. The ensemble is reported after the choice and was not
+  part of it.
+
+Everything below this point in section 8 describes `final`, the final model
+from 2026-10-12 to 2026-10-27, and stays as the record of how it was chosen.
+
 **Chosen 2026-10-12: `final` =
 `base+proteomics+std_targets+mol_graph+pair_features`.** It is named `final`
 in `run_ablation.py`. Grouped split, 5 seeds (42-46), laptop A:
@@ -972,7 +1066,8 @@ Not a ranking. It checks that the reproduction (`aligned`) is faithful.
 |---|---|---|
 | `aligned` (Phase 0, GE+Proteomics) | **0.978 ± 0.002** (3 seeds) | MoGraphDRP without XGBoost: 0.9497 |
 | `base` | 1.0162 ± 0.0011 (3 seeds, laptop B) | — |
-| `final` | 0.9622 ± 0.0058 (3 seeds, laptop B) | MoGraphDRP with XGBoost: 0.6622. A reference, not a ranking: different pairs and data |
+| `final` | 0.9622 ± 0.0058 (3 seeds, laptop B); 0.9609 ± 0.0036 (3 seeds, laptop A) | MoGraphDRP with XGBoost: 0.6622. A reference, not a ranking: different pairs and data |
+| `final_xattn` | 1.0017 ± 0.0098 (3 seeds, laptop A; +0.041 against `final` on that machine, 0 of 3) | — |
 | `full` | not run under this split; `final` took its place | — |
 
 **Phase 0 result (2026-10-01).** Source:
@@ -1324,6 +1419,26 @@ not explain any prediction outside direct hits (1.26% of pairs), and it says
 nothing about the omics inputs, which are PCA components. The four other
 pair features were not tested separately.
 
+**Repeated on `final_xattn` (2026-10-27),** on the five checkpoints the
+ladder saved (`--config final_xattn --results
+src/final_model/results/ablation_results.csv`; output
+`results/ablation_results_final_xattn_pair_feature_check*.csv`). Same rules,
+50 untrained models of its architecture. **All three pass.**
+
+| Test | `final_xattn` | `final` (above) | Rule met? |
+|---|---|---|---|
+| 1. Use, direct-hit RMSE real / removed | validation 1.539 / 1.690, test 1.530 / 1.651 | 1.300 / 1.652, 1.410 / 1.643 | yes, 5 of 5 seeds on both folds |
+| 2. Direction across 30 drugs | Spearman +0.694 ± 0.065; untrained −0.001 ± 0.396 | +0.725 | yes, 5 of 5 seeds, 1 of 50 controls |
+| 3. BRAF, 44 held-out pairs | Spearman +0.686 ± 0.081 (within drug +0.687); untrained +0.029 ± 0.282 | +0.633 | yes, 5 of 5 seeds, 0 of 50 controls |
+
+- Smaller effect than `final`'s: −0.21 / −0.23 ln(IC50) units on direct
+  hits of validation / test, and signed error +0.30 / +0.26 with the
+  features against +0.52 / +0.49 removed. It corrects about half of the
+  bias, `final` almost all of it.
+- BRAF held-out pairs: mean effect −0.57, sensitising on all 44; RMSE 2.10
+  with the hit, 2.64 removed. The caveat above holds: the effect correlates
+  +0.47 with the prediction without it.
+
 ## 12. Limitations to state
 
 Tick the ones that apply and add numbers.
@@ -1585,3 +1700,26 @@ The last command reads the trained weights in
 `results/pair_gate_results_checkpoints/` (17 MB per run). It was written
 after the run was launched and is not part of commit `9c7ba4f`; it only
 reads the checkpoints.
+
+Cross-attention fusion on `final` and the swap to `final_xattn` (run
+2026-10-27 on laptop A, commit `7ca5cfd`, about 13:40 to 20:05; `base` and
+`final` grouped rows were skipped and reused, so 5 and then 6 runs):
+
+```
+NEW=base+proteomics+std_targets+mol_graph+pair_features+cross_attention
+python -u src/final_model/run_ablation.py --configs base final $NEW \
+  --protocols grouped --seeds 42 43 44 45 46 --save-weights
+python -u src/final_model/run_ablation.py --configs final $NEW \
+  --protocols random --seeds 42 43 44 --save-weights \
+  --out src/final_model/results/random_split_laptop_a_results.csv
+python src/final_model/pair_gate_report.py --results src/final_model/results/ablation_results.csv \
+  --tag xattn_vs_final --configs base+proteomics+std_targets+mol_graph+pair_features \
+  base+proteomics+std_targets+mol_graph+pair_features+cross_attention --baseline base+proteomics+std_targets+mol_graph+pair_features
+python src/final_model/pair_feature_check.py --config final_xattn \
+  --results src/final_model/results/ablation_results.csv
+```
+
+`final_xattn` is now an alias for `$NEW`. The alias and the `--config`
+option of `pair_feature_check.py` were added after the runs and resolve to
+the same rows. The grouped checkpoints in
+`results/ablation_results_checkpoints/` are the ones the application loads.

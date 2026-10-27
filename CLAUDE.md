@@ -10,8 +10,11 @@ phase finishes or a decision changes.
   It is the reproduced benchmark and the bottom of the ablation ladder.
 - **Our model:** a new model built on that base, differing by measured
   components (below). Working name `PairGraphDRP` — placeholder, rename freely.
-  **Chosen 2026-10-12: `final` =
-  `base+proteomics+std_targets+mol_graph+pair_features`** (table below).
+  **Since 2026-10-27 the final model is `final_xattn` =
+  `base+proteomics+std_targets+mol_graph+pair_features+cross_attention`**:
+  `final` (chosen 2026-10-12, table below) with cross-attention fusion in
+  place of concatenation. It passed its rule and the team swapped
+  (next section). `final` keeps its name and its rows.
 - **Novelty component:** pair-specific cross-attention between a drug's target
   proteins and a cell line's driver-mutated proteins over the STRING PPI graph.
   Since 2026-10-05 it is built and tested in two stages: the attention first,
@@ -36,6 +39,22 @@ phase finishes or a decision changes.
 
 ### The final model, and what makes it ours, not MoGraphDRP
 
+**Swapped 2026-10-27: the final model is `final_xattn`**, `final` below with
+`fusion=cross_attention`. Grouped split, 5 seeds, laptop A: validation
+1.2652 +/- 0.0110, **test 1.3180 +/- 0.0175**, against `base` 1.3252
+(validation -0.031, 5 of 5 seeds; test -0.007, 2 of 5, inside the noise
+band) and against `final` 1.2737 (test +0.044, 0 of 5, both intervals
+exclude 0). PCC 0.8830, R2 0.7724, floor gain +0.1709, 4,271,085
+parameters, about 38 min per run. Rule (written 2026-10-13): validation no
+more than 0.03 worse than `final`'s; met (1.2652 against 1.2741). Random
+split, laptop A: 1.0017 against `final` 0.9609. Not run under
+leave-drugs-out. Phase 6 passes on it (+0.694 across drugs, BRAF +0.686,
+at most 1 of 50 controls), with a weaker direct-hit correction (bias +0.26
+on test, `final` -0.07, `base` +0.40). The app serves its five-seed
+ensemble: validation 1.2217, test 1.2764. Details: `src/ABLATION.md`
+section 5, update of 2026-10-27, and section 8. The table and bullets below
+describe `final`; where `final_xattn` differs it is said.
+
 **Chosen 2026-10-12 by the graph-decision rule: `final` =
 `base+proteomics+std_targets+mol_graph+pair_features`.** Grouped split, 5
 seeds, laptop A: validation 1.2441 +/- 0.0102, **test 1.2737 +/- 0.0144**,
@@ -45,7 +64,7 @@ parameters, about 20 min per run.
 
 | Part | MoGraphDRP | `final` | What the ablation says |
 |---|---|---|---|
-| Omics | expression, mutation, methylation, pathway | GE, Mut+CNV, **proteomics**, one branch each, concatenated | proteomics kept: test -0.033, 5 of 5 seeds |
+| Omics | expression, mutation, methylation, pathway | GE, Mut+CNV, **proteomics**, one branch each, concatenated (`final_xattn`: fused by cross-attention, every weight 1.0) | proteomics kept: test -0.033, 5 of 5 seeds. Cross-attention on `final`: test +0.044, 0 of 5, kept by its validation rule |
 | Drug encoder | fingerprints + molecular-graph GCN, gated sum | Morgan fingerprint + molecular-graph GCN, gated sum (`mol_graph`) | theirs, not ours. No measurable effect here (-0.007 test on the candidate, 4 of 5). Kept because the project needs a graph component |
 | Biological prior | none on the cell side | **5 pair features from the STRING PPI, drug-target and driver-mutation edges** (`pair_features`) | no effect on all pairs. Removes the +0.4 bias on pairs whose target is mutated, 5 of 5 seeds |
 | Cell-drug interaction | bilinear attention | concatenation into the predictor MLP | bilinear rejected as configured; pair attention rejected as configured |
@@ -58,6 +77,12 @@ the base architecture.
 
 **What to say and not say about it.**
 
+- For `final_xattn`: it beats `base` on validation (-0.031, 5 of 5) but
+  not on test (-0.007, 2 of 5). Do not say the served model beats the
+  flat-concatenation baseline on test. Do not credit any gain to
+  attention: every attention weight is 1.0, so the module is projection
+  layers. Say it was kept because it met a non-inferiority rule written
+  before the run, and that it is 0.044 worse than `final` on test.
 - The gain over `base` comes from proteomics and standardisation. Neither
   graph part moves all-pairs RMSE beyond noise: `final` is 1.2737 and the
   same model without them (`base+proteomics+std_targets`) is 1.2797.
@@ -120,6 +145,10 @@ the base architecture.
   See `docs/18_final_runs_runbook.md`.
 
 ## Tasks
+
+**Update 2026-10-27:** cross-attention fusion was run on `final` and the
+team swapped: the final model is now `final_xattn`, and the app serves it
+(Direction section).
 
 **Where things stand (2026-10-13).** **The final model is chosen and named
 `final`** (Direction section). **Every block of the runbook is done and
@@ -232,8 +261,9 @@ the runbook is left. The minimal Phase 6 was run and passed the same day.
 
 1. Supervisor: the proposal deviations (SHAP among them), and the
    growth-rate covariate.
-2. Decide whether the frontend should serve `final`; it serves
-   `HeteroIC50GNN` now. Then Phase 7 (report).
+2. Done: the frontend serves `final` since 2026-10-26 and `final_xattn`
+   since 2026-10-27. Phase 7 (report) is under way in
+   `reports/final_report/`, due 2 Nov 2026.
 3. Fill the `TBD` cells of `src/ABLATION.md` sections 3, 4 and 13
    (justifications, hypotheses, figures).
 4. Optional, only if the report needs to say which component helps on unseen
@@ -243,9 +273,12 @@ the runbook is left. The minimal Phase 6 was run and passed the same day.
 5. `predicted_drug_results.csv` at the repository root (commit `676c847`) is
    not an output of the ladder and is not described anywhere; say what
    produces it or move it out of the root.
-6. **Future to-do (added 2026-10-13): add cross-attention fusion to
-   `final`.** The proposal names cross-attention fusion and `final`
-   concatenates its omics branches. Not run yet.
+6. **Done 2026-10-27: cross-attention fusion on `final`. Passed its rule;
+   the team swapped, so the final model is `final_xattn`** (Direction
+   section). The app serves it; `src/ABLATION.md` sections 5, 6a, 8, 9, 11
+   and 15 hold the write-up. The plan as it stood before the run follows.
+   The proposal names cross-attention fusion and `final`
+   concatenates its omics branches.
    - **Config:** `base+proteomics+std_targets+mol_graph+pair_features+cross_attention`
      (`final` with `fusion=cross_attention`; 4,271,085 parameters). It has to
      be spelled out: `final+cross_attention` does not resolve. Smoke-tested
@@ -267,10 +300,9 @@ the runbook is left. The minimal Phase 6 was run and passed the same day.
      adds projection layers, not attention (decided 2026-10-03). A real
      version needs several tokens per omics layer and would be a new
      component with its own name.
-   - **Status: not run, nothing queued.** A launcher was queued on
-     2026-10-13 16:22 to start both blocks once the laptop was on mains
-     power; it was cancelled the same day before it started, and no row or
-     file was written. To run it later, from a clean tree on mains power:
+   - **Status: run 2026-10-27 on laptop A, commit `7ca5cfd`, with
+     `--save-weights`** (a first launch on 2026-10-13 was cancelled before
+     it started). The commands, as run:
 
      ```
      NEW=base+proteomics+std_targets+mol_graph+pair_features+cross_attention
@@ -287,9 +319,9 @@ read 2026-10-12), against the two candidates that pass with room
 
 | Proposal wording | Met by the candidates? |
 |---|---|
-| "lower RMSE than standard flat vector concatenation baselines" | Yes: about 1.273 against `base` 1.3252, 5 of 5 seeds |
+| "lower RMSE than standard flat vector concatenation baselines" | `final` yes: about 1.273 against `base` 1.3252, 5 of 5 seeds. `final_xattn`: validation yes (-0.031, 5 of 5), test no (1.3180, -0.007, 2 of 5) |
 | "improving performance over MoGraph" | Yes against the reproduction run here: `aligned` 1.3416 (3 seeds, grouped). Never against their published figures |
-| omics including proteomics, "via cross-attention fusion" | Proteomics yes. Cross-attention fusion no: rejected in the ablation (+0.091); the model concatenates |
+| omics including proteomics, "via cross-attention fusion" | Proteomics yes. Cross-attention fusion: in `final_xattn` since 2026-10-27, but with one vector per omics layer every weight is 1.0, and it costs 0.044 test RMSE against `final` |
 | "encode molecular drug structures from SMILES strings using RDKit" | Yes: fingerprint and molecular graph |
 | "implement GAT message-passing layers with an MLP prediction head" | Partly: message passing is a GCN on the drug's molecular graph, not a GAT, and not on the biological graph |
 | in scope: "build a heterogeneous GNN using PyTorch Geometric" | No. Only `HeteroIC50GNN` is one, and it is a compared baseline at 1.32 |
@@ -901,7 +933,7 @@ validation 1.2442 (ladder 1.2441), so the new draws agree with the ladder's.
 - Not done: SHAP over all inputs; the four other pair features separately.
   The omics inputs are PCA components, so nothing here names a gene other
   than a drug's annotated target.
-- The frontend serves `HeteroIC50GNN`, not `final`; none of this is in it.
+- When this was written the frontend served `HeteroIC50GNN`. Since 2026-10-26 it serves `final`, and since 2026-10-27 `final_xattn`.
 - Details: `src/ABLATION.md` section 11.
 
 ### Phase 7 — Report
@@ -926,6 +958,8 @@ validation 1.2442 (ladder 1.2441), so the new draws agree with the ladder's.
 | `src/final_model/pair_attention_check.py` | whether the trained attention finds a mutated target, against untrained modules |
 | `src/final_model/pair_feature_check.py` | Phase 6, minimal: whether the trained `final` uses the direct-hit signal in the measured direction, against untrained models |
 | `src/final_model/results/final_weights_results*` | `final` trained again with `--save-weights` (5 seeds), its weights, and the check's output |
+| `src/final_model/results/ablation_results_checkpoints/*cross_attention__grouped*` | the five `final_xattn` checkpoints the app loads; `ablation_results_*xattn*` hold its subset report and Phase 6 check |
+| `src/final_model/results/random_split_laptop_a_results.csv` | random split on laptop A: `final` and `final_xattn`, seeds 42-44 |
 | `src/final_model/results/pair_gate_results_*attention*.csv` | Stage A subset metrics, paired deltas and the attention check |
 | `src/final_model/results/pair_gate_results*.csv` | Phase 3 gate runs, subset metrics, paired deltas |
 | `src/final_model/results/ablation_results_*graph_decision*.csv` | graph decision: subset metrics and paired deltas against the candidate, and (`_vs_mol_graph`) against the candidate plus `mol_graph` |
