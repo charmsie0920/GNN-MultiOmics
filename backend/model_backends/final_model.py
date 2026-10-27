@@ -1,13 +1,15 @@
-"""Backend wrapper for the final model (`final` in src/final_model/run_ablation.py).
+"""Backend wrapper for the final model (`final_xattn` in src/final_model/run_ablation.py).
 
-`final` is `base+proteomics+std_targets+mol_graph+pair_features`: the frozen
-MoGraphDRP-aligned base with proteomics as a third omics branch, a molecular
+`final_xattn` is `base+proteomics+std_targets+mol_graph+pair_features+cross_attention`:
+the frozen MoGraphDRP-aligned base with proteomics as a third omics branch,
+the omics fused by cross-attention instead of concatenation, a molecular
 graph GCN beside the Morgan fingerprint, five hand-built target-vs-mutation
 pair features into the predictor (`PairGraphDRP`), and per-drug standardised
-ln(IC50) targets.
+ln(IC50) targets. It replaced `final` (the same model with concatenation) as
+the served model on 2026-10-27.
 
-Nothing is trained here. The five seeds of `final` were trained with
-`--save-weights` (src/final_model/results/final_weights_results.csv) and
+Nothing is trained here. The five seeds were trained by the ablation ladder
+with `--save-weights` (src/final_model/results/ablation_results.csv) and
 their best-epoch weights are committed, so a run loads them and predicts.
 The five are used together as an ensemble: the prediction is their mean, and
 the spread between them is what the confidence score measures.
@@ -53,11 +55,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-_CONFIG = "final"
+_CONFIG = "final_xattn"
+# The ladder records the runs, and names their checkpoints, by the spelled-out config.
+_RUN_NAME = "base+proteomics+std_targets+mol_graph+pair_features+cross_attention"
 _SEEDS = (42, 43, 44, 45, 46)
 _RESULTS_DIR = _REPO_ROOT / "src" / "final_model" / "results"
-_WEIGHTS_CSV = _RESULTS_DIR / "final_weights_results.csv"
-_CHECKPOINT_DIR = _RESULTS_DIR / "final_weights_results_checkpoints"
+_WEIGHTS_CSV = _RESULTS_DIR / "ablation_results.csv"
+_CHECKPOINT_DIR = _RESULTS_DIR / "ablation_results_checkpoints"
 _GRAPH_PATH = _REPO_ROOT / "src" / "graph" / "hetero_graph.pt"
 # The same file the upload endpoint writes to (backend/routers/dataset.py),
 # so a run always scores the dataset the user just uploaded.
@@ -79,7 +83,7 @@ _SCATTER_SEED = 42
 
 
 def _checkpoint_path(seed: int) -> Path:
-    return _CHECKPOINT_DIR / f"{_CONFIG}__grouped__seed{seed}.pt"
+    return _CHECKPOINT_DIR / f"{_RUN_NAME}__grouped__seed{seed}.pt"
 
 
 def _missing_checkpoints() -> list[Path]:
@@ -192,9 +196,9 @@ def _build_session(log: Callable[[str], None], on_progress: Callable[[int, int],
     if missing:
         raise FileNotFoundError(
             f"{len(missing)} of the final model's checkpoints are missing, e.g. {missing[0].name}. "
-            "They are committed under src/final_model/results/; retrain them with "
-            "`python src/final_model/run_ablation.py --configs final --protocols grouped "
-            "--seeds 42 43 44 45 46 --save-weights --out src/final_model/results/final_weights_results.csv`."
+            "They are committed under src/final_model/results/ablation_results_checkpoints/ and "
+            "were saved by `python src/final_model/run_ablation.py --configs final_xattn "
+            "--protocols grouped --seeds 42 43 44 45 46 --save-weights`."
         )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -263,7 +267,7 @@ def _build_session(log: Callable[[str], None], on_progress: Callable[[int, int],
     # -- validation: each seed against its recorded figure, then the ensemble -
     val_pred = _to_ln(session, _predict_z(session, rows[val_idx], codes[val_idx], pair[val_idx]), codes[val_idx])
     runs = pd.read_csv(_WEIGHTS_CSV)
-    recorded = runs[(runs["config"] == _CONFIG) & (runs["protocol"] == "grouped")].set_index("seed")["val_rmse"]
+    recorded = runs[(runs["config"] == _RUN_NAME) & (runs["protocol"] == "grouped")].set_index("seed")["val_rmse"]
     for seed, pred in zip(_SEEDS, val_pred):
         rmse, _ = _rmse_pcc(pred, y[val_idx])
         expected = recorded.get(seed, float("nan"))
