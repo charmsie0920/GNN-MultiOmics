@@ -158,9 +158,9 @@ def fig_protocols() -> None:
     panels = [
         ("Unseen cell lines\n(grouped split, headline)", grouped,
          [("base", "base"), (CONCAT, "concat"), (FINAL, "final")], PER_DRUG_FLOOR, "per-drug mean"),
-        ("Random pairs\n(sanity check, laptop A)", random_a,
+        ("Random pairs\n(sanity check)", random_a,
          [("final", "concat"), (FINAL, "final")], None, None),
-        ("Unseen drugs\n(leave-drugs-out, laptop B)", ldo,
+        ("Unseen drugs\n(leave-drugs-out)", ldo,
          [("base", "base"), ("base+proteomics+mol_graph+pair_features", "ldo")], 2.5500, "mean only"),
     ]
     fig, axes = plt.subplots(1, 3, figsize=(7.4, 2.9), gridspec_kw={"width_ratios": [3, 2, 2]})
