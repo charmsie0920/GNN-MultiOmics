@@ -35,6 +35,10 @@ Run from the repository root, after the weights exist:
         --seeds 42 43 44 45 46 --save-weights \
         --out src/final_model/results/final_weights_results.csv
     python src/final_model/pair_feature_check.py
+
+For the final model since 2026-10-27, whose weights were saved by the ladder:
+    python src/final_model/pair_feature_check.py --config final_xattn \
+        --results src/final_model/results/ablation_results.csv
 """
 
 from __future__ import annotations
@@ -58,6 +62,7 @@ from src.data.pair_features import (  # noqa: E402
 )
 from src.data.target_scaling import PerDrugTargetScaler  # noqa: E402
 from src.final_model.run_ablation import (  # noqa: E402
+    ALIASES,
     DROPOUT,
     build_drug_graphs,
     checkpoints_dir,
@@ -179,14 +184,20 @@ def main() -> None:
                         help="results CSV of the run; checkpoints are read from beside it")
     parser.add_argument("--untrained", type=int, default=N_UNTRAINED,
                         help="number of untrained models scored as the null")
+    parser.add_argument("--config", default=CONFIG,
+                        help="config to check; its rows may be named by the alias or spelled out")
     args = parser.parse_args()
 
     runs = pd.read_csv(args.results)
-    seeds = sorted(runs.loc[(runs["config"] == CONFIG) & (runs["protocol"] == "grouped"), "seed"])
-    if not seeds:
-        raise SystemExit(f"no grouped-split '{CONFIG}' rows in {args.results}")
+    names = {args.config, ALIASES.get(args.config, args.config)}
+    mine = runs[runs["config"].isin(names) & (runs["protocol"] == "grouped")]
+    if mine.empty:
+        raise SystemExit(f"no grouped-split '{args.config}' rows in {args.results}")
+    # Checkpoints are named after the config as its rows record it.
+    run_name = dict(zip(mine["seed"], mine["config"]))
+    seeds = sorted(run_name)
 
-    cfg = resolve_config(CONFIG)
+    cfg = resolve_config(args.config)
     keys = list(cfg["modalities"])
     gathered, fingerprints, codes, y, groups, batched, _, y_used = load_pairs(build_drug_graphs())
     pair = build_pair_features(y_used)
@@ -228,7 +239,7 @@ def main() -> None:
     for seed in seeds:
         model = build()
         model.load_state_dict(torch.load(checkpoints_dir(args.results)
-                                         / f"{CONFIG}__grouped__seed{seed}.pt"))
+                                         / f"{run_name[seed]}__grouped__seed{seed}.pt"))
         pred = score(model)
         rows += [{"model": "trained", "seed": seed, **r}
                  for r in measure(pred, y, z, std, direct, case, folds, drugs)]
@@ -239,14 +250,16 @@ def main() -> None:
                  for r in measure(score(build()), y, z, std, direct, case, folds, drugs)]
 
     table = pd.DataFrame(rows)
-    out = args.results.with_name(args.results.stem + "_pair_feature_check.csv")
+    # The default config keeps the file names its published results have.
+    stem = args.results.stem + ("" if args.config == CONFIG else f"_{args.config}")
+    out = args.results.with_name(stem + "_pair_feature_check.csv")
     table.to_csv(out, index=False)
     # Per drug on held-out cell lines, the model column averaged over seeds.
     drug_table = by_drug[0][["n_hits", "measured"]].assign(
         model=np.mean([t["model"] for t in by_drug], axis=0),
         model_std=np.std([t["model"] for t in by_drug], axis=0, ddof=1),
     ).sort_values("measured")
-    drug_out = args.results.with_name(args.results.stem + "_pair_feature_check_drugs.csv")
+    drug_out = args.results.with_name(stem + "_pair_feature_check_drugs.csv")
     drug_table.to_csv(drug_out)
     trained, untrained = table[table["model"] == "trained"], table[table["model"] == "untrained"]
 

@@ -11,7 +11,10 @@ The ladder is **Base + one component at a time**:
     aligned                 base+mol_graph+bilinear, the MoGraphDRP reproduction
     full                    base + the five Phase 2 components
     final                   base+proteomics+std_targets+mol_graph+pair_features,
-                            the final model (chosen 2026-10-12)
+                            the final model chosen 2026-10-12; its rows keep
+                            this name
+    final_xattn             final with cross-attention fusion, the final model
+                            since 2026-10-27
 
 Components are declared once in `COMPONENTS`; adding a new one there adds its
 `base+<name>` rung to the default ladder. `full` is pinned to the components it
@@ -166,10 +169,13 @@ PHASE2_COMPONENTS = ("cross_attention", "mol_graph", "bilinear", "proteomics", "
 # (docs/18_final_runs_runbook.md). Spelled out for the same reason as `full`.
 # Its grouped-split rows in ablation_results.csv were run under the
 # spelled-out name; `main` treats those as done when `final` is requested.
+# `final_xattn` replaced it as the final model on 2026-10-27. `final` keeps its
+# meaning because rows in several results files are named after it.
 ALIASES: dict[str, str] = {
     "aligned": "base+mol_graph+bilinear",
     "full": "+".join(["base", *PHASE2_COMPONENTS]),
     "final": "base+proteomics+std_targets+mol_graph+pair_features",
+    "final_xattn": "base+proteomics+std_targets+mol_graph+pair_features+cross_attention",
 }
 DEFAULT_LADDER = ["base", *[f"base+{name}" for name in COMPONENTS], "aligned", "full"]
 PROTOCOLS = ("grouped", "random", "ldo")
@@ -461,7 +467,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--configs", nargs="+", default=DEFAULT_LADDER,
-                        help="'base', 'base+<component>[+...]', 'aligned', 'full' or 'final'")
+                        help="'base', 'base+<component>[+...]', 'aligned', 'full', 'final' or 'final_xattn'")
     parser.add_argument("--protocols", nargs="+", choices=PROTOCOLS, default=list(DEFAULT_PROTOCOLS),
                         help="'ldo' (leave drugs out) is not in the default and refuses std_targets")
     parser.add_argument("--seeds", nargs="+", type=int, default=[TORCH_SEED])
