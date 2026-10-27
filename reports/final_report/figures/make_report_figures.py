@@ -39,7 +39,11 @@ GRID = "#e4e3df"
 
 NOISE_BAND = 0.03
 PER_DRUG_FLOOR = 1.4889
-FINAL = "base+proteomics+std_targets+mol_graph+pair_features"
+# The final model since 27 Oct is CONCAT with cross-attention fusion; CONCAT
+# was the final model from 12 to 27 Oct and is kept as its own rung.
+CONCAT = "base+proteomics+std_targets+mol_graph+pair_features"
+FINAL = CONCAT + "+cross_attention"
+LIGHT_BLUE = "#9cc3ef"
 
 plt.rcParams.update(
     {
@@ -94,12 +98,14 @@ def fig_ablation_ladder() -> None:
         ("aligned", "MoGraphDRP-aligned", "none"),
         ("full", "all five Phase 2 parts", "none"),
         ("base+proteomics+std_targets", "proteomics + standardisation", "kept"),
-        (FINAL, "final model", "final"),
+        (CONCAT, "+ molecular graph + pair features", "replaced"),
+        (FINAL, "final model: + cross-attention fusion", "final"),
     ]
-    colours = {"kept": BLUE, "final": BLUE, "none": GREY, "rejected": ORANGE}
+    colours = {"kept": BLUE, "final": BLUE, "replaced": LIGHT_BLUE, "none": GREY, "rejected": ORANGE}
     tags = {
         "kept": "kept",
         "final": "final",
+        "replaced": "final 12-27 Oct",
         "none": "no effect beyond noise",
         "rejected": "rejected",
     }
@@ -144,19 +150,27 @@ def fig_protocols() -> None:
     random_split = pd.read_csv(RESULTS / "random_split_results.csv")
     ldo = pd.read_csv(RESULTS / "ldo_results.csv")
 
+    # Bars in one panel always come from one machine. The random split has no
+    # `base` row on laptop A, where both final variants were run.
+    random_a = pd.read_csv(RESULTS / "random_split_laptop_a_results.csv")
+    bars = {"base": ("base", GREY), "concat": ("concat.", LIGHT_BLUE), "final": ("final", BLUE),
+            "ldo": ("concat.,\nno std.", LIGHT_BLUE)}
     panels = [
-        ("Unseen cell lines\n(grouped split, headline)", grouped, "base", FINAL, PER_DRUG_FLOOR, "per-drug mean"),
-        ("Random pairs\n(sanity check)", random_split, "base", "final", None, None),
-        ("Unseen drugs\n(leave-drugs-out)", ldo, "base", "base+proteomics+mol_graph+pair_features", 2.5500, "mean only"),
+        ("Unseen cell lines\n(grouped split, headline)", grouped,
+         [("base", "base"), (CONCAT, "concat"), (FINAL, "final")], PER_DRUG_FLOOR, "per-drug mean"),
+        ("Random pairs\n(sanity check, laptop A)", random_a,
+         [("final", "concat"), (FINAL, "final")], None, None),
+        ("Unseen drugs\n(leave-drugs-out, laptop B)", ldo,
+         [("base", "base"), ("base+proteomics+mol_graph+pair_features", "ldo")], 2.5500, "mean only"),
     ]
-    fig, axes = plt.subplots(1, 3, figsize=(7.4, 2.9))
-    for ax, (title, frame, base_cfg, final_cfg, floor, floor_label) in zip(axes, panels):
+    fig, axes = plt.subplots(1, 3, figsize=(7.4, 2.9), gridspec_kw={"width_ratios": [3, 2, 2]})
+    for ax, (title, frame, configs, floor, floor_label) in zip(axes, panels):
         stats = []
-        for cfg in (base_cfg, final_cfg):
+        for cfg, _ in configs:
             values = frame[frame.config == cfg].test_rmse
             stats.append((values.mean(), values.std(), len(values)))
-        colours = [GREY, BLUE]
-        names = ["base", "final" if final_cfg != panels[2][3] else "final, no std."]
+        colours = [bars[key][1] for _, key in configs]
+        names = [bars[key][0] for _, key in configs]
         for x, ((mean, std, n), colour, name) in enumerate(zip(stats, colours, names)):
             ax.bar(x, mean, width=0.6, color=colour, zorder=2)
             ax.errorbar(x, mean, yerr=std, color=TEXT, elinewidth=0.9, capsize=2.5, zorder=3)
@@ -164,7 +178,8 @@ def fig_protocols() -> None:
         if floor:
             ax.axhline(floor, color=ORANGE, linestyle="--", linewidth=1.2, zorder=4)
             ax.text(-0.45, floor + 0.04, f"{floor_label} floor {floor:.4f}", ha="left", va="bottom", fontsize=7, color=TEXT_2)
-        ax.set_xticks([0, 1], names)
+        ax.set_xticks(range(len(names)), names)
+        ax.set_xlim(-0.55, len(names) - 0.45)
         ax.set_ylim(0, 2.9)
         ax.set_title(title, fontsize=8.5)
         ax.grid(axis="y", color=GRID, linewidth=0.6, zorder=0)
@@ -175,21 +190,25 @@ def fig_protocols() -> None:
 
 
 def fig_direct_hit() -> None:
-    subsets = pd.read_csv(RESULTS / "ablation_results_subsets_graph_decision.csv")
+    subsets = pd.concat([
+        pd.read_csv(RESULTS / "ablation_results_subsets_graph_decision.csv"),
+        pd.read_csv(RESULTS / "ablation_results_subsets_xattn_vs_final.csv").query("config == @FINAL"),
+    ])
     subsets = subsets[subsets.subset == "direct_hit"]
     configs = [
         ("base+proteomics+std_targets+mol_graph", "without pair features", GREY),
-        (FINAL, "final (with pair features)", BLUE),
+        (CONCAT, "pair features, concatenation", LIGHT_BLUE),
+        (FINAL, "final (pair features, cross-attention)", BLUE),
     ]
     folds = [("val", "Validation (213 pairs)"), ("test", "Test (211 pairs)")]
 
-    fig, axes = plt.subplots(1, 2, figsize=(7.0, 2.7))
+    fig, axes = plt.subplots(1, 2, figsize=(7.0, 3.0))
     for ax, metric, label in zip(axes, ["mean_error", "rmse"], ["Mean signed error (ln IC50)", "RMSE (ln IC50)"]):
-        width = 0.36
+        width = 0.27
         for i, (cfg, name, colour) in enumerate(configs):
             for j, (fold, _) in enumerate(folds):
                 values = subsets[(subsets.config == cfg) & (subsets.fold == fold)][metric]
-                x = j + (i - 0.5) * width
+                x = j + (i - 1) * width
                 ax.bar(x, values.mean(), width=width - 0.02, color=colour, label=name if j == 0 else None, zorder=2)
                 ax.errorbar(x, values.mean(), yerr=values.std(), color=TEXT, elinewidth=0.9, capsize=2.5, zorder=3)
                 offset = 0.03 if values.mean() >= 0 else -0.03
@@ -202,12 +221,13 @@ def fig_direct_hit() -> None:
         ax.set_axisbelow(True)
     axes[0].set_ylim(-0.25, 0.65)
     axes[1].set_ylim(0, 2.4)
-    axes[0].set_title("Over-prediction removed", fontsize=8.5)
+    axes[0].set_title("Over-prediction", fontsize=8.5)
     axes[1].set_title("Error on direct-hit pairs", fontsize=8.5)
-    axes[1].legend(frameon=False, fontsize=7.5, loc="upper left", ncol=2, bbox_to_anchor=(-0.02, 1.0))
+    handles, labels = axes[1].get_legend_handles_labels()
+    fig.legend(handles, labels, frameon=False, fontsize=7.5, loc="lower center", ncol=3)
     fig.suptitle("Pairs whose drug target is mutated in the cell line (1.26% of pairs), 5 seeds", x=0.01, ha="left",
                  fontsize=9, fontweight="bold", color=TEXT)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.07, 1, 1))
     _save(fig, "fig_direct_hit.png")
 
 
@@ -261,7 +281,7 @@ def fig_app_architecture() -> None:
         "api": (4.6, 2.3, 3.3, 1.7, "FastAPI backend", "backend/main.py, routers/",
                 "/dataset/upload · /run/start\n/run/status · /results/*"),
         "runs": (4.6, 0.2, 3.3, 1.6, "Run manager + model backend", "backend/model_backends/",
-                 "FinalModelBackend: 5-seed ensemble\nof final, rank_predictions()"),
+                 "FinalModelBackend: 5-seed ensemble\nof final_xattn, rank_predictions()"),
         "data": (9.2, 2.3, 2.6, 1.7, "Local artefacts", "",
                  "omics PCA files, SMILES\nhetero_graph.pt, 5 checkpoints\nuploads/ (deleted on exit)"),
         "ext": (9.2, 0.2, 2.6, 1.6, "Enrichr (external)", "",
