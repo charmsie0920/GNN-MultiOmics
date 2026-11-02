@@ -96,7 +96,7 @@ def fig_ablation_ladder() -> None:
         ("base+pair_attention", "+ pair attention", "rejected"),
         ("base+bilinear", "+ bilinear head", "rejected"),
         ("aligned", "MoGraphDRP-aligned", "none"),
-        ("full", "all five Phase 2 parts", "none"),
+        ("full", "all five early components", "none"),
         ("base+proteomics+std_targets", "proteomics + standardisation", "kept"),
         (CONCAT, "+ molecular graph + pair features", "replaced"),
         (FINAL, "final model: + cross-attention fusion", "final"),
@@ -105,7 +105,7 @@ def fig_ablation_ladder() -> None:
     tags = {
         "kept": "kept",
         "final": "final",
-        "replaced": "final 12-27 Oct",
+        "replaced": "concatenation model",
         "none": "no effect beyond noise",
         "rejected": "rejected",
     }

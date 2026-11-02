@@ -908,6 +908,8 @@ Grouped split, 5 seeds, laptop A: validation 1.2652 ± 0.0110, **test
   reproduces its recorded validation RMSE. The ensemble of `final` was
   1.2118 / 1.2377. The ensemble is reported after the choice and was not
   part of it.
+- **Peak GPU memory (measured 2026-11-02, GTX 1650, seed 42, 2 epochs of the
+  training loop):** 145 MiB allocated, 164 MiB reserved.
 
 Everything below this point in section 8 describes `final`, the final model
 from 2026-10-12 to 2026-10-27, and stays as the record of how it was chosen.
